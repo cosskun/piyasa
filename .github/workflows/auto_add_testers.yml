@@ -1,0 +1,158 @@
+name: Auto Add Testers to TestFlight
+on: workflow_dispatch
+
+jobs:
+  auto_add:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Add Testers and Send TestFlight Invites
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          npm install jsonwebtoken
+          node -e "
+          const jwt = require('jsonwebtoken');
+          const keyId = process.env.KEY_ID;
+          const issuerId = process.env.ISSUER_ID;
+          const privateKey = process.env.PRIVATE_KEY;
+
+          function getAscToken() {
+            const now = Math.floor(Date.now() / 1000);
+            return jwt.sign({
+              iss: issuerId,
+              iat: now,
+              exp: now + 1200,
+              aud: 'appstoreconnect-v1'
+            }, privateKey, {
+              algorithm: 'ES256',
+              header: { kid: keyId, typ: 'JWT' }
+            });
+          }
+
+          async function main() {
+            const token = getAscToken();
+            const appId = '6823125505';
+            const headers = {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            };
+
+            // 1. Get beta groups for Piyasa
+            const bgRes = await fetch('https://api.appstoreconnect.apple.com/v1/apps/' + appId + '/betaGroups', { headers });
+            const bgData = await bgRes.json();
+            console.log('Existing Beta Groups:', (bgData.data || []).map(g => g.attributes.name + ' (' + g.id + ')'));
+            
+            let targetGroupId = null;
+            if (bgData.data && bgData.data.length > 0) {
+              targetGroupId = bgData.data[0].id;
+            } else {
+              // Create external group if none exists
+              console.log('Creating beta group...');
+              const createRes = await fetch('https://api.appstoreconnect.apple.com/v1/betaGroups', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  data: {
+                    type: 'betaGroups',
+                    attributes: { name: 'Piyasa Ekip', isInternalGroup: false, hasAccessToAllBuilds: true },
+                    relationships: { app: { data: { type: 'apps', id: appId } } }
+                  }
+                })
+              });
+              const cdata = await createRes.json();
+              targetGroupId = cdata.data.id;
+            }
+            console.log('Target Beta Group ID:', targetGroupId);
+
+            // Testers to add
+            const testers = [
+              { email: 'furkanc28@gmail.com', firstName: 'Furkan', lastName: 'Coskun' },
+              { email: 'rumeysa1166metin@gmail.com', firstName: 'Rumeysa', lastName: 'Metin' },
+              { email: 'mtn.rumeysa@gmail.com', firstName: 'Rumeysa', lastName: 'Metin' }
+            ];
+
+            for (const t of testers) {
+              console.log('\n--- Processing tester:', t.email, '---');
+              let testerId = null;
+
+              // Check if tester already in ASC
+              const findRes = await fetch('https://api.appstoreconnect.apple.com/v1/betaTesters?filter[email]=' + t.email, { headers });
+              const findData = await findRes.json();
+
+              if (findData.data && findData.data.length > 0) {
+                testerId = findData.data[0].id;
+                console.log('Found existing tester ID in ASC:', testerId);
+
+                // Add existing tester to beta group
+                const addRelRes = await fetch('https://api.appstoreconnect.apple.com/v1/betaGroups/' + targetGroupId + '/relationships/betaTesters', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({
+                    data: [{ type: 'betaTesters', id: testerId }]
+                  })
+                });
+                console.log('Add to betaGroup status:', addRelRes.status);
+                if (!addRelRes.ok && addRelRes.status !== 409) {
+                  console.log('Add to betaGroup response:', await addRelRes.text());
+                }
+              } else {
+                // Create tester in beta group
+                console.log('Creating new tester in beta group...');
+                const createTRes = await fetch('https://api.appstoreconnect.apple.com/v1/betaTesters', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({
+                    data: {
+                      type: 'betaTesters',
+                      attributes: { email: t.email, firstName: t.firstName, lastName: t.lastName },
+                      relationships: {
+                        betaGroups: { data: [{ type: 'betaGroups', id: targetGroupId }] }
+                      }
+                    }
+                  })
+                });
+                console.log('Create tester status:', createTRes.status);
+                const ctData = await createTRes.json();
+                if (createTRes.ok) {
+                  testerId = ctData.data.id;
+                  console.log('Created tester with ID:', testerId);
+                } else {
+                  console.log('Create tester error:', JSON.stringify(ctData));
+                }
+              }
+
+              // Send invitation
+              if (testerId) {
+                console.log('Sending betaTesterInvitation for app...');
+                const invRes = await fetch('https://api.appstoreconnect.apple.com/v1/betaTesterInvitations', {
+                  method: 'POST',
+                  headers,
+                  body: JSON.stringify({
+                    data: {
+                      type: 'betaTesterInvitations',
+                      relationships: {
+                        app: { data: { type: 'apps', id: appId } },
+                        betaTester: { data: { type: 'betaTesters', id: testerId } }
+                      }
+                    }
+                  })
+                });
+                console.log('Invite status for ' + t.email + ':', invRes.status);
+                if (invRes.ok) {
+                  console.log('✔ SUCCESS! Invitation email sent to ' + t.email);
+                } else {
+                  console.log('Invite response:', await invRes.text());
+                }
+              }
+            }
+          }
+
+          main().catch(console.error);
+          "
