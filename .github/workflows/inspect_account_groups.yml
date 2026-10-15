@@ -1,0 +1,60 @@
+name: Inspect Account Groups
+on: workflow_dispatch
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Inspect ASC Beta Groups
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          npm install jsonwebtoken
+          node -e "
+          const jwt = require('jsonwebtoken');
+          const keyId = process.env.KEY_ID;
+          const issuerId = process.env.ISSUER_ID;
+          const privateKey = process.env.PRIVATE_KEY;
+
+          function getAscToken() {
+            const now = Math.floor(Date.now() / 1000);
+            return jwt.sign({
+              iss: issuerId,
+              iat: now,
+              exp: now + 1200,
+              aud: 'appstoreconnect-v1'
+            }, privateKey, {
+              algorithm: 'ES256',
+              header: { kid: keyId, typ: 'JWT' }
+            });
+          }
+
+          async function main() {
+            const token = getAscToken();
+            const headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' };
+
+            // Get all beta groups
+            const res = await fetch('https://api.appstoreconnect.apple.com/v1/betaGroups?limit=50&include=app,betaTesters', { headers });
+            const data = await res.json();
+            console.log('Total Beta Groups:', (data.data || []).length);
+            for (const g of (data.data || [])) {
+              console.log('Group:', g.attributes.name, 'isInternal:', g.attributes.isInternalGroup, 'hasAllBuilds:', g.attributes.hasAccessToAllBuilds, 'ID:', g.id);
+            }
+
+            // Get all beta testers
+            const tRes = await fetch('https://api.appstoreconnect.apple.com/v1/betaTesters?limit=50&include=apps,betaGroups', { headers });
+            const tData = await tRes.json();
+            console.log('Total Beta Testers:', (tData.data || []).length);
+            for (const t of (tData.data || [])) {
+              console.log('Tester:', t.attributes.email, 'ID:', t.id, 'inviteType:', t.attributes.inviteType);
+            }
+          }
+
+          main().catch(console.error);
+          "
