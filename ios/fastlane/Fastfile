@@ -38,17 +38,6 @@ end
 def ensure_bundle_id_exists(key_id, issuer_id, private_key_pem, bundle_id, app_name)
   token = get_asc_token(key_id, issuer_id, private_key_pem)
 
-  # List existing apps in ASC
-  apps_uri = URI("https://api.appstoreconnect.apple.com/v1/apps")
-  apps_req = Net::HTTP::Get.new(apps_uri)
-  apps_req["Authorization"] = "Bearer #{token}"
-  apps_res = Net::HTTP.start(apps_uri.hostname, apps_uri.port, use_ssl: true) { |http| http.request(apps_req) }
-  if apps_res.is_a?(Net::HTTPSuccess)
-    apps_data = JSON.parse(apps_res.body)
-    existing_apps = (apps_data["data"] || []).map { |a| "#{a['attributes']['name']} (#{a['attributes']['bundleId']})" }
-    UI.message("Existing Apps in App Store Connect: #{existing_apps.inspect}")
-  end
-
   # Register Bundle ID if not exists
   uri = URI("https://api.appstoreconnect.apple.com/v1/bundleIds?filter[identifier]=#{bundle_id}")
   req = Net::HTTP::Get.new(uri)
@@ -86,6 +75,79 @@ def ensure_bundle_id_exists(key_id, issuer_id, private_key_pem, bundle_id, app_n
       UI.message("Successfully registered Bundle ID: #{bundle_id} (ID: #{bundle_id_resource_id})")
     else
       UI.important("Bundle ID registration response: #{post_res.code} - #{post_res.body}")
+    end
+  end
+
+  bundle_id_resource_id
+end
+
+def ensure_app_exists(key_id, issuer_id, private_key_pem, bundle_id_resource_id, bundle_id, app_name)
+  token = get_asc_token(key_id, issuer_id, private_key_pem)
+
+  # Check if app already exists in App Store Connect
+  apps_uri = URI("https://api.appstoreconnect.apple.com/v1/apps?filter[bundleId]=#{bundle_id}")
+  apps_req = Net::HTTP::Get.new(apps_uri)
+  apps_req["Authorization"] = "Bearer #{token}"
+  apps_res = Net::HTTP.start(apps_uri.hostname, apps_uri.port, use_ssl: true) { |http| http.request(apps_req) }
+  if apps_res.is_a?(Net::HTTPSuccess)
+    apps_data = JSON.parse(apps_res.body)
+    if apps_data["data"] && apps_data["data"].length > 0
+      app_record = apps_data["data"][0]
+      UI.message("App already exists in App Store Connect: #{app_record['attributes']['name']} (ID: #{app_record['id']})")
+      return
+    end
+  end
+
+  # Try creating the app with name candidates in case name is taken globally
+  name_candidates = [app_name, "#{app_name} Oyunu", "#{app_name} App", "#{app_name} Game"]
+  created = false
+
+  name_candidates.each do |candidate|
+    sku = "sku_#{bundle_id.gsub(/[^0-9a-z]/i, '_')}_#{Time.now.to_i}"
+    post_uri = URI("https://api.appstoreconnect.apple.com/v1/apps")
+    post_req = Net::HTTP::Post.new(post_uri)
+    post_req["Authorization"] = "Bearer #{token}"
+    post_req["Content-Type"] = "application/json"
+    post_req.body = JSON.dump({
+      data: {
+        type: "apps",
+        attributes: {
+          name: candidate,
+          primaryLocale: "en-US",
+          sku: sku
+        },
+        relationships: {
+          bundleId: {
+            data: {
+              type: "bundleIds",
+              id: bundle_id_resource_id
+            }
+          }
+        }
+      }
+    })
+    post_res = Net::HTTP.start(post_uri.hostname, post_uri.port, use_ssl: true) { |http| http.request(post_req) }
+    if post_res.is_a?(Net::HTTPSuccess) || post_res.code == "201"
+      res_data = JSON.parse(post_res.body)
+      UI.message("Successfully created App in App Store Connect: #{candidate} (ID: #{res_data['data']['id']})")
+      created = true
+      break
+    else
+      UI.important("Failed creating app with name '#{candidate}': #{post_res.code} - #{post_res.body}")
+    end
+  end
+
+  unless created
+    UI.message("Trying Fastlane produce action as fallback...")
+    begin
+      produce(
+        app_identifier: bundle_id,
+        app_name: "#{app_name} Oyunu",
+        language: "English",
+        sku: "sku_piyasa_#{Time.now.to_i}"
+      )
+    rescue => pe
+      UI.important("Produce error: #{pe}")
     end
   end
 end
@@ -135,10 +197,19 @@ platform :ios do
       )
     end
 
-    ensure_bundle_id_exists(
+    bundle_res_id = ensure_bundle_id_exists(
       ENV["APP_STORE_CONNECT_KEY_ID"],
       ENV["APP_STORE_CONNECT_ISSUER_ID"],
       ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
+      "com.piyasa.piyasa",
+      "Piyasa"
+    )
+
+    ensure_app_exists(
+      ENV["APP_STORE_CONNECT_KEY_ID"],
+      ENV["APP_STORE_CONNECT_ISSUER_ID"],
+      ENV["APP_STORE_CONNECT_PRIVATE_KEY"],
+      bundle_res_id,
       "com.piyasa.piyasa",
       "Piyasa"
     )
