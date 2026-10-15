@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'controllers/game_controller.dart';
+import 'services/notification_service.dart';
 import 'views/home_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await NotificationService().initialize();
   runApp(const PiyasaApp());
 }
 

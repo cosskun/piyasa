@@ -7,12 +7,17 @@ import '../models/facility.dart';
 import '../models/store.dart';
 import '../models/market_listing.dart';
 import '../models/market_offer.dart';
+import '../models/bank_loan.dart';
+import '../models/limit_order.dart';
+import '../services/notification_service.dart';
 
 class GameController extends ChangeNotifier {
-  // Finans (Sıfırdan Başlangıç Sermayesi)
-  double cash = 10000.0;
+  // Finans (Sıfırdan Başlangıç Sermayesi - Çoklu Tesis Alımına Uygun)
+  double cash = 30000.0;
   double bankSavings = 0.0;
-  double activeLoan = 0.0;
+  double _legacyActiveLoan = 0.0;
+  BankLoan? currentLoan;
+  double get activeLoan => currentLoan?.remainingTotal ?? _legacyActiveLoan;
   double maxWarehouseCapacity = 500.0; // 500 kg başlangıç deposu
 
   // Depo (Hammadde ve Ürünler - Tamamen Boş)
@@ -29,6 +34,10 @@ class GameController extends ChangeNotifier {
 
   // Pazar Teklifleri (Gelen ve Verilen Teklifler)
   final List<MarketOffer> offers = [];
+
+  // Borsa Limit Alış Emirleri (Fiyat Düşünce Otomatik Alım)
+  final List<LimitBuyOrder> limitBuyOrders = [];
+  int get pendingOrdersCount => limitBuyOrders.where((o) => o.isPending).length;
 
   // Anlık Bildirim / Toast Mesajı (Telefon ekranında uyarı göstermek için)
   String? latestNotificationToast;
@@ -75,6 +84,14 @@ class GameController extends ChangeNotifier {
     'Akdeniz Gurme Peynir',
     'Yeşil Vadi Çiftliği',
     'Başkent Toptan Gıda',
+    'Adapazarı Patates Birliği',
+    'Pelit Artisan Çikolata',
+    'Karadeniz Orman & Kereste',
+    'İnegöl Masif Mobilya',
+    'Ergani Madencilik A.Ş.',
+    'İskenderun Demir-Çelik',
+    'Tüpraş Rafineri & Polimer',
+    'Aselsan Mikro Elektronik',
   ];
 
   GameController() {
@@ -127,6 +144,8 @@ class GameController extends ChangeNotifier {
       _tick(deltaSeconds);
     });
   }
+
+  void tickForTesting(double dt) => _tick(dt);
 
   void _tick(double dt) {
     // 1. Tarlalar ve Fabrikalar
@@ -226,6 +245,20 @@ class GameController extends ChangeNotifier {
         cash += earn;
         listing.totalEarned += earn;
 
+        // Teklif gelmiş olsa dahi ürünler rezerve ayrılmadan açık pazarda normal fiyattan satılır.
+        // İlandaki kalan stok teklif miktarının altına düşerse teklif otomatik düşer.
+        for (var off in offers) {
+          if (off.direction == OfferDirection.incoming &&
+              off.listingId == listing.id &&
+              off.status == OfferStatus.pending) {
+            if (listing.remainingQuantity < off.quantity) {
+              off.status = OfferStatus.expired;
+              latestNotificationToast =
+                  '🏷️ ${listing.item.name} ilanınızdaki ürünler normal fiyattan (${listing.pricePerUnit.toStringAsFixed(2)} ₺) satıldı! ${off.buyerName} teklifi otomatik kapandı.';
+            }
+          }
+        }
+
         if (listing.isCompleted) {
           activeListings.removeAt(i);
         }
@@ -245,10 +278,24 @@ class GameController extends ChangeNotifier {
             offer.status = OfferStatus.accepted;
             latestNotificationToast =
                 '🔔 TEKLİFİNİZ ONAYLANDI! "${offer.sellerName}", ${offer.quantity} adet ${offer.item.name} teklifinizi (${offer.offeredPricePerUnit.toStringAsFixed(2)} ₺) kabul etti! Teklifler sekmesinden satın alabilirsiniz.';
+            NotificationService().showOfferDecisionNotification(
+              sellerName: offer.sellerName,
+              itemName: offer.item.name,
+              quantity: offer.quantity,
+              price: offer.offeredPricePerUnit,
+              accepted: true,
+            );
           } else {
             offer.status = OfferStatus.rejected;
             latestNotificationToast =
                 '❌ TEKLİF REDDEDİLDİ: "${offer.sellerName}", ${offer.quantity} adet ${offer.item.name} için verdiğiniz teklifi çok düşük buldu.';
+            NotificationService().showOfferDecisionNotification(
+              sellerName: offer.sellerName,
+              itemName: offer.item.name,
+              quantity: offer.quantity,
+              price: offer.offeredPricePerUnit,
+              accepted: false,
+            );
           }
           notifyListeners();
         }
@@ -296,6 +343,12 @@ class GameController extends ChangeNotifier {
             offers.insert(0, incOffer);
             latestNotificationToast =
                 '📩 YENİ TEKLİF GELDİ! $buyer, ${target.item.name} ilanınıza birim başı $offeredUnit ₺ teklif etti. Teklifler sekmesinden inceleyin.';
+            NotificationService().showIncomingOfferNotification(
+              buyerName: buyer,
+              itemName: target.item.name,
+              quantity: qty,
+              price: offeredUnit,
+            );
             notifyListeners();
           }
         }
@@ -338,17 +391,51 @@ class GameController extends ChangeNotifier {
       for (var item in marketItems.values) {
         item.updatePrice(rnd: _random);
       }
+      _checkLimitBuyOrders();
     }
 
-    // 8. Banka Faiz Döngüsü (Her 60 saniyede bir)
+    // 8. Banka Faiz & Kredi Taksit Döngüsü
     _bankTickTimer += dt;
     if (_bankTickTimer >= 60.0) {
       _bankTickTimer = 0.0;
       if (bankSavings > 0) {
-        bankSavings += bankSavings * 0.005; // %0.5 faiz
+        bankSavings += bankSavings * 0.005; // %0.5 mevduat getirisi
       }
-      if (activeLoan > 0) {
-        activeLoan += activeLoan * 0.012; // %1.2 kredi faizi
+      if (_legacyActiveLoan > 0) {
+        _legacyActiveLoan += _legacyActiveLoan * 0.012;
+      }
+    }
+
+    // Aktif Kredi Günlük Taksit Döngüsü
+    if (currentLoan != null && !currentLoan!.isFullyPaid) {
+      currentLoan!.nextInstallmentTimer += dt;
+      if (currentLoan!.nextInstallmentTimer >= BankLoan.installmentInterval) {
+        currentLoan!.nextInstallmentTimer = 0.0;
+        final nextIdx = currentLoan!.paidInstallments;
+        if (nextIdx < currentLoan!.schedule.length) {
+          final installment = currentLoan!.schedule[nextIdx];
+          if (cash >= installment.totalAmount) {
+            cash -= installment.totalAmount;
+            installment.isPaid = true;
+            currentLoan!.paidInstallments++;
+            currentLoan!.remainingPrincipal = max(0.0, currentLoan!.remainingPrincipal - installment.principalAmount);
+            currentLoan!.remainingInterest = max(0.0, currentLoan!.remainingInterest - installment.interestAmount);
+
+            if (currentLoan!.isFullyPaid) {
+              latestNotificationToast =
+                  '🎉 TEBRİKLER! ${currentLoan!.title} kredisinin tüm taksitleri ödendi ve borç kapandı!';
+              currentLoan = null;
+            } else {
+              latestNotificationToast =
+                  '💳 BANKA: ${currentLoan!.title} kredisinin ${currentLoan!.paidInstallments}. gün taksiti (${installment.totalAmount.toStringAsFixed(0)} ₺) kasadan otomatik ödendi.';
+            }
+            notifyListeners();
+          } else {
+            latestNotificationToast =
+                '⚠️ BANKA UYARISI: Kasada yetersiz bakiye (${installment.totalAmount.toStringAsFixed(0)} ₺ gerekiyor) nedeniyle kredi taksiti ödenemedi!';
+            notifyListeners();
+          }
+        }
       }
     }
 
@@ -385,12 +472,12 @@ class GameController extends ChangeNotifier {
       total += l.remainingQuantity * l.pricePerUnit;
     }
 
-    // Mülklerin satın alma değerleri
+    // Mülklerin yatırım değerleri
     for (var f in ownedFacilities) {
-      total += f.purchaseCost;
+      total += f.totalInvestedValue;
     }
     for (var s in ownedStores) {
-      total += s.purchaseCost;
+      total += s.totalInvestedValue;
     }
 
     return total;
@@ -439,6 +526,115 @@ class GameController extends ChangeNotifier {
     mItem.updatePrice(bias: -0.02, rnd: _random);
     notifyListeners();
     return null;
+  }
+
+  // === BORSA LİMİT ALIŞ EMİRLERİ (FİYAT DÜŞÜNCE OTOMATİK ALIM) ===
+  String? placeLimitBuyOrder({
+    required String itemId,
+    required double targetPrice,
+    required int quantity,
+  }) {
+    if (quantity <= 0) return 'Lütfen geçerli bir miktar girin.';
+    if (targetPrice <= 0) return 'Lütfen 0\'dan büyük bir hedef fiyat girin.';
+
+    final mItem = marketItems[itemId];
+    if (mItem == null) return 'Ürün borsada bulunamadı.';
+
+    if (targetPrice >= mItem.currentPrice) {
+      return 'Hedef fiyat, anlık borsa fiyatından (${mItem.currentPrice.toStringAsFixed(2)} ₺) daha düşük olmalıdır. '
+          'Hemen almak için "Hızlı Al" butonunu kullanabilirsiniz.';
+    }
+
+    final totalCost = targetPrice * quantity;
+    if (cash < totalCost) {
+      return 'Yetersiz nakit! Bu alış emrinin teminatı için ${totalCost.toStringAsFixed(0)} ₺ gereklidir.';
+    }
+
+    final itemData = ItemRegistry.get(itemId);
+    if (itemData == null) return 'Ürün bulunamadı.';
+
+    final weightNeeded = quantity * itemData.weight;
+    if (currentWarehouseWeight + weightNeeded > maxWarehouseCapacity) {
+      return 'Deponuzda bu sipariş için (${weightNeeded.toStringAsFixed(0)} kg) yeterli yer yok! Depoyu genişletin.';
+    }
+
+    // Karşılıksız emir verilmesini önlemek için tutar bloke edilir
+    cash -= totalCost;
+
+    final order = LimitBuyOrder(
+      id: 'ord_${DateTime.now().millisecondsSinceEpoch}_${_random.nextInt(999)}',
+      itemId: itemId,
+      targetPrice: double.parse(targetPrice.toStringAsFixed(2)),
+      quantity: quantity,
+      totalReservedCost: totalCost,
+      createdAt: DateTime.now(),
+      status: LimitOrderStatus.pending,
+    );
+
+    limitBuyOrders.insert(0, order);
+    notifyListeners();
+    return null;
+  }
+
+  String? cancelLimitBuyOrder(LimitBuyOrder order) {
+    if (!order.isPending) return 'Bu emir artık iptal edilemez.';
+
+    // Bloke edilen teminat iade edilir
+    cash += order.totalReservedCost;
+    order.status = LimitOrderStatus.cancelled;
+    order.statusMessage = 'İptal edildi.';
+    notifyListeners();
+    return null;
+  }
+
+  void _checkLimitBuyOrders() {
+    bool hasChanges = false;
+    for (var order in limitBuyOrders) {
+      if (!order.isPending) continue;
+
+      final mItem = marketItems[order.itemId];
+      if (mItem == null) continue;
+
+      // Fiyat hedeflenen seviyeye veya daha altına düştü mü?
+      if (mItem.currentPrice <= order.targetPrice) {
+        final itemData = ItemRegistry.get(order.itemId);
+        if (itemData == null) continue;
+
+        final weightNeeded = order.quantity * itemData.weight;
+        if (currentWarehouseWeight + weightNeeded <= maxWarehouseCapacity) {
+          final actualPrice = mItem.currentPrice;
+          final actualTotalCost = actualPrice * order.quantity;
+
+          // Fiyat iyileştirmesi: Eğer piyasa hedeften de aşağı düşmüşse aradaki fark oyuncuya kalır!
+          final refund = order.totalReservedCost - actualTotalCost;
+          if (refund > 0) {
+            cash += refund;
+          }
+
+          warehouse[order.itemId] = (warehouse[order.itemId] ?? 0) + order.quantity;
+          order.status = LimitOrderStatus.completed;
+          order.executedAt = DateTime.now();
+          order.executedPrice = actualPrice;
+          order.statusMessage = 'İcra Edildi: ${actualPrice.toStringAsFixed(2)} ₺';
+
+          latestNotificationToast =
+              '🎯 ALIŞ EMRİ GERÇEKLEŞTİ! ${order.quantity} adet ${itemData.name}, '
+              'hedeflediğiniz ${order.targetPrice.toStringAsFixed(2)} ₺ fiyattan (${actualPrice.toStringAsFixed(2)} ₺) '
+              'otomatik satın alındı ve deponuza yüklendi!';
+          NotificationService().showLimitOrderExecutedNotification(
+            itemName: itemData.name,
+            quantity: order.quantity,
+            price: actualPrice,
+          );
+          hasChanges = true;
+        } else {
+          order.statusMessage = 'Depo Dolu! Yer açıldığında alınacak.';
+        }
+      }
+    }
+    if (hasChanges) {
+      notifyListeners();
+    }
   }
 
   // === DİĞER OYUNCULARDAN ÜRÜN SATIN ALMA (TOPLULUK PAZARI) ===
@@ -529,12 +725,15 @@ class GameController extends ChangeNotifier {
 
   // === OYUNCUNUN KENDİ İLANINA GELEN TEKLİFİ ONAYLAMA & REDDETME ===
   String? acceptIncomingOffer(MarketOffer offer) {
+    if (offer.status == OfferStatus.expired) {
+      return 'İlanınızdaki ürünler pazarda tam fiyattan satıldığı için bu teklif artık geçerli değil.';
+    }
     if (offer.status != OfferStatus.pending) return 'Bu teklif artık geçerli değil.';
     final listing = activeListings.where((l) => l.id == offer.listingId).firstOrNull;
     if (listing == null || listing.remainingQuantity < offer.quantity) {
-      offer.status = OfferStatus.rejected;
+      offer.status = OfferStatus.expired;
       notifyListeners();
-      return 'İlanınızda bu miktarda ürün kalmamış.';
+      return 'İlanınızdaki ürünler pazarda tam fiyattan satıldığı için bu teklif otomatik olarak kapandı.';
     }
 
     listing.remainingQuantity -= offer.quantity;
@@ -598,19 +797,55 @@ class GameController extends ChangeNotifier {
       warehouse[listing.itemId] = (warehouse[listing.itemId] ?? 0) + listing.remainingQuantity;
     }
 
+    // İlan iptal edilirse bekleyen teklifler de düşer
+    for (var off in offers) {
+      if (off.direction == OfferDirection.incoming &&
+          off.listingId == listing.id &&
+          off.status == OfferStatus.pending) {
+        off.status = OfferStatus.expired;
+      }
+    }
+
     activeListings.remove(listing);
     notifyListeners();
     return null;
   }
 
   // === MÜLK SATIN ALMA & GELİŞTİRME ===
-  String? buyFacility(ProductionFacility bp) {
-    if (cash < bp.purchaseCost) {
-      return 'Yetersiz nakit! (${bp.purchaseCost.toStringAsFixed(0)} ₺ gerekiyor)';
+  String? buyFacility(ProductionFacility bp, {int quantity = 1}) {
+    if (quantity <= 0) return 'Geçersiz miktar.';
+    final totalCost = bp.purchaseCost * quantity;
+    if (cash < totalCost) {
+      return 'Yetersiz nakit! (${totalCost.toStringAsFixed(0)} ₺ gerekiyor)';
     }
 
-    cash -= bp.purchaseCost;
-    ownedFacilities.add(bp.copy());
+    cash -= totalCost;
+    for (int i = 0; i < quantity; i++) {
+      ownedFacilities.add(bp.copy());
+    }
+    notifyListeners();
+    return null;
+  }
+
+  String? buyStarterPackage({
+    required String packageName,
+    required List<MapEntry<ProductionFacility, int>> facilities,
+  }) {
+    double totalCost = 0;
+    for (final entry in facilities) {
+      totalCost += entry.key.purchaseCost * entry.value;
+    }
+    if (cash < totalCost) {
+      return 'Yetersiz nakit! (${totalCost.toStringAsFixed(0)} ₺ gerekiyor)';
+    }
+
+    cash -= totalCost;
+    for (final entry in facilities) {
+      for (int i = 0; i < entry.value; i++) {
+        ownedFacilities.add(entry.key.copy());
+      }
+    }
+    latestNotificationToast = '🎉 $packageName başarıyla kuruldu! Tesisleriniz üretime başladı.';
     notifyListeners();
     return null;
   }
@@ -623,6 +858,20 @@ class GameController extends ChangeNotifier {
 
     cash -= cost;
     fac.level++;
+    notifyListeners();
+    return null;
+  }
+
+  // === TESİS GERİ SATMA (LİKİDASYON) ===
+  String? sellFacility(ProductionFacility fac) {
+    if (!ownedFacilities.contains(fac)) {
+      return 'Tesis bulunamadı.';
+    }
+
+    final refund = fac.resaleValue;
+    ownedFacilities.remove(fac);
+    cash += refund;
+    latestNotificationToast = '💰 ${fac.emoji} ${fac.name} satıldı ve ${refund.toStringAsFixed(0)} ₺ nakite dönüştürüldü.';
     notifyListeners();
     return null;
   }
@@ -651,6 +900,53 @@ class GameController extends ChangeNotifier {
     return null;
   }
 
+  // === DÜKKAN GERİ SATMA / DEVRETME (LİKİDASYON) ===
+  String? sellStore(RetailStore store) {
+    if (!ownedStores.contains(store)) {
+      return 'Dükkan bulunamadı.';
+    }
+
+    final refund = store.resaleValue;
+    int returnedToWarehouse = 0;
+    int liquidatedStock = 0;
+    double liquidatedEarnings = 0.0;
+
+    if (store.shelfStock > 0) {
+      final item = ItemRegistry.get(store.productItemId);
+      final weightPerItem = item?.weight ?? 1.0;
+      final spaceLeft = max(0.0, maxWarehouseCapacity - currentWarehouseWeight);
+      final canFit = (spaceLeft / weightPerItem).floor();
+
+      returnedToWarehouse = min(store.shelfStock, canFit);
+      liquidatedStock = store.shelfStock - returnedToWarehouse;
+
+      if (returnedToWarehouse > 0) {
+        warehouse[store.productItemId] = (warehouse[store.productItemId] ?? 0) + returnedToWarehouse;
+      }
+
+      if (liquidatedStock > 0) {
+        final mItem = marketItems[store.productItemId];
+        final unitPrice = mItem?.quickSellPrice ?? (item?.basePrice ?? 1.0) * 0.8;
+        liquidatedEarnings = liquidatedStock * unitPrice;
+        cash += liquidatedEarnings;
+      }
+    }
+
+    ownedStores.remove(store);
+    cash += refund;
+
+    String detail = '🏪 ${store.emoji} ${store.name} devredildi ve ${refund.toStringAsFixed(0)} ₺ nakit alındı.';
+    if (returnedToWarehouse > 0) {
+      detail += ' Raftaki $returnedToWarehouse ürün depoya aktarıldı.';
+    }
+    if (liquidatedStock > 0) {
+      detail += ' Depoya sığmayan $liquidatedStock ürün ${liquidatedEarnings.toStringAsFixed(0)} ₺ karşılığı toptan satıldı.';
+    }
+    latestNotificationToast = detail;
+    notifyListeners();
+    return null;
+  }
+
   void toggleStoreAutoRestock(RetailStore store, bool val) {
     store.autoRestock = val;
     notifyListeners();
@@ -673,23 +969,124 @@ class GameController extends ChangeNotifier {
     return null;
   }
 
-  String? takeLoan(double amount) {
-    double maxAllowed = max(20000.0, netWorth * 0.4);
-    if (activeLoan + amount > maxAllowed) {
-      return 'Kredi limitiniz aşıldı! Maksimum limit: ${maxAllowed.toStringAsFixed(0)} ₺';
+  double get maxLoanLimit => max(25000.0, netWorth * 0.45);
+
+  double getInterestRateForAmount(double amount) {
+    if (amount <= 20000) return 0.008; // %0.8 faiz
+    if (amount <= 60000) return 0.012; // %1.2 faiz
+    return 0.016; // %1.6 faiz
+  }
+
+  String? takeDetailedLoan({
+    required double principal,
+    required int installments,
+    String? title,
+  }) {
+    if (principal <= 0) return 'Geçersiz kredi tutarı.';
+    if (currentLoan != null && !currentLoan!.isFullyPaid) {
+      return 'Zaten aktif bir krediniz bulunmaktadır. Yeni kredi çekmek için mevcut borcunuzu kapatmalısınız.';
     }
-    activeLoan += amount;
-    cash += amount;
+    if (principal > maxLoanLimit) {
+      return 'Kredi limitiniz aşıldı! Maksimum limit: ${maxLoanLimit.toStringAsFixed(0)} ₺';
+    }
+
+    final rate = getInterestRateForAmount(principal);
+    final schedule = BankLoan.generateSchedule(
+      principal: principal,
+      interestRatePerPeriod: rate,
+      installments: installments,
+    );
+    final totalInterest = principal * rate * installments;
+
+    currentLoan = BankLoan(
+      id: 'loan_${DateTime.now().millisecondsSinceEpoch}',
+      title: title ??
+          (principal <= 20000
+              ? 'Mikro İşletme Kredisi'
+              : (principal <= 60000 ? 'KOBİ Büyüme Kredisi' : 'Sanayi Yatırım Kredisi')),
+      principal: principal,
+      interestRate: rate,
+      totalInstallments: installments,
+      remainingPrincipal: principal,
+      remainingInterest: totalInterest,
+      takenAt: DateTime.now(),
+      schedule: schedule,
+    );
+
+    cash += principal;
     notifyListeners();
     return null;
   }
 
+  String? payLoanInstallment() {
+    if (currentLoan == null || currentLoan!.isFullyPaid) return 'Ödenecek aktif kredi yok.';
+    final nextIdx = currentLoan!.paidInstallments;
+    if (nextIdx >= currentLoan!.schedule.length) {
+      currentLoan = null;
+      notifyListeners();
+      return null;
+    }
+
+    final installment = currentLoan!.schedule[nextIdx];
+    if (cash < installment.totalAmount) {
+      return 'Yetersiz nakit! Taksit tutarı: ${installment.totalAmount.toStringAsFixed(0)} ₺';
+    }
+
+    cash -= installment.totalAmount;
+    installment.isPaid = true;
+    currentLoan!.paidInstallments++;
+    currentLoan!.remainingPrincipal =
+        max(0.0, currentLoan!.remainingPrincipal - installment.principalAmount);
+    currentLoan!.remainingInterest =
+        max(0.0, currentLoan!.remainingInterest - installment.interestAmount);
+
+    if (currentLoan!.isFullyPaid) {
+      latestNotificationToast =
+          '🎉 TEBRİKLER! ${currentLoan!.title} kredisinin tüm taksitleri ödendi ve borç kapandı!';
+      currentLoan = null;
+    }
+
+    notifyListeners();
+    return null;
+  }
+
+  String? repayEntireLoanEarly() {
+    if (currentLoan == null || currentLoan!.isFullyPaid) return 'Ödenecek aktif kredi yok.';
+    // Erken kapatmada kalan faize %50 indirim uygulanır
+    double earlyCost = currentLoan!.remainingPrincipal + (currentLoan!.remainingInterest * 0.5);
+    if (cash < earlyCost) {
+      return 'Yetersiz nakit! Erken kapatma tutarı: ${earlyCost.toStringAsFixed(0)} ₺';
+    }
+
+    cash -= earlyCost;
+    latestNotificationToast =
+        '🎉 ${currentLoan!.title} kredisi erken kapatıldı! (%50 faiz indirimi uygulandı)';
+    currentLoan = null;
+    notifyListeners();
+    return null;
+  }
+
+  String? takeLoan(double amount) {
+    return takeDetailedLoan(
+      principal: amount,
+      installments: 10,
+      title: 'Standart İşletme Kredisi',
+    );
+  }
+
   String? repayLoan(double amount) {
-    if (amount <= 0 || activeLoan <= 0) return 'Ödenecek aktif kredi yok.';
-    double pay = min(amount, activeLoan);
+    if (currentLoan != null) {
+      if (amount >= currentLoan!.remainingTotal * 0.8) {
+        return repayEntireLoanEarly();
+      } else {
+        return payLoanInstallment();
+      }
+    }
+    if (_legacyActiveLoan <= 0) return 'Ödenecek aktif kredi yok.';
+    double pay = min(amount, _legacyActiveLoan);
     if (cash < pay) return 'Yetersiz nakit.';
     cash -= pay;
-    activeLoan -= pay;
+    _legacyActiveLoan -= pay;
     notifyListeners();
     return null;
   }

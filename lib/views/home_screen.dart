@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../controllers/game_controller.dart';
+import '../services/notification_service.dart';
 import 'production_tab.dart';
 import 'market_tab.dart';
 import 'retail_tab.dart';
@@ -18,17 +20,36 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentTabIndex = 0;
+  final GlobalKey<MarketTabState> _marketTabKey = GlobalKey<MarketTabState>();
+  StreamSubscription<String>? _notificationSub;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerUpdate);
+    _notificationSub =
+        NotificationService().onNotificationTapped.listen(_handlePhoneNotificationTap);
   }
 
   @override
   void dispose() {
+    _notificationSub?.cancel();
     widget.controller.removeListener(_onControllerUpdate);
     super.dispose();
+  }
+
+  void _handlePhoneNotificationTap(String payload) {
+    if (!mounted) return;
+    setState(() {
+      _currentTabIndex = 1; // Borsa & Pazar sekmesine geç
+    });
+    if (payload == 'offer_incoming') {
+      _marketTabKey.currentState?.switchToOffers(subTab: 0);
+    } else if (payload == 'offer_outgoing') {
+      _marketTabKey.currentState?.switchToOffers(subTab: 1);
+    } else if (payload == 'order_limit') {
+      _marketTabKey.currentState?.switchToOrders();
+    }
   }
 
   void _onControllerUpdate() {
@@ -37,32 +58,108 @@ class _HomeScreenState extends State<HomeScreen> {
       widget.controller.clearNotificationToast();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+
+        final isIncomingOffer = msg.contains('TEKLİF GELDİ');
+        final isOfferApproved = msg.contains('ONAYLANDI');
+        final isOfferRejected = msg.contains('REDDEDİLDİ');
+        final isLimitOrder = msg.contains('ALIŞ EMRİ');
+        final isClickable = isIncomingOffer || isOfferApproved || isOfferRejected || isLimitOrder;
+
+        void navigateFromToast() {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          setState(() {
+            _currentTabIndex = 1; // Borsa & Pazar ana sekmesine geç
+          });
+          if (isIncomingOffer) {
+            _marketTabKey.currentState?.switchToOffers(subTab: 0); // Gelen Teklifler
+          } else if (isOfferApproved || isOfferRejected) {
+            _marketTabKey.currentState?.switchToOffers(subTab: 1); // Verilen Teklifler
+          } else if (isLimitOrder) {
+            _marketTabKey.currentState?.switchToOrders(); // Alış Emirlerim
+          }
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(
-              children: [
-                Icon(
-                  msg.contains('ONAYLANDI')
-                      ? Icons.check_circle_outline
-                      : (msg.contains('REDDEDİLDİ') ? Icons.cancel_outlined : Icons.notifications_active),
-                  color: Colors.white,
-                  size: 20,
+            content: InkWell(
+              onTap: isClickable ? navigateFromToast : null,
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Icon(
+                      isOfferApproved
+                          ? Icons.check_circle_outline
+                          : (isOfferRejected
+                              ? Icons.cancel_outlined
+                              : (isIncomingOffer
+                                  ? Icons.mark_email_unread_outlined
+                                  : (isLimitOrder ? Icons.track_changes : Icons.notifications_active))),
+                      color: Colors.white,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            msg,
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: Colors.white),
+                          ),
+                          if (isClickable) ...[
+                            const SizedBox(height: 3),
+                            Text(
+                              isIncomingOffer
+                                  ? '👆 Teklifi incelemek ve yanıtlamak için dokunun ›'
+                                  : (isOfferApproved
+                                      ? '👆 Satın alma ekranına gitmek için dokunun ›'
+                                      : (isLimitOrder
+                                          ? '👆 Emir detaylarına gitmek için dokunun ›'
+                                          : '👆 Teklifler sekmesine gitmek için dokunun ›')),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.amberAccent,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (isClickable) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white38),
+                        ),
+                        child: const Text(
+                          'Git ›',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    msg,
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.white),
-                  ),
-                ),
-              ],
+              ),
             ),
-            backgroundColor: msg.contains('ONAYLANDI')
+            backgroundColor: isOfferApproved
                 ? const Color(0xFF059669)
-                : (msg.contains('REDDEDİLDİ') ? const Color(0xFFDC2626) : const Color(0xFF2563EB)),
+                : (isOfferRejected
+                    ? const Color(0xFFDC2626)
+                    : (isIncomingOffer ? const Color(0xFF1D4ED8) : const Color(0xFF2563EB))),
             behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 5),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       });
@@ -186,6 +283,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ElevatedButton.icon(
                         onPressed: () => showDialog(
                           context: context,
+                          barrierDismissible: true,
                           builder: (_) => BankDialog(controller: c),
                         ),
                         icon: const Icon(Icons.account_balance, size: 15),
@@ -323,7 +421,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 index: _currentTabIndex,
                 children: [
                   ProductionTab(controller: c),
-                  MarketTab(controller: c),
+                  MarketTab(key: _marketTabKey, controller: c),
                   RetailTab(controller: c),
                 ],
               ),

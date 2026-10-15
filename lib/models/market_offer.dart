@@ -5,6 +5,7 @@ enum OfferStatus {
   accepted, // Onaylandı (satın alınabilir)
   rejected, // Reddedildi
   completed, // Satın alma tamamlandı
+  expired, // Normal fiyattan başkasına satıldı veya geçersiz kaldı
 }
 
 enum OfferDirection {
