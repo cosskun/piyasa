@@ -1,0 +1,148 @@
+name: Add Furkan to Piyasa
+on: workflow_dispatch
+
+jobs:
+  add_furkan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Add Furkan and Send Invite
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+        run: |
+          npm install jsonwebtoken
+          node -e "
+          const jwt = require('jsonwebtoken');
+          const keyId = process.env.KEY_ID;
+          const issuerId = process.env.ISSUER_ID;
+          const privateKey = process.env.PRIVATE_KEY;
+
+          function getAscToken() {
+            const now = Math.floor(Date.now() / 1000);
+            return jwt.sign({
+              iss: issuerId,
+              iat: now,
+              exp: now + 1200,
+              aud: 'appstoreconnect-v1'
+            }, privateKey, {
+              algorithm: 'ES256',
+              header: { kid: keyId, typ: 'JWT' }
+            });
+          }
+
+          async function main() {
+            const token = getAscToken();
+            const appId = '6823125505';
+            const headers = {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            };
+
+            // 1. Check or create group 'Ben' for Piyasa
+            const bgRes = await fetch('https://api.appstoreconnect.apple.com/v1/apps/' + appId + '/betaGroups', { headers });
+            const bgData = await bgRes.json();
+            let benGroupId = null;
+            for (const g of (bgData.data || [])) {
+              if (g.attributes.name === 'Ben') {
+                benGroupId = g.id;
+                break;
+              }
+            }
+
+            if (!benGroupId) {
+              console.log('Creating group \"Ben\" for Piyasa...');
+              const cRes = await fetch('https://api.appstoreconnect.apple.com/v1/betaGroups', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  data: {
+                    type: 'betaGroups',
+                    attributes: { name: 'Ben', isInternalGroup: true, hasAccessToAllBuilds: true },
+                    relationships: { app: { data: { type: 'apps', id: appId } } }
+                  }
+                })
+              });
+              const cData = await cRes.json();
+              if (cRes.ok) {
+                benGroupId = cData.data.id;
+                console.log('Created group \"Ben\":', benGroupId);
+              } else {
+                console.log('Group create result:', cRes.status, JSON.stringify(cData));
+                benGroupId = (bgData.data || [])[0].id;
+              }
+            } else {
+              console.log('Found existing group \"Ben\":', benGroupId);
+            }
+
+            // 2. Call POST /v1/betaTesters for Furkan
+            console.log('Creating betaTester for Furkan in group \"Ben\"...');
+            const ctRes = await fetch('https://api.appstoreconnect.apple.com/v1/betaTesters', {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                data: {
+                  type: 'betaTesters',
+                  attributes: {
+                    email: 'furkanc28@gmail.com',
+                    firstName: 'Furkan',
+                    lastName: 'Coskun'
+                  },
+                  relationships: {
+                    betaGroups: {
+                      data: [{ type: 'betaGroups', id: benGroupId }]
+                    }
+                  }
+                }
+              })
+            });
+
+            console.log('POST betaTesters status:', ctRes.status);
+            const ctData = await ctRes.json();
+            let newTesterId = null;
+            if (ctRes.ok) {
+              newTesterId = ctData.data.id;
+              console.log('Created tester ID:', newTesterId);
+            } else {
+              console.log('POST betaTesters body:', JSON.stringify(ctData));
+              // If already created, find tester associated with this app
+              const appTestersRes = await fetch('https://api.appstoreconnect.apple.com/v1/apps/' + appId + '/betaTesters', { headers });
+              const appTestersData = await appTestersRes.json();
+              if (appTestersData.data && appTestersData.data.length > 0) {
+                newTesterId = appTestersData.data[0].id;
+                console.log('Found app tester ID:', newTesterId);
+              }
+            }
+
+            // 3. Send betaTesterInvitation
+            if (newTesterId) {
+              console.log('Sending invitation...');
+              const invRes = await fetch('https://api.appstoreconnect.apple.com/v1/betaTesterInvitations', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  data: {
+                    type: 'betaTesterInvitations',
+                    relationships: {
+                      app: { data: { type: 'apps', id: appId } },
+                      betaTester: { data: { type: 'betaTesters', id: newTesterId } }
+                    }
+                  }
+                })
+              });
+              console.log('Invitation status:', invRes.status);
+              if (invRes.ok) {
+                console.log('SUCCESS! TestFlight invitation sent successfully (201 Created)!');
+              } else {
+                console.log('Invitation error body:', await invRes.text());
+              }
+            }
+          }
+
+          main().catch(console.error);
+          "
