@@ -2,9 +2,12 @@ class LoanInstallment {
   final int installmentNumber;
   final double principalAmount; // Anapara payı
   final double interestAmount;  // Faiz payı
-  final double totalAmount;     // Taksit toplamı
+  final double totalAmount;     // Orijinal taksit toplamı
   final double remainingBalanceAfter; // Kalan toplam borç
   bool isPaid;
+  bool isOverdue;               // Taksit gecikmede mi?
+  double penaltyAmount;         // İşleyen gecikme cezası
+  int overdueCycles;            // Kaç döngüdür ödenmedi?
 
   LoanInstallment({
     required this.installmentNumber,
@@ -13,7 +16,13 @@ class LoanInstallment {
     required this.totalAmount,
     required this.remainingBalanceAfter,
     this.isPaid = false,
+    this.isOverdue = false,
+    this.penaltyAmount = 0.0,
+    this.overdueCycles = 0,
   });
+
+  /// Cezasıyla birlikte ödenecek güncel toplam taksit tutarı
+  double get effectiveTotalAmount => totalAmount + penaltyAmount;
 
   Map<String, dynamic> toJson() => {
     'installmentNumber': installmentNumber,
@@ -22,6 +31,9 @@ class LoanInstallment {
     'totalAmount': totalAmount,
     'remainingBalanceAfter': remainingBalanceAfter,
     'isPaid': isPaid,
+    'isOverdue': isOverdue,
+    'penaltyAmount': penaltyAmount,
+    'overdueCycles': overdueCycles,
   };
 
   static LoanInstallment fromJson(Map<String, dynamic> json) {
@@ -32,6 +44,9 @@ class LoanInstallment {
       totalAmount: (json['totalAmount'] as num).toDouble(),
       remainingBalanceAfter: (json['remainingBalanceAfter'] as num).toDouble(),
       isPaid: json['isPaid'] as bool? ?? false,
+      isOverdue: json['isOverdue'] as bool? ?? false,
+      penaltyAmount: (json['penaltyAmount'] as num?)?.toDouble() ?? 0.0,
+      overdueCycles: (json['overdueCycles'] as num?)?.toInt() ?? 0,
     );
   }
 }
@@ -45,6 +60,7 @@ class BankLoan {
   int paidInstallments;
   double remainingPrincipal;
   double remainingInterest;
+  double totalPenalty; // Biriken toplam gecikme cezası
   final DateTime takenAt;
   final List<LoanInstallment> schedule;
   double nextInstallmentTimer; // Bir sonraki taksit sayacı (saniye)
@@ -60,6 +76,7 @@ class BankLoan {
     this.paidInstallments = 0,
     required this.remainingPrincipal,
     required this.remainingInterest,
+    this.totalPenalty = 0.0,
     required this.takenAt,
     required this.schedule,
     this.nextInstallmentTimer = 0.0,
@@ -67,8 +84,26 @@ class BankLoan {
 
   double get totalLoanCost => principal + (principal * interestRate * totalInstallments);
   double get totalInterestCost => principal * interestRate * totalInstallments;
-  double get remainingTotal => remainingPrincipal + remainingInterest;
-  double get singleInstallmentAmount => schedule.isNotEmpty ? schedule.first.totalAmount : 0.0;
+  double get remainingTotal => remainingPrincipal + remainingInterest + totalPenalty;
+
+  /// Aktif ödenecek taksit
+  LoanInstallment? get currentDueInstallment {
+    final idx = paidInstallments;
+    if (idx < schedule.length) {
+      return schedule[idx];
+    }
+    return null;
+  }
+
+  /// Aktif veya gecikmedeki taksitin cezalı toplam tutarı
+  double get singleInstallmentAmount {
+    final due = currentDueInstallment;
+    if (due != null) return due.effectiveTotalAmount;
+    return schedule.isNotEmpty ? schedule.first.totalAmount : 0.0;
+  }
+
+  bool get hasOverdueInstallment => currentDueInstallment?.isOverdue ?? false;
+
   bool get isFullyPaid => remainingTotal <= 0.05 || paidInstallments >= totalInstallments;
   double get paymentProgress => totalInstallments > 0 ? (paidInstallments / totalInstallments).clamp(0.0, 1.0) : 0.0;
   int get remainingInstallmentsCount => totalInstallments - paidInstallments;
@@ -113,6 +148,7 @@ class BankLoan {
     'paidInstallments': paidInstallments,
     'remainingPrincipal': remainingPrincipal,
     'remainingInterest': remainingInterest,
+    'totalPenalty': totalPenalty,
     'takenAt': takenAt.toIso8601String(),
     'schedule': schedule.map((i) => i.toJson()).toList(),
     'nextInstallmentTimer': nextInstallmentTimer,
@@ -128,6 +164,7 @@ class BankLoan {
       paidInstallments: (json['paidInstallments'] as num?)?.toInt() ?? 0,
       remainingPrincipal: (json['remainingPrincipal'] as num).toDouble(),
       remainingInterest: (json['remainingInterest'] as num).toDouble(),
+      totalPenalty: (json['totalPenalty'] as num?)?.toDouble() ?? 0.0,
       takenAt: DateTime.tryParse(json['takenAt'] as String? ?? '') ?? DateTime.now(),
       schedule: (json['schedule'] as List<dynamic>? ?? [])
           .map((i) => LoanInstallment.fromJson(i as Map<String, dynamic>))

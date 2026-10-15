@@ -8,6 +8,8 @@ import 'market_tab.dart';
 import 'retail_tab.dart';
 import 'bank_dialog.dart';
 import 'inventory_sheet.dart';
+import 'warehouse_tab.dart';
+import '../models/player_level.dart';
 
 class HomeScreen extends StatefulWidget {
   final GameController controller;
@@ -41,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _handlePhoneNotificationTap(String payload) {
     if (!mounted) return;
     setState(() {
-      _currentTabIndex = 1; // Borsa & Pazar sekmesine geç
+      _currentTabIndex = 2; // Borsa & Pazar sekmesine geç (çünkü Depo 1. sekme oldu)
     });
     if (payload == 'offer_incoming') {
       _marketTabKey.currentState?.switchToOffers(subTab: 0);
@@ -68,7 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
         void navigateFromToast() {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           setState(() {
-            _currentTabIndex = 1; // Borsa & Pazar ana sekmesine geç
+            _currentTabIndex = 2; // Borsa & Pazar ana sekmesine geç
           });
           if (isIncomingOffer) {
             _marketTabKey.currentState?.switchToOffers(subTab: 0); // Gelen Teklifler
@@ -202,54 +204,60 @@ class _HomeScreenState extends State<HomeScreen> {
                   // 1. Satır: Logo & Hızlı İşlem Butonları (Banka, Depo, Tema)
                   Row(
                     children: [
-                      // Logo & İsim
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: isDark ? Colors.amber.withOpacity(0.2) : const Color(0xFFFEF3C7),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text('💰', style: TextStyle(fontSize: 22)),
-                          ),
-                          const SizedBox(width: 8),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                      // Logo & İsim (FittedBox ile her ekranda kusursuz ölçeklenir)
+                      Expanded(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                'PİYASA',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 1.5,
-                                  color: isDark ? Colors.amberAccent : const Color(0xFF0F766E),
+                              Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.amber.withOpacity(0.2) : const Color(0xFFFEF3C7),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
+                                child: const Text('💰', style: TextStyle(fontSize: 18)),
                               ),
-                              Text(
-                                'Ticaret & Borsa',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  color: isDark ? Colors.grey : const Color(0xFF64748B),
-                                ),
+                              const SizedBox(width: 6),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'PİYASA',
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w900,
+                                      letterSpacing: 1.0,
+                                      color: isDark ? Colors.amberAccent : const Color(0xFF0F766E),
+                                    ),
+                                  ),
+                                  Text(
+                                    'Ticaret & Borsa',
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w600,
+                                      color: isDark ? Colors.grey : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
+                        ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 4),
 
                       // Depo Butonu
                       InkWell(
-                        onTap: () => showModalBottomSheet(
-                          context: context,
-                          backgroundColor: Colors.transparent,
-                          isScrollControlled: true,
-                          builder: (_) => InventorySheet(controller: c),
-                        ),
+                        onTap: () => setState(() => _currentTabIndex = 1),
+                        borderRadius: BorderRadius.circular(8),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
                           decoration: BoxDecoration(
                             color: isDark ? Colors.blueGrey[800] : const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(8),
@@ -258,17 +266,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                           child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 Icons.inventory_2_outlined,
-                                size: 16,
+                                size: 14,
                                 color: isDark ? Colors.white : const Color(0xFF334155),
                               ),
                               const SizedBox(width: 4),
                               Text(
                                 '${c.currentWarehouseWeight.toInt()} kg',
                                 style: TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   fontWeight: FontWeight.bold,
                                   color: isDark ? Colors.white : const Color(0xFF1E293B),
                                 ),
@@ -277,34 +286,53 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 5),
 
                       // Banka Butonu
-                      ElevatedButton.icon(
-                        onPressed: () => showDialog(
+                      InkWell(
+                        onTap: () => showDialog(
                           context: context,
                           barrierDismissible: true,
                           builder: (_) => BankDialog(controller: c),
                         ),
-                        icon: const Icon(Icons.account_balance, size: 15),
-                        label: const Text('Banka'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isDark ? Colors.blueAccent[700] : const Color(0xFF2563EB),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.blueAccent[700] : const Color(0xFF2563EB),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.account_balance, size: 13, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text(
+                                'Banka',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(width: 4),
 
-                      // Tema Değiştirme Butonu (Dark / Light)
-                      IconButton(
-                        onPressed: () => c.toggleTheme(),
-                        icon: Icon(
-                          isDark ? Icons.light_mode : Icons.dark_mode,
-                          color: isDark ? Colors.amberAccent : const Color(0xFF475569),
+                      // Tema Butonu
+                      InkWell(
+                        onTap: () => c.toggleTheme(),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            isDark ? Icons.light_mode : Icons.dark_mode,
+                            size: 16,
+                            color: isDark ? Colors.amberAccent : const Color(0xFF475569),
+                          ),
                         ),
-                        tooltip: isDark ? 'Açık Temaya Geç' : 'Karanlık Temaya Geç',
                       ),
                     ],
                   ),
@@ -411,6 +439,124 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ],
                   ),
+
+                  // 3. Satır: Oyuncu Seviyesi, Ünvan & İlerleme Çubuğu
+                  InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () => _showLevelProgressionDialog(context, c, isDark),
+                    child: Container(
+                      margin: const EdgeInsets.only(top: 7),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: isDark
+                              ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
+                              : [const Color(0xFFF8FAFC), const Color(0xFFF1F5F9)],
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isDark ? Colors.amber.withOpacity(0.3) : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    colors: [Color(0xFFD97706), Color(0xFFF59E0B)],
+                                  ),
+                                  borderRadius: BorderRadius.circular(5),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.amber.withOpacity(0.3),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: Text(
+                                  '⭐ Sv. ${c.playerLevel}',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  c.playerTitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: c.canTakeBankLoan
+                                      ? (isDark ? Colors.greenAccent.withOpacity(0.15) : const Color(0xFFECFDF5))
+                                      : (isDark ? Colors.amber.withOpacity(0.15) : const Color(0xFFFEF3C7)),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Text(
+                                  c.canTakeBankLoan ? '🏦 Kredi Açık' : '🔒 Kredi: Sv. 5',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: c.canTakeBankLoan
+                                        ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                                        : (isDark ? Colors.amberAccent : const Color(0xFFB45309)),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.chevron_right,
+                                size: 16,
+                                color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(3),
+                                  child: LinearProgressIndicator(
+                                    value: c.levelProgress,
+                                    minHeight: 4,
+                                    backgroundColor: isDark ? Colors.black45 : const Color(0xFFE2E8F0),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${currencyFmt.format(c.netWorth)} / ${currencyFmt.format(c.nextLevelNetWorth)} ₺',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -421,6 +567,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 index: _currentTabIndex,
                 children: [
                   ProductionTab(controller: c),
+                  WarehouseTab(controller: c),
                   MarketTab(key: _marketTabKey, controller: c),
                   RetailTab(controller: c),
                 ],
@@ -467,6 +614,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 activeIcon: Icon(Icons.agriculture),
                 label: 'Tesislerim',
               ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.inventory_2_outlined),
+                activeIcon: Icon(Icons.inventory_2),
+                label: 'Depo',
+              ),
               BottomNavigationBarItem(
                 icon: Badge(
                   isLabelVisible: c.totalActiveOffersBadge > 0,
@@ -491,6 +643,252 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  void _showLevelProgressionDialog(BuildContext context, GameController c, bool isDark) {
+    final currencyFmt = NumberFormat("#,##0", "tr_TR");
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return Dialog(
+          backgroundColor: isDark ? const Color(0xFF111827) : Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480, maxHeight: 600),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Text('🏆', style: TextStyle(fontSize: 20)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Oyuncu Seviyeleri ve Ünvanlar',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, size: 20),
+                        onPressed: () => Navigator.of(dialogCtx).pop(),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Mevcut Seviye Özeti
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isDark
+                            ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
+                            : [const Color(0xFFFEF3C7), const Color(0xFFFFFBEB)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isDark ? Colors.amber.withOpacity(0.4) : const Color(0xFFFDE68A),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFD97706),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '⭐ Seviye ${c.playerLevel}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                c.playerTitle,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : const Color(0xFF78350F),
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '${(c.levelProgress * 100).toInt()}%',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFD97706),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: c.levelProgress,
+                            minHeight: 6,
+                            backgroundColor: isDark ? Colors.black45 : const Color(0xFFE2E8F0),
+                            valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFD97706)),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                'Net Servet: ${currencyFmt.format(c.netWorth)} ₺',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                'Sonraki: ${currencyFmt.format(c.nextLevelNetWorth)} ₺',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  Text(
+                    'Seviye Kademeleri & Ayrıcalıklar:',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white70 : const Color(0xFF475569),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+
+                  // Kademeler Listesi
+                  Expanded(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: PlayerLevelInfo.tiers.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 6),
+                      itemBuilder: (context, index) {
+                        final tier = PlayerLevelInfo.tiers[index];
+                        final isCurrent = tier.level == c.playerLevel;
+                        final isUnlocked = tier.level <= c.playerLevel;
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: isCurrent
+                                ? (isDark ? const Color(0xFF292524) : const Color(0xFFFEF3C7))
+                                : (isDark ? const Color(0xFF1E283E) : const Color(0xFFF8FAFC)),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isCurrent
+                                  ? const Color(0xFFD97706)
+                                  : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                              width: isCurrent ? 1.5 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Text(tier.icon, style: const TextStyle(fontSize: 16)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            'Sv. ${tier.level} - ${tier.title}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          tier.minNetWorth == 0.0
+                                              ? 'Başlangıç'
+                                              : '${currencyFmt.format(tier.minNetWorth)} ₺',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.bold,
+                                            color: isUnlocked
+                                                ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                                                : (isDark ? Colors.grey : const Color(0xFF94A3B8)),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      tier.perkDescription,
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              if (isCurrent)
+                                const Icon(Icons.star, size: 16, color: Color(0xFFD97706))
+                              else if (isUnlocked)
+                                const Icon(Icons.check_circle, size: 15, color: Color(0xFF10B981))
+                              else
+                                const Icon(Icons.lock_outline, size: 14, color: Colors.grey),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

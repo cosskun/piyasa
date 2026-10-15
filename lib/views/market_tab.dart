@@ -9,8 +9,6 @@ import '../models/market_offer.dart';
 import '../models/limit_order.dart';
 
 enum MarketFilter {
-  myRawMaterials, // Kendi Hammaddelerim
-  myWarehouse, // Depomdaki Mallar
   all, // Tüm Borsa
   rawMaterials, // Hammaddeler (Tarlalar)
   intermediate, // Ara Mamuller (Fabrikalar)
@@ -31,7 +29,7 @@ class MarketTabState extends State<MarketTab> {
   int _borsaSubTab = 0; // 0: Canlı Borsa Fiyatları, 1: Alış Emirlerim
   int _pazarSubTab = 0; // 0: Topluluk İlanları, 1: Benim İlanlarım
   int _offerSubTab = 0; // 0: Gelen Teklifler, 1: Verilen Teklifler
-  MarketFilter _currentFilter = MarketFilter.myRawMaterials; // Varsayılan olarak kendi hammaddelerim
+  MarketFilter _currentFilter = MarketFilter.all; // Varsayılan olarak Tüm Borsa
 
   final ScrollController _categoryScrollController = ScrollController();
 
@@ -261,21 +259,8 @@ class MarketTabState extends State<MarketTab> {
     final warehouse = widget.controller.warehouse;
     final producedItemIds = widget.controller.ownedFacilities.map((f) => f.recipe.outputItemId).toSet();
 
-    // Filtreleme hesapları
-    final rawCount = widget.controller.marketItems.values.where((m) {
-      final inStock = warehouse[m.itemId] ?? 0;
-      return m.data.category == ItemCategory.rawMaterial && (inStock > 0 || producedItemIds.contains(m.itemId));
-    }).length;
-
-    final warehouseTotalCount = warehouse.values.where((count) => count > 0).length;
-
     final items = widget.controller.marketItems.values.where((m) {
-      final inStock = warehouse[m.itemId] ?? 0;
       switch (_currentFilter) {
-        case MarketFilter.myRawMaterials:
-          return m.data.category == ItemCategory.rawMaterial && (inStock > 0 || producedItemIds.contains(m.itemId));
-        case MarketFilter.myWarehouse:
-          return inStock > 0;
         case MarketFilter.rawMaterials:
           return m.data.category == ItemCategory.rawMaterial;
         case MarketFilter.intermediate:
@@ -338,44 +323,29 @@ class MarketTabState extends State<MarketTab> {
               child: Row(
                 children: [
                   _buildFilterPill(
-                    label: '🌾 Hammaddelerim',
-                    filter: MarketFilter.myRawMaterials,
-                    badge: rawCount > 0 ? '$rawCount' : null,
-                    isDark: isDark,
-                    isHighlight: true,
-                  ),
-                  const SizedBox(width: 8),
-                  _buildFilterPill(
-                    label: '📦 Depomdakiler',
-                    filter: MarketFilter.myWarehouse,
-                    badge: warehouseTotalCount > 0 ? '$warehouseTotalCount' : null,
-                    isDark: isDark,
-                  ),
-                  const SizedBox(width: 8),
-                  _buildFilterPill(
                     label: '🌐 Tüm Borsa',
                     filter: MarketFilter.all,
                     isDark: isDark,
                   ),
                   const SizedBox(width: 8),
                   _buildFilterPill(
-                    label: '🌾 Tarlalar',
+                    label: '🌾 Hammadde Borsası',
                     filter: MarketFilter.rawMaterials,
                     isDark: isDark,
                   ),
                   const SizedBox(width: 8),
                   _buildFilterPill(
-                    label: '🏭 Fabrikalar',
+                    label: '🏭 Sanayi & Ara Mamul',
                     filter: MarketFilter.intermediate,
                     isDark: isDark,
                   ),
                   const SizedBox(width: 8),
                   _buildFilterPill(
-                    label: '🥖 Perakende',
+                    label: '🏪 Tüketici Ürünleri',
                     filter: MarketFilter.finishedGoods,
                     isDark: isDark,
                   ),
-                  const SizedBox(width: 24), // Sağ kenarda rahat boşluk (asla kesilmez ve zıplamaz)
+                  const SizedBox(width: 24),
                 ],
               ),
             ),
@@ -402,9 +372,7 @@ class MarketTabState extends State<MarketTab> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _currentFilter == MarketFilter.myRawMaterials
-                      ? '🌾 Sahip olduğunuz tarlaların ürettiği veya deponuzdaki hammaddeler listeleniyor.'
-                      : '⚡ Hızlı Sat: Anında nakit al. 🏷️ İlan Ver: Kendi fiyatını belirleyip pazara çıkar.',
+                  '⚡ Hızlı Sat: Anında nakit al. 📈 Satın Al: Toptan alıp fabrikanda veya dükkanında kullan.',
                   style: TextStyle(
                     fontSize: 11,
                     color: isDark ? Colors.white70 : const Color(0xFF1E40AF),
@@ -508,108 +476,143 @@ class MarketTabState extends State<MarketTab> {
                               Row(
                                 children: [
                                   Expanded(
+                                    flex: 23,
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          'Borsa Gösterge',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            'Borsa Gösterge',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                            ),
                                           ),
                                         ),
-                                        Text(
-                                          '${currencyFmt.format(mItem.currentPrice)} ₺',
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: isDark ? Colors.white70 : const Color(0xFF334155),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            '${currencyFmt.format(mItem.currentPrice)} ₺',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDark ? Colors.white70 : const Color(0xFF334155),
+                                            ),
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
+                                  const SizedBox(width: 4),
                                   Expanded(
+                                    flex: 25,
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text(
-                                          'Hızlı Satış (-%15)',
-                                          style: TextStyle(
-                                            fontSize: 10,
-                                            color: isDark ? Colors.orangeAccent : const Color(0xFFD97706),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            'Hızlı Satış (-%15)',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: isDark ? Colors.orangeAccent : const Color(0xFFD97706),
+                                            ),
                                           ),
                                         ),
-                                        Text(
-                                          '${currencyFmt.format(mItem.quickSellPrice)} ₺',
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: isDark ? Colors.orangeAccent : const Color(0xFFD97706),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            '${currencyFmt.format(mItem.quickSellPrice)} ₺',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDark ? Colors.orangeAccent : const Color(0xFFD97706),
+                                            ),
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: inStock > 0
-                                          ? (isDark ? Colors.amber.withOpacity(0.15) : const Color(0xFFFEF3C7))
-                                          : (isDark ? Colors.black26 : const Color(0xFFF1F5F9)),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.warehouse_outlined,
-                                          size: 13,
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    flex: 22,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerRight,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                        decoration: BoxDecoration(
                                           color: inStock > 0
-                                              ? (isDark ? Colors.amberAccent : const Color(0xFFD97706))
-                                              : Colors.grey,
+                                              ? (isDark ? Colors.amber.withOpacity(0.15) : const Color(0xFFFEF3C7))
+                                              : (isDark ? Colors.black26 : const Color(0xFFF1F5F9)),
+                                          borderRadius: BorderRadius.circular(8),
                                         ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Deponda: $inStock',
-                                          style: TextStyle(
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: inStock > 0
-                                                ? (isDark ? Colors.amberAccent : const Color(0xFF92400E))
-                                                : (isDark ? Colors.grey : const Color(0xFF64748B)),
-                                          ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.warehouse_outlined,
+                                              size: 13,
+                                              color: inStock > 0
+                                                  ? (isDark ? Colors.amberAccent : const Color(0xFFD97706))
+                                                  : Colors.grey,
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              'Deponda: $inStock',
+                                              style: TextStyle(
+                                                fontSize: 10.5,
+                                                fontWeight: FontWeight.bold,
+                                                color: inStock > 0
+                                                    ? (isDark ? Colors.amberAccent : const Color(0xFF92400E))
+                                                    : (isDark ? Colors.grey : const Color(0xFF64748B)),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? const Color(0xFF24324D) : const Color(0xFFE0E7FF),
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: isDark ? Colors.lightBlueAccent.withOpacity(0.3) : const Color(0xFFC7D2FE),
                                       ),
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          'İşlemler',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                            color: isDark ? Colors.lightBlueAccent : const Color(0xFF3730A3),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    flex: 16,
+                                    child: FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      alignment: Alignment.centerRight,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                                        decoration: BoxDecoration(
+                                          color: isDark ? const Color(0xFF24324D) : const Color(0xFFE0E7FF),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: isDark ? Colors.lightBlueAccent.withOpacity(0.3) : const Color(0xFFC7D2FE),
                                           ),
                                         ),
-                                        const SizedBox(width: 2),
-                                        Icon(
-                                          Icons.chevron_right,
-                                          size: 14,
-                                          color: isDark ? Colors.lightBlueAccent : const Color(0xFF3730A3),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'İşlemler',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.bold,
+                                                color: isDark ? Colors.lightBlueAccent : const Color(0xFF3730A3),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 2),
+                                            Icon(
+                                              Icons.chevron_right,
+                                              size: 14,
+                                              color: isDark ? Colors.lightBlueAccent : const Color(0xFF3730A3),
+                                            ),
+                                          ],
                                         ),
-                                      ],
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -628,20 +631,9 @@ class MarketTabState extends State<MarketTab> {
   }
 
   Widget _buildEmptyFilterView(bool isDark) {
-    String title;
-    String subtitle;
-    IconData icon;
-
-    if (_currentFilter == MarketFilter.myRawMaterials) {
-      title = 'Deponuzda Henüz Hammadde Yok';
-      subtitle =
-          'Tarlalarınız (Buğday, Pamuk, Meyve, Süt) üretim yaptıkça veya borsadan toptan aldıkça hammaddeleriniz burada otomatik listelenecektir.';
-      icon = Icons.grass_outlined;
-    } else {
-      title = 'Bu Filtrede Ürün Bulunamadı';
-      subtitle = 'Deponuzda şu anda ürün bulunmuyor veya seçilen kategori boş.';
-      icon = Icons.inventory_2_outlined;
-    }
+    const title = 'Bu Kategoride Ürün Bulunamadı';
+    const subtitle = 'Seçilen borsa kategorisinde şu anda listelenen ürün bulunmuyor.';
+    const icon = Icons.candlestick_chart_outlined;
 
     return Center(
       child: Padding(

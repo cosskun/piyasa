@@ -476,26 +476,34 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      isDepositMode ? 'Yatırılacak Miktar (₺):' : 'Çekilecek Miktar (₺):',
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white70 : const Color(0xFF475569),
+                    Expanded(
+                      child: Text(
+                        isDepositMode ? 'Yatırılacak Miktar (₺):' : 'Çekilecek Miktar (₺):',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white70 : const Color(0xFF475569),
+                        ),
                       ),
                     ),
-                    Text(
-                      isDepositMode
-                          ? 'Mevcut Kasa: ${currencyFmt.format(c.cash)} ₺'
-                          : 'Mevcut Mevduat: ${currencyFmt.format(c.bankSavings)} ₺',
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: isDepositMode
-                            ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
-                            : (isDark ? Colors.amberAccent : const Color(0xFFD97706)),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        isDepositMode
+                            ? 'Mevcut Kasa: ${currencyFmt.format(c.cash)} ₺'
+                            : 'Mevcut Mevduat: ${currencyFmt.format(c.bankSavings)} ₺',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isDepositMode
+                              ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                              : (isDark ? Colors.amberAccent : const Color(0xFFD97706)),
+                        ),
                       ),
                     ),
                   ],
@@ -665,46 +673,58 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                 ? Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _buildSimItem(
-                        'Döngü Başı (60 sn)',
-                        '+${currencyFmt.format(expectedHourlyEarnings)} ₺',
-                        Colors.greenAccent,
-                        isDark,
+                      Expanded(
+                        child: _buildSimItem(
+                          'Döngü Başı (60 sn)',
+                          '+${currencyFmt.format(expectedHourlyEarnings)} ₺',
+                          Colors.greenAccent,
+                          isDark,
+                        ),
                       ),
-                      _buildSimItem(
-                        '24 Döngü Getirisi',
-                        '+${currencyFmt.format(expectedDailyEarnings)} ₺',
-                        Colors.amberAccent,
-                        isDark,
+                      Expanded(
+                        child: _buildSimItem(
+                          '24 Döngü Getirisi',
+                          '+${currencyFmt.format(expectedDailyEarnings)} ₺',
+                          Colors.amberAccent,
+                          isDark,
+                        ),
                       ),
-                      _buildSimItem(
-                        'Kalan Kasa',
-                        '${currencyFmt.format(max(0.0, c.cash - _savingsAmount))} ₺',
-                        isDark ? Colors.white70 : const Color(0xFF475569),
-                        isDark,
+                      Expanded(
+                        child: _buildSimItem(
+                          'Kalan Kasa',
+                          '${currencyFmt.format(max(0.0, c.cash - _savingsAmount))} ₺',
+                          isDark ? Colors.white70 : const Color(0xFF475569),
+                          isDark,
+                        ),
                       ),
                     ],
                   )
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _buildSimItem(
-                        'Kasaya Geçecek',
-                        '+${currencyFmt.format(min(_savingsAmount, c.bankSavings))} ₺',
-                        Colors.greenAccent,
-                        isDark,
+                      Expanded(
+                        child: _buildSimItem(
+                          'Kasaya Geçecek',
+                          '+${currencyFmt.format(min(_savingsAmount, c.bankSavings))} ₺',
+                          Colors.greenAccent,
+                          isDark,
+                        ),
                       ),
-                      _buildSimItem(
-                        'Kalan Mevduat',
-                        '${currencyFmt.format(max(0.0, c.bankSavings - _savingsAmount))} ₺',
-                        Colors.amberAccent,
-                        isDark,
+                      Expanded(
+                        child: _buildSimItem(
+                          'Kalan Mevduat',
+                          '${currencyFmt.format(max(0.0, c.bankSavings - _savingsAmount))} ₺',
+                          Colors.amberAccent,
+                          isDark,
+                        ),
                       ),
-                      _buildSimItem(
-                        'Yeni Kasa',
-                        '${currencyFmt.format(c.cash + min(_savingsAmount, c.bankSavings))} ₺',
-                        isDark ? Colors.white70 : const Color(0xFF475569),
-                        isDark,
+                      Expanded(
+                        child: _buildSimItem(
+                          'Yeni Kasa',
+                          '${currencyFmt.format(c.cash + min(_savingsAmount, c.bankSavings))} ₺',
+                          isDark ? Colors.white70 : const Color(0xFF475569),
+                          isDark,
+                        ),
                       ),
                     ],
                   ),
@@ -1017,6 +1037,33 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                       ),
                     ],
                   ),
+                  if (loan.hasOverdueInstallment) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              'Gecikmiş Taksit! Kasada bakiye bulunmadığından taksite gecikme cezası (+${currencyFmt.format(loan.totalPenalty)} ₺) eklendi.',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.red[300] : Colors.red[800],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
 
                   // İlerleme Çubuğu (Ödenen Gün / Taksit)
@@ -1027,7 +1074,9 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                       minHeight: 7,
                       backgroundColor: isDark ? Colors.black38 : const Color(0xFFCBD5E1),
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        isDark ? Colors.greenAccent : const Color(0xFF059669),
+                        loan.hasOverdueInstallment
+                            ? Colors.redAccent
+                            : (isDark ? Colors.greenAccent : const Color(0xFF059669)),
                       ),
                     ),
                   ),
@@ -1063,47 +1112,75 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      Column(
-                        children: [
-                          Text('Kalan Anapara',
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: isDark ? Colors.grey : const Color(0xFF64748B))),
-                          FittedBox(
-                            child: Text('${currencyFmt.format(loan.remainingPrincipal)} ₺',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
-                          ),
-                        ],
-                      ),
-                      Column(
-                        children: [
-                          Text('Kalan Faiz',
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: isDark ? Colors.grey : const Color(0xFF64748B))),
-                          FittedBox(
-                            child: Text('${currencyFmt.format(loan.remainingInterest)} ₺',
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Text('Kalan Anapara',
                                 style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    color: Colors.orange[400])),
-                          ),
-                        ],
+                                    fontSize: 10,
+                                    color: isDark ? Colors.grey : const Color(0xFF64748B))),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('${currencyFmt.format(loan.remainingPrincipal)} ₺',
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                            ),
+                          ],
+                        ),
                       ),
-                      Column(
-                        children: [
-                          Text('Günlük Taksit',
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  color: isDark ? Colors.grey : const Color(0xFF64748B))),
-                          FittedBox(
-                            child: Text('${currencyFmt.format(loan.singleInstallmentAmount)} ₺',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                    color: Colors.green)),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Text('Kalan Faiz',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: isDark ? Colors.grey : const Color(0xFF64748B))),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('${currencyFmt.format(loan.remainingInterest)} ₺',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: Colors.orange[400])),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (loan.totalPenalty > 0)
+                        Expanded(
+                          child: Column(
+                            children: [
+                              Text('Gecikme Cezası',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.red[400])),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text('+${currencyFmt.format(loan.totalPenalty)} ₺',
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                        color: Colors.redAccent)),
+                              ),
+                            ],
                           ),
-                        ],
+                        ),
+                      Expanded(
+                        child: Column(
+                          children: [
+                            Text('Günlük Taksit',
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: isDark ? Colors.grey : const Color(0xFF64748B))),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('${currencyFmt.format(loan.singleInstallmentAmount)} ₺',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                      color: loan.hasOverdueInstallment ? Colors.redAccent : Colors.green)),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -1115,10 +1192,14 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
             // ÖDEME AKSIYON BUTONLARI (TEK SATIR VE ÖZEL GRADIENT)
             _buildCustomButton(
               onPressed: c.cash >= loan.singleInstallmentAmount ? () => c.payLoanInstallment() : null,
-              label: '1 Günlük Taksit Öde (${currencyFmt.format(loan.singleInstallmentAmount)} ₺)',
-              icon: Icons.payment,
-              gradientColors: const [Color(0xFF059669), Color(0xFF10B981)],
-              shadowColor: const Color(0xFF059669),
+              label: loan.hasOverdueInstallment
+                  ? 'Geciken Taksiti Öde (${currencyFmt.format(loan.singleInstallmentAmount)} ₺ Cezalı)'
+                  : '1 Günlük Taksit Öde (${currencyFmt.format(loan.singleInstallmentAmount)} ₺)',
+              icon: loan.hasOverdueInstallment ? Icons.warning_amber_rounded : Icons.payment,
+              gradientColors: loan.hasOverdueInstallment
+                  ? const [Color(0xFFDC2626), Color(0xFFEF4444)]
+                  : const [Color(0xFF059669), Color(0xFF10B981)],
+              shadowColor: loan.hasOverdueInstallment ? const Color(0xFFDC2626) : const Color(0xFF059669),
               verticalPadding: 10,
               fontSize: 12,
             ),
@@ -1157,9 +1238,15 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
       );
     }
 
-    // AKTİF KREDİ YOKSA -> YENİ KREDİ ÇEKME & PLAN SEÇME
+    // AKTİF KREDİ YOKSA:
+    // Eğer oyuncu Seviye 5 (Sanayici) altındaysa kredi çekemez:
+    if (!c.canTakeBankLoan) {
+      return _buildLockedLoanView(c, isDark);
+    }
+
+    // OYUNCU EN AZ SEVİYE 5 İSE -> YENİ KREDİ ÇEKME & PLAN SEÇME
     final maxLimit = c.maxLoanLimit;
-    _customLoanAmount = _customLoanAmount.clamp(5000.0, maxLimit).toDouble();
+    _customLoanAmount = _customLoanAmount.clamp(5000.0, max(5000.0, maxLimit)).toDouble();
     final customRate = c.getInterestRateForAmount(_customLoanAmount);
     final customSchedule = BankLoan.generateSchedule(
       principal: _customLoanAmount,
@@ -1173,7 +1260,7 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Kredi Limiti Bilgisi
+          // Kredi Limiti Bilgisi (Seviye Bilgisiyle)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: BoxDecoration(
@@ -1189,7 +1276,7 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Net Servetinize Göre Kullanılabilir Kredi Limiti: ${currencyFmt.format(maxLimit)} ₺',
+                    '⭐ Seviye ${c.playerLevel} Kredi Limitiniz: ${currencyFmt.format(maxLimit)} ₺',
                     maxLines: 1,
                     softWrap: false,
                     overflow: TextOverflow.ellipsis,
@@ -1279,15 +1366,19 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                         style: TextStyle(
                             fontSize: 12,
                             color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        '${currencyFmt.format(_customLoanAmount)} ₺',
-                        maxLines: 1,
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          '${currencyFmt.format(_customLoanAmount)} ₺',
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                          ),
                         ),
                       ),
                     ),
@@ -1302,20 +1393,19 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                   onChanged: (val) => setState(() => _customLoanAmount = val),
                 ),
 
-                // Vade (Gün Sayısı) Seçimi
-                Row(
+                // Vade (Gün Sayısı) Seçimi (Wrap ile esnek ve taşmaz)
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text('Vade:',
                         style: TextStyle(
                             fontSize: 11,
                             color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
-                    const SizedBox(width: 8),
                     _dayChoiceChip(5, isDark),
-                    const SizedBox(width: 5),
                     _dayChoiceChip(10, isDark),
-                    const SizedBox(width: 5),
                     _dayChoiceChip(15, isDark),
-                    const SizedBox(width: 5),
                     _dayChoiceChip(20, isDark),
                   ],
                 ),
@@ -1326,41 +1416,68 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Kademeli Faiz Oranı:',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
-                    Text('%${(customRate * 100).toStringAsFixed(1)} (Günlük)',
-                        maxLines: 1,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 11, color: Colors.amber)),
+                    Expanded(
+                      child: Text('Kademeli Faiz Oranı:',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text('%${(customRate * 100).toStringAsFixed(1)} (Günlük)',
+                            maxLines: 1,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 11, color: Colors.amber)),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 3),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Günlük Taksit:',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
-                    Text('${currencyFmt.format(customDailyPayment)} ₺ / Gün',
-                        maxLines: 1,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green)),
+                    Expanded(
+                      child: Text('Günlük Taksit:',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text('${currencyFmt.format(customDailyPayment)} ₺ / Gün',
+                            maxLines: 1,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 12, color: Colors.green)),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 3),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Toplam Geri Ödeme:',
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
-                    Text('${currencyFmt.format(customTotalRepay)} ₺',
-                        maxLines: 1,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    Expanded(
+                      child: Text('Toplam Geri Ödeme:',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: Text('${currencyFmt.format(customTotalRepay)} ₺',
+                            maxLines: 1,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -1419,6 +1536,299 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                   ],
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLockedLoanView(GameController c, bool isDark) {
+    final currencyFmt = NumberFormat("#,##0", "tr_TR");
+    const targetWorth = 200000.0;
+    final currentWorth = max(0.0, c.netWorth);
+    final progress = (currentWorth / targetWorth).clamp(0.0, 1.0);
+
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Kilitli Kredi Kartı
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [const Color(0xFF231C18), const Color(0xFF1B1B22)]
+                    : [const Color(0xFFFFFBEB), const Color(0xFFFEF2F2)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isDark ? Colors.amber.withOpacity(0.35) : const Color(0xFFFDE68A),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.amber.withOpacity(0.06),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.amber.withOpacity(0.15) : const Color(0xFFFEF3C7),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.lock_rounded,
+                    size: 32,
+                    color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Banka Kredisi Kilitli',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Merkez Ticaret Bankası kurumsal kredi imkanlarından faydalanabilmek için şirketinizin Seviye 5 (Sanayici) düzeyine ulaşması gerekmektedir.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    height: 1.35,
+                    color: isDark ? Colors.grey[300] : const Color(0xFF475569),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // Seviye Karşılaştırma Kutusu
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black26 : Colors.white.withOpacity(0.85),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? Colors.white12 : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Mevcut Seviyeniz:',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white12 : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '⭐ Sv. ${c.playerLevel} • ${c.playerTitle}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Gerekli Seviye:',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0F766E).withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                '⭐ Sv. 5 • Sanayici',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0D9488),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 7,
+                          backgroundColor: isDark ? Colors.black45 : const Color(0xFFE2E8F0),
+                          valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFD97706)),
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'Net Servet: ${currencyFmt.format(currentWorth)} ₺',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              'Hedef: 200.000 ₺ (%${(progress * 100).toInt()})',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFD97706),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Kredinin açılması için ${currencyFmt.format(c.netWorthNeededForLoan)} ₺ daha net servet edinmeniz gerekmektedir.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.amber[200] : const Color(0xFFB45309),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Seviye 5'te Neler Açılacak?
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF182032) : Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text('✨', style: TextStyle(fontSize: 14)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Seviye 5 (Sanayici) Avantajları:',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                _buildPerkRow('💰', '100.000 ₺\'den başlayan banka kredi limiti', isDark),
+                _buildPerkRow('📈', 'Seviyeniz yükseldikçe katlanarak büyüyen kredi tavanı', isDark),
+                _buildPerkRow('🏭', 'Yeni fabrika ve dükkan açılışları için anında sermaye', isDark),
+                _buildPerkRow('📅', '10 ila 30 gün vadeli günlük düşük faizli geri ödeme', isDark),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Nasıl Seviye Atlanır?
+          Container(
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.lightbulb_outline, size: 16, color: Colors.amber),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'İpucu: Üretim yapın, ürünlerinizi dükkanlarınızda veya borsada satın. Net servetiniz 200.000 ₺ olduğunda banka kredisi otomatik açılır.',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPerkRow(String emoji, String text, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2.5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 11)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                fontSize: 10,
+                color: isDark ? Colors.grey[300] : const Color(0xFF334155),
+              ),
             ),
           ),
         ],
@@ -1723,13 +2133,31 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                             ),
                           ),
                           Expanded(
-                            child: Text(
-                              '${currencyFmt.format(item.totalAmount)} ₺',
-                              maxLines: 1,
-                              style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  item.isOverdue
+                                      ? '${currencyFmt.format(item.effectiveTotalAmount)} ₺'
+                                      : '${currencyFmt.format(item.totalAmount)} ₺',
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: item.isOverdue ? Colors.redAccent : Colors.green),
+                                ),
+                                if (item.isOverdue && item.penaltyAmount > 0)
+                                  Text(
+                                    '+${currencyFmt.format(item.penaltyAmount)} ₺ Ceza',
+                                    maxLines: 1,
+                                    style: const TextStyle(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.redAccent,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           Expanded(

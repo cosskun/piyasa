@@ -123,6 +123,55 @@ class NotificationService {
     );
   }
 
+  // 4. Kredi Günlük Taksit Otomatik Ödeme Bildirimi
+  Future<void> showLoanRepaidNotification({
+    required String loanTitle,
+    required int installmentNumber,
+    required double amount,
+    bool isOverdueSettlement = false,
+  }) async {
+    final title = isOverdueSettlement
+        ? '💳 Gecikmeli Kredi Taksiti Tahsil Edildi'
+        : '💳 Kredi Taksit Ödemesi Yapıldı';
+    final body = isOverdueSettlement
+        ? '$loanTitle kredisinin gecikmedeki $installmentNumber. gün taksiti (${amount.toStringAsFixed(0)} ₺) hesabınızdan tahsil edildi.'
+        : '$loanTitle kredisinin $installmentNumber. gün taksiti (${amount.toStringAsFixed(0)} ₺) hesabınızdan otomatik ödendi.';
+
+    await _showNotification(
+      id: 201,
+      title: title,
+      body: body,
+      payload: 'bank_loan',
+    );
+  }
+
+  // 5. Kredi Taksit Gecikmesi & Ceza Bildirimi
+  Future<void> showLoanOverduePenaltyNotification({
+    required String loanTitle,
+    required int installmentNumber,
+    required double amount,
+    required double penaltyAmount,
+  }) async {
+    await _showNotification(
+      id: 202,
+      title: '⚠️ Kredi Taksiti Gecikti! (Ceza İşliyor)',
+      body: 'Hesabınızda yeterli bakiye bulunamadı! $loanTitle kredisinin $installmentNumber. gün taksitine (${amount.toStringAsFixed(0)} ₺) ceza eklendi (+${penaltyAmount.toStringAsFixed(0)} ₺). Lütfen hesabınıza bakiye yükleyiniz.',
+      payload: 'bank_loan',
+    );
+  }
+
+  // 6. Kredi Tamamen Ödendi Bildirimi
+  Future<void> showLoanFullyPaidNotification({
+    required String loanTitle,
+  }) async {
+    await _showNotification(
+      id: 203,
+      title: '🎉 Kredi Borcunuz Kapandı!',
+      body: 'Tebrikler! $loanTitle kredisinin tüm taksitleri başarıyla ödendi ve banka borcunuz kapandı.',
+      payload: 'bank_loan',
+    );
+  }
+
   Future<void> _showNotification({
     required int id,
     required String title,
@@ -146,6 +195,8 @@ class NotificationService {
         presentAlert: true,
         presentBadge: true,
         presentSound: true,
+        presentBanner: true,
+        presentList: true,
       );
 
       const NotificationDetails details = NotificationDetails(
