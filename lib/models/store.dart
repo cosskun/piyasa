@@ -2,6 +2,7 @@ import 'dart:math';
 
 class RetailStore {
   final String id;
+  final String blueprintId;
   final String name;
   final String emoji;
   final String description;
@@ -21,6 +22,7 @@ class RetailStore {
 
   RetailStore({
     required this.id,
+    String? blueprintId,
     required this.name,
     required this.emoji,
     required this.description,
@@ -36,7 +38,7 @@ class RetailStore {
     this.autoRestock = true,
     this.totalRevenue = 0.0,
     this.statusMessage = 'Müşteri Bekleniyor',
-  });
+  }) : blueprintId = blueprintId ?? id;
 
   double get upgradeCost => baseUpgradeCost * pow(1.5, level - 1);
   double get effectiveInterval => max(0.8, saleIntervalSeconds - (level - 1) * 0.25);
@@ -56,6 +58,7 @@ class RetailStore {
   RetailStore copy({String? newId}) {
     return RetailStore(
       id: newId ?? '${id}_${DateTime.now().millisecondsSinceEpoch}',
+      blueprintId: blueprintId,
       name: name,
       emoji: emoji,
       description: description,
@@ -65,7 +68,39 @@ class RetailStore {
       shelfCapacity: shelfCapacity,
       retailPrice: retailPrice,
       saleIntervalSeconds: saleIntervalSeconds,
+      level: level,
+      shelfStock: shelfStock,
+      autoRestock: autoRestock,
+      totalRevenue: totalRevenue,
     );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'blueprintId': blueprintId,
+    'level': level,
+    'shelfCapacity': shelfCapacity,
+    'shelfStock': shelfStock,
+    'retailPrice': retailPrice,
+    'autoRestock': autoRestock,
+    'totalRevenue': totalRevenue,
+  };
+
+  static RetailStore? fromJson(Map<String, dynamic> json) {
+    final bpId = json['blueprintId'] as String? ?? json['id'] as String;
+    final blueprints = getBlueprints();
+    final match = blueprints.firstWhere(
+      (b) => b.id == bpId || bpId.startsWith(b.id),
+      orElse: () => blueprints.first,
+    );
+    final store = match.copy(newId: json['id'] as String?);
+    store.level = (json['level'] as num?)?.toInt() ?? 1;
+    store.shelfCapacity = (json['shelfCapacity'] as num?)?.toInt() ?? match.shelfCapacity;
+    store.shelfStock = (json['shelfStock'] as num?)?.toInt() ?? 0;
+    store.retailPrice = (json['retailPrice'] as num?)?.toDouble() ?? match.retailPrice;
+    store.autoRestock = json['autoRestock'] as bool? ?? true;
+    store.totalRevenue = (json['totalRevenue'] as num?)?.toDouble() ?? 0.0;
+    return store;
   }
 
   static List<RetailStore> getBlueprints() {

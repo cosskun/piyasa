@@ -21,6 +21,7 @@ class FacilityRecipe {
 
 class ProductionFacility {
   final String id;
+  final String blueprintId;
   final String name;
   final String emoji;
   final String description;
@@ -36,6 +37,7 @@ class ProductionFacility {
 
   ProductionFacility({
     required this.id,
+    String? blueprintId,
     required this.name,
     required this.emoji,
     required this.description,
@@ -47,7 +49,7 @@ class ProductionFacility {
     this.progress = 0.0,
     this.isProducing = true,
     this.statusMessage = 'Üretim Hazır',
-  });
+  }) : blueprintId = blueprintId ?? id;
 
   double get upgradeCost => baseUpgradeCost * pow(1.5, level - 1);
   double get effectiveDuration => max(2.0, recipe.durationSeconds * (1.0 - (level - 1) * 0.08));
@@ -74,6 +76,7 @@ class ProductionFacility {
   ProductionFacility copy({String? newId}) {
     return ProductionFacility(
       id: newId ?? '${id}_${DateTime.now().millisecondsSinceEpoch}',
+      blueprintId: blueprintId,
       name: name,
       emoji: emoji,
       description: description,
@@ -81,7 +84,32 @@ class ProductionFacility {
       recipe: recipe,
       purchaseCost: purchaseCost,
       baseUpgradeCost: baseUpgradeCost,
+      level: level,
+      progress: progress,
+      isProducing: isProducing,
     );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'blueprintId': blueprintId,
+    'level': level,
+    'progress': progress,
+    'isProducing': isProducing,
+  };
+
+  static ProductionFacility? fromJson(Map<String, dynamic> json) {
+    final bpId = json['blueprintId'] as String? ?? json['id'] as String;
+    final blueprints = getBlueprints();
+    final match = blueprints.firstWhere(
+      (b) => b.id == bpId || bpId.startsWith(b.id),
+      orElse: () => blueprints.first,
+    );
+    final fac = match.copy(newId: json['id'] as String?);
+    fac.level = (json['level'] as num?)?.toInt() ?? 1;
+    fac.progress = (json['progress'] as num?)?.toDouble() ?? 0.0;
+    fac.isProducing = json['isProducing'] as bool? ?? true;
+    return fac;
   }
 
   static List<ProductionFacility> getBlueprints() {

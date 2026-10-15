@@ -8,8 +8,15 @@ import 'package:piyasa/views/retail_tab.dart';
 import 'package:piyasa/models/market_offer.dart';
 import 'package:piyasa/models/store.dart';
 import 'package:piyasa/models/facility.dart';
+import 'package:piyasa/services/save_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    SaveService().resetForTesting();
+  });
+
   testWidgets('Piyasa App smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(const PiyasaApp());
     expect(find.text('PİYASA'), findsOneWidget);
@@ -363,6 +370,72 @@ void main() {
     expect(controller.warehouse['bread'], 15);
 
     controller.dispose();
+  });
+
+  testWidgets('Game persistence saves state on actions and restores completely upon reload', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    final controller1 = GameController(autoLoad: false);
+    final wheatFarmBp = ProductionFacility.getBlueprints().firstWhere((b) => b.id == 'wheat_farm');
+    final kioskBp = RetailStore.getBlueprints().firstWhere((b) => b.id == 'kiosk_bread');
+
+    // Perform game actions
+    controller1.buyFacility(wheatFarmBp);
+    controller1.buyStore(kioskBp);
+    controller1.warehouse['wheat'] = 120;
+    controller1.warehouse['flour'] = 45;
+    controller1.depositToBank(5000.0);
+    controller1.createListing('wheat', 40, 9.50);
+    controller1.toggleTheme();
+
+    // Verify state in controller 1
+    expect(controller1.ownedFacilities.length, 1);
+    expect(controller1.ownedStores.length, 1);
+    expect(controller1.warehouse['wheat'], 80); // 120 - 40 listed
+    expect(controller1.warehouse['flour'], 45);
+    expect(controller1.bankSavings, 5000.0);
+    expect(controller1.activeListings.length, 1);
+    expect(controller1.isDarkMode, true);
+
+    // Explicitly ensure save has run
+    await SaveService().save(controller1);
+
+    // Simulate closing app and reopening with fresh controller
+    final controller2 = GameController(autoLoad: false);
+    // Before loading, fresh controller has starting defaults
+    expect(controller2.ownedFacilities.isEmpty, true);
+    expect(controller2.ownedStores.isEmpty, true);
+    expect(controller2.warehouse.isEmpty, true);
+    expect(controller2.bankSavings, 0.0);
+    expect(controller2.isDarkMode, false);
+
+    // Load from storage
+    final loaded = await SaveService().load(controller2);
+    expect(loaded, true);
+
+    // Verify that ALL progress was restored!
+    expect(controller2.cash, controller1.cash);
+    expect(controller2.bankSavings, 5000.0);
+    expect(controller2.isDarkMode, true);
+    expect(controller2.ownedFacilities.length, 1);
+    expect(controller2.ownedFacilities.first.name, 'Buğday Tarlası');
+    expect(controller2.ownedStores.length, 1);
+    expect(controller2.ownedStores.first.name, 'Köşe Büfe & Simitçi');
+    expect(controller2.warehouse['wheat'], 80);
+    expect(controller2.warehouse['flour'], 45);
+    expect(controller2.activeListings.length, 1);
+    expect(controller2.activeListings.first.pricePerUnit, 9.50);
+
+    // Test reset progress
+    await controller2.resetProgress();
+    expect(controller2.ownedFacilities.isEmpty, true);
+    expect(controller2.ownedStores.isEmpty, true);
+    expect(controller2.warehouse.isEmpty, true);
+    expect(controller2.bankSavings, 0.0);
+    expect(controller2.cash, 30000.0);
+
+    controller1.dispose();
+    controller2.dispose();
   });
 }
 

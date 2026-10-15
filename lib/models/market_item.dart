@@ -45,4 +45,22 @@ class MarketItem {
       priceHistory.removeAt(0);
     }
   }
+
+  Map<String, dynamic> toJson() => {
+    'itemId': itemId,
+    'currentPrice': currentPrice,
+    'marketSupply': marketSupply,
+    'lastChangePercent': lastChangePercent,
+    'priceHistory': priceHistory,
+  };
+
+  static MarketItem fromJson(Map<String, dynamic> json) {
+    return MarketItem(
+      itemId: json['itemId'] as String,
+      currentPrice: (json['currentPrice'] as num).toDouble(),
+      marketSupply: (json['marketSupply'] as num?)?.toInt() ?? 3000,
+      lastChangePercent: (json['lastChangePercent'] as num?)?.toDouble() ?? 0.0,
+      history: (json['priceHistory'] as List<dynamic>?)?.map((e) => (e as num).toDouble()).toList(),
+    );
+  }
 }

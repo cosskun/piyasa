@@ -1,33 +1,60 @@
 import 'package:flutter/material.dart';
 import 'controllers/game_controller.dart';
 import 'services/notification_service.dart';
+import 'services/save_service.dart';
 import 'views/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService().initialize();
-  runApp(const PiyasaApp());
+  final controller = GameController();
+  await SaveService().load(controller);
+  runApp(PiyasaApp(controller: controller));
 }
 
 class PiyasaApp extends StatefulWidget {
-  const PiyasaApp({super.key});
+  final GameController? controller;
+
+  const PiyasaApp({super.key, this.controller});
 
   @override
   State<PiyasaApp> createState() => _PiyasaAppState();
 }
 
-class _PiyasaAppState extends State<PiyasaApp> {
+class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
   late final GameController _controller;
+  bool _createdInternally = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = GameController();
+    WidgetsBinding.instance.addObserver(this);
+    if (widget.controller != null) {
+      _controller = widget.controller!;
+    } else {
+      _createdInternally = true;
+      _controller = GameController();
+      _controller.loadFromStorage();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached ||
+        state == AppLifecycleState.hidden) {
+      _controller.saveState();
+    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _controller.saveState();
+    if (_createdInternally) {
+      _controller.dispose();
+    }
     super.dispose();
   }
 

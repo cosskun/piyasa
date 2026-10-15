@@ -49,4 +49,42 @@ class MarketOffer {
   double get totalOriginalPrice => quantity * originalPricePerUnit;
   double get discountPercent =>
       originalPricePerUnit > 0 ? ((originalPricePerUnit - offeredPricePerUnit) / originalPricePerUnit) * 100 : 0.0;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'listingId': listingId,
+    'itemId': itemId,
+    'buyerName': buyerName,
+    'sellerName': sellerName,
+    'quantity': quantity,
+    'originalPricePerUnit': originalPricePerUnit,
+    'offeredPricePerUnit': offeredPricePerUnit,
+    'direction': direction.name,
+    'status': status.name,
+    'createdAt': createdAt.toIso8601String(),
+    'message': message,
+  };
+
+  static MarketOffer fromJson(Map<String, dynamic> json) {
+    return MarketOffer(
+      id: json['id'] as String,
+      listingId: json['listingId'] as String,
+      itemId: json['itemId'] as String,
+      buyerName: json['buyerName'] as String,
+      sellerName: json['sellerName'] as String,
+      quantity: (json['quantity'] as num).toInt(),
+      originalPricePerUnit: (json['originalPricePerUnit'] as num).toDouble(),
+      offeredPricePerUnit: (json['offeredPricePerUnit'] as num).toDouble(),
+      direction: OfferDirection.values.firstWhere(
+        (e) => e.name == json['direction'],
+        orElse: () => OfferDirection.incoming,
+      ),
+      status: OfferStatus.values.firstWhere(
+        (e) => e.name == json['status'],
+        orElse: () => OfferStatus.pending,
+      ),
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      message: json['message'] as String? ?? '',
+    );
+  }
 }

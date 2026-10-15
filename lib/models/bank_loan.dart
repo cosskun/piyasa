@@ -14,6 +14,26 @@ class LoanInstallment {
     required this.remainingBalanceAfter,
     this.isPaid = false,
   });
+
+  Map<String, dynamic> toJson() => {
+    'installmentNumber': installmentNumber,
+    'principalAmount': principalAmount,
+    'interestAmount': interestAmount,
+    'totalAmount': totalAmount,
+    'remainingBalanceAfter': remainingBalanceAfter,
+    'isPaid': isPaid,
+  };
+
+  static LoanInstallment fromJson(Map<String, dynamic> json) {
+    return LoanInstallment(
+      installmentNumber: (json['installmentNumber'] as num).toInt(),
+      principalAmount: (json['principalAmount'] as num).toDouble(),
+      interestAmount: (json['interestAmount'] as num).toDouble(),
+      totalAmount: (json['totalAmount'] as num).toDouble(),
+      remainingBalanceAfter: (json['remainingBalanceAfter'] as num).toDouble(),
+      isPaid: json['isPaid'] as bool? ?? false,
+    );
+  }
 }
 
 class BankLoan {
@@ -82,5 +102,37 @@ class BankLoan {
     }
 
     return result;
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'principal': principal,
+    'interestRate': interestRate,
+    'totalInstallments': totalInstallments,
+    'paidInstallments': paidInstallments,
+    'remainingPrincipal': remainingPrincipal,
+    'remainingInterest': remainingInterest,
+    'takenAt': takenAt.toIso8601String(),
+    'schedule': schedule.map((i) => i.toJson()).toList(),
+    'nextInstallmentTimer': nextInstallmentTimer,
+  };
+
+  static BankLoan fromJson(Map<String, dynamic> json) {
+    return BankLoan(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      principal: (json['principal'] as num).toDouble(),
+      interestRate: (json['interestRate'] as num).toDouble(),
+      totalInstallments: (json['totalInstallments'] as num).toInt(),
+      paidInstallments: (json['paidInstallments'] as num?)?.toInt() ?? 0,
+      remainingPrincipal: (json['remainingPrincipal'] as num).toDouble(),
+      remainingInterest: (json['remainingInterest'] as num).toDouble(),
+      takenAt: DateTime.tryParse(json['takenAt'] as String? ?? '') ?? DateTime.now(),
+      schedule: (json['schedule'] as List<dynamic>? ?? [])
+          .map((i) => LoanInstallment.fromJson(i as Map<String, dynamic>))
+          .toList(),
+      nextInstallmentTimer: (json['nextInstallmentTimer'] as num?)?.toDouble() ?? 0.0,
+    );
   }
 }

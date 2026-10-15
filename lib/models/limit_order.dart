@@ -36,4 +36,35 @@ class LimitBuyOrder {
   bool get isPending => status == LimitOrderStatus.pending;
   bool get isCompleted => status == LimitOrderStatus.completed;
   bool get isCancelled => status == LimitOrderStatus.cancelled;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'itemId': itemId,
+    'targetPrice': targetPrice,
+    'quantity': quantity,
+    'totalReservedCost': totalReservedCost,
+    'createdAt': createdAt.toIso8601String(),
+    'status': status.name,
+    'executedAt': executedAt?.toIso8601String(),
+    'executedPrice': executedPrice,
+    'statusMessage': statusMessage,
+  };
+
+  static LimitBuyOrder fromJson(Map<String, dynamic> json) {
+    return LimitBuyOrder(
+      id: json['id'] as String,
+      itemId: json['itemId'] as String,
+      targetPrice: (json['targetPrice'] as num).toDouble(),
+      quantity: (json['quantity'] as num).toInt(),
+      totalReservedCost: (json['totalReservedCost'] as num).toDouble(),
+      createdAt: DateTime.tryParse(json['createdAt'] as String? ?? '') ?? DateTime.now(),
+      status: LimitOrderStatus.values.firstWhere(
+        (e) => e.name == json['status'],
+        orElse: () => LimitOrderStatus.pending,
+      ),
+      executedAt: json['executedAt'] != null ? DateTime.tryParse(json['executedAt'] as String) : null,
+      executedPrice: (json['executedPrice'] as num?)?.toDouble(),
+      statusMessage: json['statusMessage'] as String?,
+    );
+  }
 }

@@ -129,6 +129,7 @@ class NotificationService {
     required String body,
     required String payload,
   }) async {
+    if (!_isInitialized) return;
     try {
       const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
         'piyasa_game_notifications',

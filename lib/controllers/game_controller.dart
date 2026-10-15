@@ -10,6 +10,7 @@ import '../models/market_offer.dart';
 import '../models/bank_loan.dart';
 import '../models/limit_order.dart';
 import '../services/notification_service.dart';
+import '../services/save_service.dart';
 
 class GameController extends ChangeNotifier {
   // Finans (Sıfırdan Başlangıç Sermayesi - Çoklu Tesis Alımına Uygun)
@@ -62,6 +63,7 @@ class GameController extends ChangeNotifier {
   void toggleTheme() {
     isDarkMode = !isDarkMode;
     notifyListeners();
+    saveState();
   }
 
   // Sayaçlar ve Simülasyon
@@ -72,6 +74,7 @@ class GameController extends ChangeNotifier {
   double _statsHourlyRevenue = 0.0;
   double _communityRefreshTimer = 0.0;
   double _incomingOfferTimer = 0.0;
+  double _autoSaveTickTimer = 0.0;
 
   static const List<String> _simulatedSellers = [
     'Anadolu Tahıl Ticaret',
@@ -94,10 +97,13 @@ class GameController extends ChangeNotifier {
     'Aselsan Mikro Elektronik',
   ];
 
-  GameController() {
+  GameController({bool autoLoad = false}) {
     _initializeMarket();
     _initializeCommunityListings();
     _startGameLoop();
+    if (autoLoad) {
+      loadFromStorage();
+    }
   }
 
   void _initializeMarket() {
@@ -439,6 +445,12 @@ class GameController extends ChangeNotifier {
       }
     }
 
+    _autoSaveTickTimer += dt;
+    if (_autoSaveTickTimer >= 3.0) {
+      _autoSaveTickTimer = 0.0;
+      saveState();
+    }
+
     notifyListeners();
   }
 
@@ -504,6 +516,7 @@ class GameController extends ChangeNotifier {
     warehouse[itemId] = (warehouse[itemId] ?? 0) + qty;
     mItem.updatePrice(bias: 0.02, rnd: _random);
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -525,6 +538,7 @@ class GameController extends ChangeNotifier {
     cash += totalEarnings;
     mItem.updatePrice(bias: -0.02, rnd: _random);
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -573,6 +587,7 @@ class GameController extends ChangeNotifier {
 
     limitBuyOrders.insert(0, order);
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -584,6 +599,7 @@ class GameController extends ChangeNotifier {
     order.status = LimitOrderStatus.cancelled;
     order.statusMessage = 'İptal edildi.';
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -657,6 +673,7 @@ class GameController extends ChangeNotifier {
       communityListings.remove(listing);
     }
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -694,6 +711,7 @@ class GameController extends ChangeNotifier {
 
     offers.insert(0, offer);
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -720,6 +738,7 @@ class GameController extends ChangeNotifier {
       }
     }
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -733,6 +752,7 @@ class GameController extends ChangeNotifier {
     if (listing == null || listing.remainingQuantity < offer.quantity) {
       offer.status = OfferStatus.expired;
       notifyListeners();
+      saveState();
       return 'İlanınızdaki ürünler pazarda tam fiyattan satıldığı için bu teklif otomatik olarak kapandı.';
     }
 
@@ -746,12 +766,14 @@ class GameController extends ChangeNotifier {
       activeListings.remove(listing);
     }
     notifyListeners();
+    saveState();
     return null;
   }
 
   void rejectIncomingOffer(MarketOffer offer) {
     offer.status = OfferStatus.rejected;
     notifyListeners();
+    saveState();
   }
 
   // === KENDİ BELİRLEDİĞİN FİYATLA PAZARA İLAN KOYMA ===
@@ -783,6 +805,7 @@ class GameController extends ChangeNotifier {
 
     activeListings.add(listing);
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -808,6 +831,7 @@ class GameController extends ChangeNotifier {
 
     activeListings.remove(listing);
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -824,6 +848,7 @@ class GameController extends ChangeNotifier {
       ownedFacilities.add(bp.copy());
     }
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -847,6 +872,7 @@ class GameController extends ChangeNotifier {
     }
     latestNotificationToast = '🎉 $packageName başarıyla kuruldu! Tesisleriniz üretime başladı.';
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -859,6 +885,7 @@ class GameController extends ChangeNotifier {
     cash -= cost;
     fac.level++;
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -873,6 +900,7 @@ class GameController extends ChangeNotifier {
     cash += refund;
     latestNotificationToast = '💰 ${fac.emoji} ${fac.name} satıldı ve ${refund.toStringAsFixed(0)} ₺ nakite dönüştürüldü.';
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -884,6 +912,7 @@ class GameController extends ChangeNotifier {
     cash -= bp.purchaseCost;
     ownedStores.add(bp.copy());
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -897,6 +926,7 @@ class GameController extends ChangeNotifier {
     store.level++;
     store.shelfCapacity += 25;
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -944,12 +974,14 @@ class GameController extends ChangeNotifier {
     }
     latestNotificationToast = detail;
     notifyListeners();
+    saveState();
     return null;
   }
 
   void toggleStoreAutoRestock(RetailStore store, bool val) {
     store.autoRestock = val;
     notifyListeners();
+    saveState();
   }
 
   // === BANKA İŞLEMLERİ ===
@@ -958,6 +990,7 @@ class GameController extends ChangeNotifier {
     cash -= amount;
     bankSavings += amount;
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -966,6 +999,7 @@ class GameController extends ChangeNotifier {
     bankSavings -= amount;
     cash += amount;
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -1015,6 +1049,7 @@ class GameController extends ChangeNotifier {
 
     cash += principal;
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -1024,6 +1059,7 @@ class GameController extends ChangeNotifier {
     if (nextIdx >= currentLoan!.schedule.length) {
       currentLoan = null;
       notifyListeners();
+      saveState();
       return null;
     }
 
@@ -1047,6 +1083,7 @@ class GameController extends ChangeNotifier {
     }
 
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -1063,6 +1100,7 @@ class GameController extends ChangeNotifier {
         '🎉 ${currentLoan!.title} kredisi erken kapatıldı! (%50 faiz indirimi uygulandı)';
     currentLoan = null;
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -1088,6 +1126,7 @@ class GameController extends ChangeNotifier {
     cash -= pay;
     _legacyActiveLoan -= pay;
     notifyListeners();
+    saveState();
     return null;
   }
 
@@ -1099,11 +1138,173 @@ class GameController extends ChangeNotifier {
     cash -= cost;
     maxWarehouseCapacity += 500; // +500 kg kapasite
     notifyListeners();
+    saveState();
     return null;
+  }
+
+  // === OYUN KAYDI & YEREL DEPOLAMA (PERSISTENCE) ===
+  void saveState() {
+    SaveService().save(this);
+  }
+
+  Future<bool> loadFromStorage() async {
+    return await SaveService().load(this);
+  }
+
+  Future<void> resetProgress() async {
+    await SaveService().clear();
+    cash = 30000.0;
+    bankSavings = 0.0;
+    _legacyActiveLoan = 0.0;
+    currentLoan = null;
+    maxWarehouseCapacity = 500.0;
+    warehouse.clear();
+    ownedFacilities.clear();
+    ownedStores.clear();
+    activeListings.clear();
+    offers.clear();
+    limitBuyOrders.clear();
+    _initializeMarket();
+    _initializeCommunityListings();
+    notifyListeners();
+  }
+
+  Map<String, dynamic> toSaveJson() {
+    return {
+      'version': 1,
+      'savedAt': DateTime.now().toIso8601String(),
+      'cash': cash,
+      'bankSavings': bankSavings,
+      'maxWarehouseCapacity': maxWarehouseCapacity,
+      'isDarkMode': isDarkMode,
+      'currentLoan': currentLoan?.toJson(),
+      'warehouse': Map<String, int>.from(warehouse),
+      'marketItems': marketItems.map((k, v) => MapEntry(k, v.toJson())),
+      'ownedFacilities': ownedFacilities.map((f) => f.toJson()).toList(),
+      'ownedStores': ownedStores.map((s) => s.toJson()).toList(),
+      'activeListings': activeListings.map((l) => l.toJson()).toList(),
+      'communityListings': communityListings.map((l) => l.toJson()).toList(),
+      'offers': offers.map((o) => o.toJson()).toList(),
+      'limitBuyOrders': limitBuyOrders.map((o) => o.toJson()).toList(),
+    };
+  }
+
+  void loadFromSaveJson(Map<String, dynamic> data) {
+    if (data.containsKey('cash')) {
+      cash = (data['cash'] as num).toDouble();
+    }
+    if (data.containsKey('bankSavings')) {
+      bankSavings = (data['bankSavings'] as num).toDouble();
+    }
+    if (data.containsKey('maxWarehouseCapacity')) {
+      maxWarehouseCapacity = (data['maxWarehouseCapacity'] as num).toDouble();
+    }
+    if (data.containsKey('isDarkMode')) {
+      isDarkMode = data['isDarkMode'] as bool? ?? isDarkMode;
+    }
+
+    if (data['currentLoan'] != null) {
+      try {
+        currentLoan = BankLoan.fromJson(data['currentLoan'] as Map<String, dynamic>);
+      } catch (e) {
+        debugPrint('Error loading currentLoan: $e');
+      }
+    } else {
+      currentLoan = null;
+    }
+
+    if (data['warehouse'] != null) {
+      warehouse.clear();
+      final wh = data['warehouse'] as Map<String, dynamic>;
+      wh.forEach((k, v) {
+        int cnt = (v as num).toInt();
+        if (cnt > 0) warehouse[k] = cnt;
+      });
+    }
+
+    if (data['marketItems'] != null) {
+      final mItems = data['marketItems'] as Map<String, dynamic>;
+      mItems.forEach((k, v) {
+        if (v is Map<String, dynamic> && marketItems.containsKey(k)) {
+          marketItems[k] = MarketItem.fromJson(v);
+        }
+      });
+    }
+
+    if (data['ownedFacilities'] != null) {
+      ownedFacilities.clear();
+      for (var f in data['ownedFacilities'] as List) {
+        try {
+          final fac = ProductionFacility.fromJson(f as Map<String, dynamic>);
+          if (fac != null) ownedFacilities.add(fac);
+        } catch (e) {
+          debugPrint('Error loading facility: $e');
+        }
+      }
+    }
+
+    if (data['ownedStores'] != null) {
+      ownedStores.clear();
+      for (var s in data['ownedStores'] as List) {
+        try {
+          final store = RetailStore.fromJson(s as Map<String, dynamic>);
+          if (store != null) ownedStores.add(store);
+        } catch (e) {
+          debugPrint('Error loading store: $e');
+        }
+      }
+    }
+
+    if (data['activeListings'] != null) {
+      activeListings.clear();
+      for (var l in data['activeListings'] as List) {
+        try {
+          activeListings.add(MarketListing.fromJson(l as Map<String, dynamic>));
+        } catch (e) {
+          debugPrint('Error loading activeListing: $e');
+        }
+      }
+    }
+
+    if (data['communityListings'] != null && (data['communityListings'] as List).isNotEmpty) {
+      communityListings.clear();
+      for (var c in data['communityListings'] as List) {
+        try {
+          communityListings.add(MarketListing.fromJson(c as Map<String, dynamic>));
+        } catch (e) {
+          debugPrint('Error loading communityListing: $e');
+        }
+      }
+    }
+
+    if (data['offers'] != null) {
+      offers.clear();
+      for (var o in data['offers'] as List) {
+        try {
+          offers.add(MarketOffer.fromJson(o as Map<String, dynamic>));
+        } catch (e) {
+          debugPrint('Error loading offer: $e');
+        }
+      }
+    }
+
+    if (data['limitBuyOrders'] != null) {
+      limitBuyOrders.clear();
+      for (var ord in data['limitBuyOrders'] as List) {
+        try {
+          limitBuyOrders.add(LimitBuyOrder.fromJson(ord as Map<String, dynamic>));
+        } catch (e) {
+          debugPrint('Error loading limitBuyOrder: $e');
+        }
+      }
+    }
+
+    notifyListeners();
   }
 
   @override
   void dispose() {
+    saveState();
     _gameLoopTimer?.cancel();
     super.dispose();
   }
