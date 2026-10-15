@@ -14,13 +14,14 @@ class InventorySheet extends StatelessWidget {
     final usedWeight = controller.currentWarehouseWeight;
     final maxWeight = controller.maxWarehouseCapacity;
     final ratio = (usedWeight / maxWeight).clamp(0.0, 1.0);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       padding: const EdgeInsets.all(20),
       height: MediaQuery.of(context).size.height * 0.70,
-      decoration: const BoxDecoration(
-        color: Color(0xFF141926),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF141926) : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -28,18 +29,22 @@ class InventorySheet extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Row(
+              Row(
                 children: [
-                  Text('📦', style: TextStyle(fontSize: 26)),
-                  SizedBox(width: 8),
+                  const Text('📦', style: TextStyle(fontSize: 26)),
+                  const SizedBox(width: 8),
                   Text(
                     'Merkezi Silo ve Depom',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
                   ),
                 ],
               ),
               IconButton(
-                icon: const Icon(Icons.close, color: Colors.white70),
+                icon: Icon(Icons.close, color: isDark ? Colors.white70 : const Color(0xFF64748B)),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
@@ -52,7 +57,11 @@ class InventorySheet extends StatelessWidget {
             children: [
               Text(
                 'Doluluk: ${usedWeight.toStringAsFixed(0)} / ${maxWeight.toStringAsFixed(0)} kg (%${(ratio * 100).toInt()})',
-                style: const TextStyle(fontSize: 13, color: Colors.white70),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white70 : const Color(0xFF334155),
+                ),
               ),
               TextButton.icon(
                 onPressed: () {
@@ -63,7 +72,9 @@ class InventorySheet extends StatelessWidget {
                 },
                 icon: const Icon(Icons.upgrade, size: 16),
                 label: const Text('+500 kg Kapasite Al'),
-                style: TextButton.styleFrom(foregroundColor: Colors.amberAccent),
+                style: TextButton.styleFrom(
+                  foregroundColor: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                ),
               ),
             ],
           ),
@@ -72,9 +83,11 @@ class InventorySheet extends StatelessWidget {
             child: LinearProgressIndicator(
               value: ratio,
               minHeight: 8,
-              backgroundColor: Colors.black26,
+              backgroundColor: isDark ? Colors.black26 : const Color(0xFFE2E8F0),
               valueColor: AlwaysStoppedAnimation<Color>(
-                ratio > 0.85 ? Colors.redAccent : Colors.amberAccent,
+                ratio > 0.85
+                    ? Colors.redAccent
+                    : (isDark ? Colors.amberAccent : const Color(0xFFD97706)),
               ),
             ),
           ),
@@ -83,11 +96,11 @@ class InventorySheet extends StatelessWidget {
           // Stok Listesi
           Expanded(
             child: controller.warehouse.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       'Deponuz şu an tamamen boş.\nTarlalarınızdan hasat toplayabilir veya pazardan toptan mal çekebilirsiniz.',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey),
+                      style: TextStyle(color: isDark ? Colors.grey : const Color(0xFF64748B)),
                     ),
                   )
                 : ListView(
@@ -99,18 +112,29 @@ class InventorySheet extends StatelessWidget {
                       final totalVal = unitVal * count;
 
                       return Card(
-                        color: const Color(0xFF1E283E),
+                        color: isDark ? const Color(0xFF1E283E) : const Color(0xFFF8FAFC),
                         margin: const EdgeInsets.only(bottom: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          side: BorderSide(
+                            color: isDark ? Colors.transparent : const Color(0xFFE2E8F0),
+                          ),
+                        ),
                         child: ListTile(
                           leading: Text(item?.emoji ?? '📦', style: const TextStyle(fontSize: 26)),
                           title: Text(
                             item?.name ?? entry.key,
-                            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
                           ),
                           subtitle: Text(
                             'Toplam Ağırlık: ${(count * (item?.weight ?? 1.0)).toStringAsFixed(1)} kg',
-                            style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                            ),
                           ),
                           trailing: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -118,15 +142,19 @@ class InventorySheet extends StatelessWidget {
                             children: [
                               Text(
                                 '$count Adet',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,
-                                  color: Colors.amberAccent,
+                                  color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
                                 ),
                               ),
                               Text(
                                 'Borsa Değeri: ${currencyFmt.format(totalVal)} ₺',
-                                style: const TextStyle(fontSize: 11, color: Colors.greenAccent),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.greenAccent : const Color(0xFF059669),
+                                ),
                               ),
                             ],
                           ),

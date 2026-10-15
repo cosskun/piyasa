@@ -32,6 +32,41 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onControllerUpdate() {
+    if (widget.controller.latestNotificationToast != null) {
+      final msg = widget.controller.latestNotificationToast!;
+      widget.controller.clearNotificationToast();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  msg.contains('ONAYLANDI')
+                      ? Icons.check_circle_outline
+                      : (msg.contains('REDDEDİLDİ') ? Icons.cancel_outlined : Icons.notifications_active),
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    msg,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: msg.contains('ONAYLANDI')
+                ? const Color(0xFF059669)
+                : (msg.contains('REDDEDİLDİ') ? const Color(0xFFDC2626) : const Color(0xFF2563EB)),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      });
+    }
     if (mounted) setState(() {});
   }
 
@@ -39,148 +74,244 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final c = widget.controller;
     final currencyFmt = NumberFormat("#,##0", "tr_TR");
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0F131D),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
         child: Column(
           children: [
             // === ÜST BİLGİ VE FİNANS ÇUBUĞU (HUD) ===
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: const BoxDecoration(
-                color: Color(0xFF161C2C),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF161C2C) : Colors.white,
+                border: Border(
+                  bottom: BorderSide(
+                    color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                    width: 1,
+                  ),
+                ),
                 boxShadow: [
-                  BoxShadow(color: Colors.black38, blurRadius: 6, offset: Offset(0, 3)),
+                  BoxShadow(
+                    color: isDark ? Colors.black38 : Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
                 ],
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  // Logo & İsim
+                  // 1. Satır: Logo & Hızlı İşlem Butonları (Banka, Depo, Tema)
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Text('💰', style: TextStyle(fontSize: 22)),
-                      ),
-                      const SizedBox(width: 8),
-                      const Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      // Logo & İsim
+                      Row(
                         children: [
-                          Text(
-                            'PİYASA',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.5,
-                              color: Colors.amberAccent,
+                          Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.amber.withOpacity(0.2) : const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(8),
                             ),
+                            child: const Text('💰', style: TextStyle(fontSize: 22)),
                           ),
-                          Text(
-                            'Ticaret & Borsa',
-                            style: TextStyle(fontSize: 10, color: Colors.grey),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'PİYASA',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: 1.5,
+                                  color: isDark ? Colors.amberAccent : const Color(0xFF0F766E),
+                                ),
+                              ),
+                              Text(
+                                'Ticaret & Borsa',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.grey : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
+                      ),
+                      const Spacer(),
+
+                      // Depo Butonu
+                      InkWell(
+                        onTap: () => showModalBottomSheet(
+                          context: context,
+                          backgroundColor: Colors.transparent,
+                          isScrollControlled: true,
+                          builder: (_) => InventorySheet(controller: c),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.blueGrey[800] : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isDark ? Colors.transparent : const Color(0xFFCBD5E1),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.inventory_2_outlined,
+                                size: 16,
+                                color: isDark ? Colors.white : const Color(0xFF334155),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${c.currentWarehouseWeight.toInt()} kg',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+
+                      // Banka Butonu
+                      ElevatedButton.icon(
+                        onPressed: () => showDialog(
+                          context: context,
+                          builder: (_) => BankDialog(controller: c),
+                        ),
+                        icon: const Icon(Icons.account_balance, size: 15),
+                        label: const Text('Banka'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isDark ? Colors.blueAccent[700] : const Color(0xFF2563EB),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+
+                      // Tema Değiştirme Butonu (Dark / Light)
+                      IconButton(
+                        onPressed: () => c.toggleTheme(),
+                        icon: Icon(
+                          isDark ? Icons.light_mode : Icons.dark_mode,
+                          color: isDark ? Colors.amberAccent : const Color(0xFF475569),
+                        ),
+                        tooltip: isDark ? 'Açık Temaya Geç' : 'Karanlık Temaya Geç',
                       ),
                     ],
                   ),
-                  const Spacer(),
+                  const SizedBox(height: 8),
 
-                  // Nakit Göstergesi
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0D121D),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.greenAccent.withOpacity(0.4)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Kasadaki Nakit', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                        Text(
-                          '${currencyFmt.format(c.cash)} ₺',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.greenAccent,
+                  // 2. Satır: Nakit & Net Servet Finansal Kartları
+                  Row(
+                    children: [
+                      // Nakit Göstergesi
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0D121D) : const Color(0xFFECFDF5),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.greenAccent.withOpacity(0.4)
+                                  : const Color(0xFF10B981).withOpacity(0.4),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.account_balance_wallet_outlined,
+                                size: 18,
+                                color: isDark ? Colors.greenAccent : const Color(0xFF059669),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Kasadaki Nakit',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: isDark ? Colors.grey : const Color(0xFF047857),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${currencyFmt.format(c.cash)} ₺',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.greenAccent : const Color(0xFF065F46),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
+                      ),
+                      const SizedBox(width: 8),
 
-                  // Net Servet
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0D121D),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.amber.withOpacity(0.4)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text('Net Servet', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                        Text(
-                          '${currencyFmt.format(c.netWorth)} ₺',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.amberAccent,
+                      // Net Servet Göstergesi
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0D121D) : const Color(0xFFFFFBEB),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isDark
+                                  ? Colors.amber.withOpacity(0.4)
+                                  : const Color(0xFFF59E0B).withOpacity(0.4),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.trending_up,
+                                size: 18,
+                                color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Net Servet',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        color: isDark ? Colors.grey : const Color(0xFFB45309),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${currencyFmt.format(c.netWorth)} ₺',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.amberAccent : const Color(0xFF92400E),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-
-                  // Depo Butonu
-                  InkWell(
-                    onTap: () => showModalBottomSheet(
-                      context: context,
-                      backgroundColor: Colors.transparent,
-                      isScrollControlled: true,
-                      builder: (_) => InventorySheet(controller: c),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.blueGrey[800],
-                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.inventory_2_outlined, size: 16, color: Colors.white),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${c.currentWarehouseWeight.toInt()} kg',
-                            style: const TextStyle(fontSize: 12, color: Colors.white),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-
-                  // Banka Butonu
-                  ElevatedButton.icon(
-                    onPressed: () => showDialog(
-                      context: context,
-                      builder: (_) => BankDialog(controller: c),
-                    ),
-                    icon: const Icon(Icons.account_balance, size: 16),
-                    label: const Text('Banka'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueAccent[700],
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -203,34 +334,63 @@ class _HomeScreenState extends State<HomeScreen> {
 
       // === ALT GEZİNME ÇUBUĞU (TABS) ===
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: Color(0xFF141926),
-          border: Border(top: BorderSide(color: Colors.white10)),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentTabIndex,
-          onTap: (index) => setState(() => _currentTabIndex = index),
-          backgroundColor: Colors.transparent,
-          selectedItemColor: Colors.amberAccent,
-          unselectedItemColor: Colors.grey,
-          elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.agriculture),
-              activeIcon: Icon(Icons.agriculture, color: Colors.amberAccent),
-              label: '🌾 Tesislerim (Üretim)',
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF141926) : Colors.white,
+          border: Border(
+            top: BorderSide(
+              color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
             ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.candlestick_chart),
-              activeIcon: Icon(Icons.candlestick_chart, color: Colors.amberAccent),
-              label: '📊 Hammadde Borsası',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.storefront),
-              activeIcon: Icon(Icons.storefront, color: Colors.amberAccent),
-              label: '🏪 Dükkanlarım (Perakende)',
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: isDark ? Colors.black26 : Colors.black.withOpacity(0.04),
+              blurRadius: 6,
+              offset: const Offset(0, -2),
             ),
           ],
+        ),
+        child: SafeArea(
+          top: false,
+          child: BottomNavigationBar(
+            currentIndex: _currentTabIndex,
+            onTap: (index) => setState(() => _currentTabIndex = index),
+            backgroundColor: Colors.transparent,
+            type: BottomNavigationBarType.fixed,
+            selectedItemColor: isDark ? Colors.amberAccent : const Color(0xFF0F766E),
+            unselectedItemColor: isDark ? Colors.grey : const Color(0xFF64748B),
+            selectedFontSize: 13,
+            unselectedFontSize: 12,
+            selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
+            elevation: 0,
+            items: [
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.agriculture_outlined),
+                activeIcon: Icon(Icons.agriculture),
+                label: 'Tesislerim',
+              ),
+              BottomNavigationBarItem(
+                icon: Badge(
+                  isLabelVisible: c.totalActiveOffersBadge > 0,
+                  label: Text('${c.totalActiveOffersBadge}'),
+                  backgroundColor: Colors.redAccent,
+                  child: const Icon(Icons.candlestick_chart_outlined),
+                ),
+                activeIcon: Badge(
+                  isLabelVisible: c.totalActiveOffersBadge > 0,
+                  label: Text('${c.totalActiveOffersBadge}'),
+                  backgroundColor: Colors.redAccent,
+                  child: const Icon(Icons.candlestick_chart),
+                ),
+                label: 'Borsa & Pazar',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.storefront_outlined),
+                activeIcon: Icon(Icons.storefront),
+                label: 'Dükkanlarım',
+              ),
+            ],
+          ),
         ),
       ),
     );

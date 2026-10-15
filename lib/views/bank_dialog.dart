@@ -13,8 +13,6 @@ class BankDialog extends StatefulWidget {
 
 class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  double _depositInput = 1000;
-  double _loanInput = 5000;
 
   @override
   void initState() {
@@ -32,9 +30,10 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
   Widget build(BuildContext context) {
     final currencyFmt = NumberFormat("#,##0", "tr_TR");
     final c = widget.controller;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Dialog(
-      backgroundColor: const Color(0xFF141A29),
+      backgroundColor: isDark ? const Color(0xFF141A29) : Colors.white,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         width: 480,
@@ -47,13 +46,17 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
               children: [
                 const Text('🏦', style: TextStyle(fontSize: 28)),
                 const SizedBox(width: 10),
-                const Text(
+                Text(
                   'Merkez Ticaret Bankası',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white70),
+                  icon: Icon(Icons.close, color: isDark ? Colors.white70 : const Color(0xFF64748B)),
                   onPressed: () => Navigator.pop(context),
                 ),
               ],
@@ -64,15 +67,16 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.black26,
+                color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
                 borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: isDark ? Colors.transparent : const Color(0xFFE2E8F0)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  _statItem('Vadesiz Kasa', '${currencyFmt.format(c.cash)} ₺', Colors.greenAccent),
-                  _statItem('Vadeli Mevduat', '${currencyFmt.format(c.bankSavings)} ₺', Colors.amberAccent),
-                  _statItem('Aktif Kredi Borcu', '${currencyFmt.format(c.activeLoan)} ₺', Colors.redAccent),
+                  _statItem('Vadesiz Kasa', '${currencyFmt.format(c.cash)} ₺', isDark ? Colors.greenAccent : const Color(0xFF059669), isDark),
+                  _statItem('Vadeli Mevduat', '${currencyFmt.format(c.bankSavings)} ₺', isDark ? Colors.amberAccent : const Color(0xFFD97706), isDark),
+                  _statItem('Aktif Kredi Borcu', '${currencyFmt.format(c.activeLoan)} ₺', isDark ? Colors.redAccent : const Color(0xFFDC2626), isDark),
                 ],
               ),
             ),
@@ -80,9 +84,10 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
 
             TabBar(
               controller: _tabController,
-              indicatorColor: Colors.amberAccent,
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.grey,
+              indicatorColor: isDark ? Colors.amberAccent : const Color(0xFF0F766E),
+              labelColor: isDark ? Colors.white : const Color(0xFF0F172A),
+              unselectedLabelColor: isDark ? Colors.grey : const Color(0xFF64748B),
+              labelStyle: const TextStyle(fontWeight: FontWeight.bold),
               tabs: const [
                 Tab(text: 'Vadeli Mevduat (Faiz)'),
                 Tab(text: 'Banka Kredisi'),
@@ -99,9 +104,12 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         '💡 Paranızı vadeli hesaba yatırarak her saat %0.5 faiz geliri elde edin.',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white70 : const Color(0xFF475569),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       Row(
@@ -111,7 +119,10 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                               onPressed: c.cash >= 1000 ? () => c.depositToBank(1000) : null,
                               icon: const Icon(Icons.arrow_upward, size: 16),
                               label: const Text('+1.000 ₺ Yatır'),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700]),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isDark ? Colors.green[700] : const Color(0xFF059669),
+                                foregroundColor: Colors.white,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -120,7 +131,10 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                               onPressed: c.cash >= 5000 ? () => c.depositToBank(5000) : null,
                               icon: const Icon(Icons.arrow_upward, size: 16),
                               label: const Text('+5.000 ₺ Yatır'),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.green[800]),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isDark ? Colors.green[800] : const Color(0xFF047857),
+                                foregroundColor: Colors.white,
+                              ),
                             ),
                           ),
                         ],
@@ -131,7 +145,10 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                           Expanded(
                             child: OutlinedButton(
                               onPressed: c.cash > 0 ? () => c.depositToBank(c.cash) : null,
-                              style: OutlinedButton.styleFrom(foregroundColor: Colors.greenAccent),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: isDark ? Colors.greenAccent : const Color(0xFF059669),
+                                side: BorderSide(color: isDark ? Colors.greenAccent : const Color(0xFF059669)),
+                              ),
                               child: const Text('Tüm Kasayı Yatır'),
                             ),
                           ),
@@ -139,7 +156,10 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                           Expanded(
                             child: OutlinedButton(
                               onPressed: c.bankSavings > 0 ? () => c.withdrawFromBank(c.bankSavings) : null,
-                              style: OutlinedButton.styleFrom(foregroundColor: Colors.amberAccent),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                side: BorderSide(color: isDark ? Colors.amberAccent : const Color(0xFFD97706)),
+                              ),
                               child: const Text('Mevduatı Geri Çek'),
                             ),
                           ),
@@ -152,9 +172,12 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         '⚠️ Büyümeyi hızlandırmak için kredi çekin. Kredinin saatlik %1.2 faiz yükü vardır.',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.white70 : const Color(0xFF475569),
+                        ),
                       ),
                       const SizedBox(height: 16),
                       Row(
@@ -169,7 +192,10 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                               },
                               icon: const Icon(Icons.attach_money, size: 16),
                               label: const Text('5.000 ₺ Kredi Çek'),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent[700]),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isDark ? Colors.blueAccent[700] : const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -183,7 +209,10 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                               },
                               icon: const Icon(Icons.attach_money, size: 16),
                               label: const Text('20.000 ₺ Kredi Çek'),
-                              style: ElevatedButton.styleFrom(backgroundColor: Colors.indigo[700]),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isDark ? Colors.indigo[700] : const Color(0xFF1D4ED8),
+                                foregroundColor: Colors.white,
+                              ),
                             ),
                           ),
                         ],
@@ -196,6 +225,7 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                           label: const Text('Kredi Borcunu Kapat'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.redAccent[700],
+                            foregroundColor: Colors.white,
                             minimumSize: const Size.fromHeight(40),
                           ),
                         ),
@@ -210,10 +240,16 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
     );
   }
 
-  Widget _statItem(String label, String value, Color col) {
+  Widget _statItem(String label, String value, Color col, bool isDark) {
     return Column(
       children: [
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            color: isDark ? Colors.grey : const Color(0xFF64748B),
+          ),
+        ),
         const SizedBox(height: 2),
         Text(value, style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: col)),
       ],

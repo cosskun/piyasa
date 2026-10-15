@@ -18,11 +18,15 @@ class MarketItem {
 
   ItemData get data => ItemRegistry.get(itemId)!;
 
-  // Oyuncu pazardan toptan alırken ödediği fiyat (%3 borsa payı)
-  double get wholesaleBuyPrice => double.parse((currentPrice * 1.03).toStringAsFixed(2));
+  // Hızlı Alış Fiyatı (Sistemden anında toptan çekme)
+  double get quickBuyPrice => double.parse((currentPrice * 1.08).toStringAsFixed(2));
 
-  // Oyuncunun pazara toptan satarken kazandığı net nakit (%3 komisyon kesintisi)
-  double get wholesaleSellPrice => double.parse((currentPrice * 0.97).toStringAsFixed(2));
+  // Hızlı Satış Fiyatı (Sisteme anında satıp acil nakite çevirme: Düşük kâr marjı, %15 iskonto)
+  double get quickSellPrice => double.parse((currentPrice * 0.85).toStringAsFixed(2));
+
+  // Geriye dönük uyumluluk için alias
+  double get wholesaleBuyPrice => quickBuyPrice;
+  double get wholesaleSellPrice => quickSellPrice;
 
   void updatePrice({double bias = 0.0, required Random rnd}) {
     // -%4 ile +%4 arası rastgele piyasa dalgalanması + alım/satım bias'ı
