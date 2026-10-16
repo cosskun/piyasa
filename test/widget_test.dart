@@ -892,7 +892,6 @@ void main() {
 
     expect(find.text('⭐ Sv. 7'), findsOneWidget);
     expect(find.text('Holding Sahibi'), findsOneWidget);
-    expect(find.text('🏦 Kredi Açık'), findsOneWidget);
 
     // Tap level row to open level progression dialog
     await tester.tap(find.text('⭐ Sv. 7'));

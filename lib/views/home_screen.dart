@@ -838,26 +838,6 @@ class _HomeScreenState extends State<HomeScreen> {
                                   ),
                                 ),
                               ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: c.canTakeBankLoan
-                                      ? (isDark ? Colors.greenAccent.withOpacity(0.15) : const Color(0xFFECFDF5))
-                                      : (isDark ? Colors.amber.withOpacity(0.15) : const Color(0xFFFEF3C7)),
-                                  borderRadius: BorderRadius.circular(5),
-                                ),
-                                child: Text(
-                                  c.canTakeBankLoan ? '🏦 Kredi Açık' : '🔒 Kredi: Sv. 5',
-                                  style: TextStyle(
-                                    fontSize: 9.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: c.canTakeBankLoan
-                                        ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
-                                        : (isDark ? Colors.amberAccent : const Color(0xFFB45309)),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 4),
                               Icon(
                                 Icons.chevron_right,
                                 size: 16,
