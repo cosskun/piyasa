@@ -612,7 +612,17 @@ void main() {
     // Verify dialog shows title and live demand info
     expect(find.textContaining('Satış Fiyatı'), findsWidgets);
     expect(find.textContaining('Piyasa Perakende Fiyatı:'), findsOneWidget);
+    expect(find.textContaining('Talep: %'), findsOneWidget);
     expect(find.text('Fiyatı Onayla'), findsOneWidget);
+
+    // Tap Piyasa preset chip to test "⚡ Dengeli Piyasa Talebi" rendering
+    final piyasaChip = find.textContaining('⚖️ Piyasa');
+    expect(piyasaChip, findsOneWidget);
+    await tester.tap(piyasaChip);
+    await tester.pumpAndSettle();
+
+    expect(find.text('⚡ Dengeli Piyasa Talebi'), findsOneWidget);
+    expect(find.textContaining('Talep: %'), findsOneWidget);
 
     controller.dispose();
   });

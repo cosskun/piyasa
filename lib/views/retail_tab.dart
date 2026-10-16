@@ -891,27 +891,28 @@ class RetailTab extends StatelessWidget {
 
             if (demandPercent >= 130) {
               demandColor = isDark ? Colors.greenAccent : const Color(0xFF059669);
-              demandTitle = '🔥 Çok Yüksek Talep (+%${demandPercent - 100})';
+              demandTitle = '🔥 Çok Yüksek Talep';
               demandDesc = 'Fiyat piyasanın altında! Müşteriler mağazanıza akın edecek ve raflarınız kapış kapış satılacaktır.';
             } else if (demandPercent >= 105) {
               demandColor = isDark ? Colors.greenAccent : const Color(0xFF059669);
-              demandTitle = '🔥 Yüksek Talep (+%${demandPercent - 100})';
+              demandTitle = '🔥 Yüksek Talep';
               demandDesc = 'İndirimli fiyat sayesinde satışlar standarttan daha hızlı gerçekleşir.';
             } else if (demandPercent >= 90) {
               demandColor = isDark ? Colors.lightBlueAccent : const Color(0xFF2563EB);
-              demandTitle = '⚡ Dengeli Piyasa Talebi (%$demandPercent)';
+              demandTitle = '⚡ Dengeli Piyasa Talebi';
               demandDesc = 'Piyasa fiyatı ile tam uyumlu. Düzenli ve standart hızda müşteri akışı sağlanır.';
             } else if (demandPercent >= 60) {
               demandColor = isDark ? Colors.amberAccent : const Color(0xFFD97706);
-              demandTitle = '🐢 Düşük Talep (-%${100 - demandPercent})';
+              demandTitle = '🐢 Düşük Talep';
               demandDesc = 'Fiyat piyasanın üzerinde. Birim başına kârınız yüksek ancak müşteriler daha seyrek satın alır.';
             } else {
               demandColor = Colors.redAccent;
-              demandTitle = '⚠️ Aşırı Pahalı! (-%${100 - demandPercent})';
+              demandTitle = '⚠️ Aşırı Pahalı';
               demandDesc = 'Fiyat piyasa ortalamasının çok üstünde! Müşterilerin çoğu pahalı bulup almaktan vazgeçecektir.';
             }
 
             return AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               backgroundColor: isDark ? const Color(0xFF182032) : Colors.white,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               title: Row(
@@ -1095,21 +1096,33 @@ class RetailTab extends StatelessWidget {
                         children: [
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              Text(
-                                demandTitle,
-                                style: TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: demandColor,
+                              Expanded(
+                                child: Text(
+                                  demandTitle,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: demandColor,
+                                  ),
                                 ),
                               ),
-                              Text(
-                                'Talep: %$demandPercent',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: demandColor,
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                                decoration: BoxDecoration(
+                                  color: demandColor.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: demandColor.withOpacity(0.35)),
+                                ),
+                                child: Text(
+                                  'Talep: %$demandPercent',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: demandColor,
+                                  ),
                                 ),
                               ),
                             ],
