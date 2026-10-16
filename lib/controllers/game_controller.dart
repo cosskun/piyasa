@@ -155,7 +155,12 @@ class GameController extends ChangeNotifier {
     }
   }
 
+  bool _isGameLoopPaused = false;
+  bool get isGameLoopPaused => _isGameLoopPaused;
+
   void _startGameLoop() {
+    if (_isGameLoopPaused) return;
+    _gameLoopTimer?.cancel();
     const tickIntervalMs = 100; // 0.1 saniye
     const deltaSeconds = tickIntervalMs / 1000.0;
 
@@ -164,9 +169,28 @@ class GameController extends ChangeNotifier {
     });
   }
 
+  /// Oyun arka plana alındığında aktif döngüyü duraklatır ve son aktiflik zamanını kilitler
+  void pauseGameLoop() {
+    if (_isGameLoopPaused) return;
+    _isGameLoopPaused = true;
+    _gameLoopTimer?.cancel();
+    _gameLoopTimer = null;
+    saveState();
+  }
+
+  /// Oyuna geri dönüldüğünde çevrimdışı süreci tamamlar ve döngüyü yeniden başlatır
+  Future<void> resumeGameLoop() async {
+    if (!_isGameLoopPaused && _gameLoopTimer != null) return;
+    _isGameLoopPaused = false;
+    await onAppResumed();
+    _startGameLoop();
+  }
+
   void tickForTesting(double dt) => _tick(dt);
 
   void _tick(double dt) {
+    if (_isGameLoopPaused) return;
+
     // 1. Tarlalar ve Fabrikalar
     for (var fac in ownedFacilities) {
       if (!fac.isProducing) continue;
@@ -1864,7 +1888,7 @@ class GameController extends ChangeNotifier {
     final Map<String, int> producedItems = {};
     bool warehouseFull = false;
 
-    if (totalSeconds < 5) {
+    if (totalSeconds < 3) {
       lastActiveAt = now;
       return OfflineCatchUpReport(
         elapsedDuration: elapsed,
@@ -2119,6 +2143,17 @@ class GameController extends ChangeNotifier {
           'totalLoanPaidAmount': totalLoanPaidAmount,
         },
       );
+    } else if (elapsed.inSeconds >= 4) {
+      if (ownedFacilities.any((f) => f.isProducing)) {
+        latestNotificationToast =
+            '⏱️ Tekrar hoş geldiniz! (${report.formattedDuration} çevrimdışı kaldınız). Tesislerinizin üretim süreci ilerletildi.';
+      } else if (ownedFacilities.isEmpty && ownedStores.isEmpty) {
+        latestNotificationToast =
+            '⏱️ Tekrar hoş geldiniz! (${report.formattedDuration} çevrimdışı kaldınız). Çevrimdışı pasif kazanç için Üretim sekmesinden tarla veya fabrika kurabilirsiniz.';
+      } else {
+        latestNotificationToast =
+            '⏱️ Tekrar hoş geldiniz! (${report.formattedDuration} çevrimdışı kaldınız). İşletmeleriniz hazır bekliyor.';
+      }
     }
 
     notifyListeners();
@@ -2136,10 +2171,11 @@ class GameController extends ChangeNotifier {
 
   Future<void> onAppResumed() async {
     if (lastActiveAt != null) {
+      final resumeTime = DateTime.now();
+      final elapsed = resumeTime.difference(lastActiveAt!);
       final offlineSales = await FirebaseService().claimOfflineSales();
-      final elapsed = DateTime.now().difference(lastActiveAt!);
-      if (elapsed.inSeconds >= 5) {
-        processOfflineCatchUp(lastActiveAt!, offlineSales: offlineSales);
+      if (elapsed.inSeconds >= 3) {
+        processOfflineCatchUp(lastActiveAt!, toTime: resumeTime, offlineSales: offlineSales);
       }
     }
     lastActiveAt = DateTime.now();

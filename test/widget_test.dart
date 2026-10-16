@@ -1670,6 +1670,47 @@ void main() {
     final logsList = await logsStream.first;
     expect(logsList, isA<List<AuditLog>>());
   });
+
+  testWidgets('App backgrounding pauses game loop, preserves lastActiveAt, and resuming triggers offline catchup and dialog feedback', (WidgetTester tester) async {
+    final controller = GameController();
+
+    // Add a wheat farm (duration: 6 seconds, output: 10 wheat)
+    final farm = ProductionFacility.getBlueprints().firstWhere((f) => f.id == 'wheat_farm').copy();
+    farm.level = 1;
+    farm.isProducing = true;
+    controller.ownedFacilities.add(farm);
+
+    // 1. Simulate app backgrounding
+    expect(controller.isGameLoopPaused, isFalse);
+    controller.pauseGameLoop();
+    expect(controller.isGameLoopPaused, isTrue);
+
+    // 2. Simulate 12 seconds passing while in background
+    controller.lastActiveAt = DateTime.now().subtract(const Duration(seconds: 12));
+
+    // 3. Simulate returning to foreground (resumeGameLoop)
+    await controller.resumeGameLoop();
+    expect(controller.isGameLoopPaused, isFalse);
+
+    // 4. Verify offline report was generated and production happened!
+    expect(controller.latestOfflineReport, isNotNull);
+    final report = controller.latestOfflineReport!;
+    expect(report.hasAnyActivity, isTrue);
+    expect(report.producedItems['wheat'], isNotNull);
+    expect(report.producedItems['wheat']!, greaterThanOrEqualTo(10));
+    expect(controller.warehouse['wheat'], greaterThanOrEqualTo(10));
+
+    // 5. Test without facilities gives informative toast
+    final freshController = GameController();
+    freshController.pauseGameLoop();
+    freshController.lastActiveAt = DateTime.now().subtract(const Duration(seconds: 10));
+    await freshController.resumeGameLoop();
+    expect(freshController.latestNotificationToast, isNotNull);
+    expect(freshController.latestNotificationToast, contains('Tekrar hoş geldiniz'));
+
+    controller.dispose();
+    freshController.dispose();
+  });
 }
 
 

@@ -39,7 +39,7 @@ class OfflineCatchUpReport {
       producedItems.values.fold(0, (sum, count) => sum + count);
 
   bool get hasAnyActivity =>
-      elapsedDuration.inSeconds >= 10 &&
+      elapsedDuration.inSeconds >= 3 &&
       (totalProductionCount > 0 ||
           retailItemsSold > 0 ||
           marketItemsSold > 0 ||
