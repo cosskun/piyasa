@@ -206,7 +206,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(22),
                         child: Image.asset(
-                          'assets/icon/app_icon.png',
+                          'Assets/icon/app_icon.png',
                           fit: BoxFit.cover,
                           errorBuilder: (context, error, stackTrace) {
                             return Container(
