@@ -193,7 +193,11 @@ class GameController extends ChangeNotifier {
 
     // 1. Tarlalar ve Fabrikalar
     for (var fac in ownedFacilities) {
-      if (!fac.isProducing) continue;
+      if (!fac.isProducing) {
+        fac.statusMessage = 'Üretim Durduruldu';
+        fac.progress = 0.0;
+        continue;
+      }
 
       bool canProceed = true;
       fac.recipe.inputs.forEach((inItemId, inCount) {
@@ -1310,6 +1314,19 @@ class GameController extends ChangeNotifier {
     notifyListeners();
     saveState();
     return null;
+  }
+
+  void toggleFacilityProducing(ProductionFacility fac, [bool? val]) {
+    fac.isProducing = val ?? !fac.isProducing;
+    fac.statusMessage = fac.isProducing ? 'Üretim Hazır' : 'Üretim Durduruldu';
+    if (!fac.isProducing) {
+      fac.progress = 0.0;
+    }
+    latestNotificationToast = fac.isProducing
+        ? '🌿 ${fac.emoji} ${fac.name} üretimi başlatıldı.'
+        : '⏸️ ${fac.emoji} ${fac.name} üretimi durduruldu.';
+    notifyListeners();
+    saveState();
   }
 
   String? buyStore(RetailStore bp) {

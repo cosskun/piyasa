@@ -300,13 +300,15 @@ class ProductionTab extends StatelessWidget {
                           ClipRRect(
                             borderRadius: BorderRadius.circular(6),
                             child: LinearProgressIndicator(
-                              value: fac.progress,
+                              value: fac.isProducing ? fac.progress : 0.0,
                               minHeight: 8,
                               backgroundColor: isDark ? Colors.black38 : const Color(0xFFE2E8F0),
                               valueColor: AlwaysStoppedAnimation<Color>(
-                                fac.type == FacilityType.agriculture
-                                    ? (isDark ? Colors.greenAccent[400]! : const Color(0xFF10B981))
-                                    : (isDark ? Colors.cyanAccent[400]! : const Color(0xFF0284C7)),
+                                !fac.isProducing
+                                    ? Colors.grey
+                                    : (fac.type == FacilityType.agriculture
+                                        ? (isDark ? Colors.greenAccent[400]! : const Color(0xFF10B981))
+                                        : (isDark ? Colors.cyanAccent[400]! : const Color(0xFF0284C7))),
                               ),
                             ),
                           ),
@@ -319,23 +321,31 @@ class ProductionTab extends StatelessWidget {
                                   fac.statusMessage,
                                   style: TextStyle(
                                     fontSize: 11,
-                                    color: fac.statusMessage.contains('Dolu') || fac.statusMessage.contains('Bekleniyor')
+                                    fontWeight: !fac.isProducing ? FontWeight.bold : FontWeight.normal,
+                                    color: !fac.isProducing
                                         ? Colors.orangeAccent
-                                        : (isDark ? Colors.white54 : const Color(0xFF64748B)),
+                                        : (fac.statusMessage.contains('Dolu') || fac.statusMessage.contains('Bekleniyor')
+                                            ? Colors.orangeAccent
+                                            : (isDark ? Colors.white54 : const Color(0xFF64748B))),
                                   ),
                                 ),
                               ),
                               const SizedBox(width: 8),
+                              // Üretimi Durdur / Başlat Butonu
                               InkWell(
-                                onTap: () => _showSellFacilityConfirmation(context, fac, currencyFmt, isDark),
+                                onTap: () => controller.toggleFacilityProducing(fac),
                                 borderRadius: BorderRadius.circular(6),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
                                   decoration: BoxDecoration(
-                                    color: isDark ? Colors.red.withOpacity(0.12) : const Color(0xFFFEF2F2),
+                                    color: fac.isProducing
+                                        ? (isDark ? Colors.amber.withOpacity(0.12) : const Color(0xFFFEF3C7))
+                                        : (isDark ? Colors.green.withOpacity(0.18) : const Color(0xFFD1FAE5)),
                                     borderRadius: BorderRadius.circular(6),
                                     border: Border.all(
-                                      color: isDark ? Colors.redAccent.withOpacity(0.5) : const Color(0xFFFCA5A5),
+                                      color: fac.isProducing
+                                          ? (isDark ? Colors.amberAccent.withOpacity(0.6) : const Color(0xFFD97706))
+                                          : (isDark ? Colors.greenAccent : const Color(0xFF059669)),
                                       width: 0.8,
                                     ),
                                   ),
@@ -343,17 +353,21 @@ class ProductionTab extends StatelessWidget {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       Icon(
-                                        Icons.sell_outlined,
+                                        fac.isProducing ? Icons.pause_circle_outline : Icons.play_circle_outline,
                                         size: 12,
-                                        color: isDark ? Colors.redAccent : const Color(0xFFDC2626),
+                                        color: fac.isProducing
+                                            ? (isDark ? Colors.amberAccent : const Color(0xFFB45309))
+                                            : (isDark ? Colors.greenAccent : const Color(0xFF047857)),
                                       ),
                                       const SizedBox(width: 4),
                                       Text(
-                                        'Tesisi Sat (${currencyFmt.format(fac.resaleValue)} ₺)',
+                                        fac.isProducing ? 'Durdur' : 'Başlat',
                                         style: TextStyle(
                                           fontSize: 10.5,
                                           fontWeight: FontWeight.bold,
-                                          color: isDark ? Colors.redAccent : const Color(0xFFDC2626),
+                                          color: fac.isProducing
+                                              ? (isDark ? Colors.amberAccent : const Color(0xFFB45309))
+                                              : (isDark ? Colors.greenAccent : const Color(0xFF047857)),
                                         ),
                                       ),
                                     ],
@@ -361,6 +375,44 @@ class ProductionTab extends StatelessWidget {
                                 ),
                               ),
                             ],
+                          ),
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: InkWell(
+                              onTap: () => _showSellFacilityConfirmation(context, fac, currencyFmt, isDark),
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.red.withOpacity(0.12) : const Color(0xFFFEF2F2),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isDark ? Colors.redAccent.withOpacity(0.5) : const Color(0xFFFCA5A5),
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.sell_outlined,
+                                      size: 12,
+                                      color: isDark ? Colors.redAccent : const Color(0xFFDC2626),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Tesisi Sat (${currencyFmt.format(fac.resaleValue)} ₺)',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.redAccent : const Color(0xFFDC2626),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         ],
                       ),

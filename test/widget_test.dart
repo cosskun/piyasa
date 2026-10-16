@@ -1769,6 +1769,110 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('ProductionFacility toggleProducing pauses and resumes facility and updates UI', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController();
+    final farm = ProductionFacility.getBlueprints().firstWhere((f) => f.id == 'wheat_farm').copy();
+    controller.ownedFacilities.add(farm);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProductionTab(controller: controller),
+        ),
+      ),
+    );
+
+    // Initial state: facility is producing
+    expect(farm.isProducing, isTrue);
+    expect(find.text('Durdur'), findsOneWidget);
+
+    // Tap Durdur
+    await tester.tap(find.text('Durdur'));
+    await tester.pumpAndSettle();
+
+    expect(farm.isProducing, isFalse);
+    expect(farm.statusMessage, contains('Durduruldu'));
+    expect(find.text('Başlat'), findsOneWidget);
+    expect(find.textContaining('Durduruldu'), findsWidgets);
+
+    // Tap Başlat
+    await tester.tap(find.text('Başlat'));
+    await tester.pumpAndSettle();
+
+    expect(farm.isProducing, isTrue);
+    expect(find.text('Durdur'), findsOneWidget);
+
+    controller.dispose();
+  });
+
+  testWidgets('RetailTab allows product slot selling pause/resume and opens store detail sheet', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 850);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController();
+    final grocery = RetailStore.getBlueprints().firstWhere((b) => b.id == 'kiosk_bread').copy();
+    grocery.level = 2;
+    grocery.productSlots.clear();
+    grocery.productSlots.add(StoreProductSlot(
+      itemId: 'bread',
+      shelfCapacity: 50,
+      shelfStock: 30,
+      retailPrice: 20.0,
+      isSelling: true,
+    ));
+    grocery.productSlots.add(StoreProductSlot(
+      itemId: 'flour',
+      shelfCapacity: 50,
+      shelfStock: 20,
+      retailPrice: 25.0,
+      isSelling: true,
+    ));
+    controller.ownedStores.add(grocery);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RetailTab(controller: controller),
+        ),
+      ),
+    );
+
+    // Verify slot toggle buttons are visible
+    expect(find.text('Satışta'), findsNWidgets(2));
+
+    // Tap to pause the first product slot (bread)
+    await tester.tap(find.text('Satışta').first);
+    await tester.pumpAndSettle();
+
+    expect(grocery.productSlots[0].isSelling, isFalse);
+    expect(grocery.productSlots[1].isSelling, isTrue);
+    expect(find.text('Durduruldu'), findsOneWidget);
+
+    // Tap store title or hint to open detail sheet
+    await tester.tap(find.textContaining('Satılabilen ürünleri ve detayları gör'));
+    await tester.pumpAndSettle();
+
+    // Verify detail sheet opened with store name and active shelves
+    expect(find.text('Köşe Büfe & Fırın'), findsWidgets);
+    expect(find.textContaining('Aktif Satış Rafları'), findsOneWidget);
+
+    // Scroll down inside the sheet's ListView to bring catalog into view
+    await tester.drag(find.byType(ListView).last, const Offset(0, -350));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Satılabilen Tüm Ürünler Kataloğu'), findsOneWidget);
+    expect(find.textContaining('Borsa Maliyeti'), findsWidgets);
+    expect(find.textContaining('Perakende Satış'), findsWidgets);
+    expect(find.textContaining('Adet Başı Kâr'), findsWidgets);
+
+    controller.dispose();
+  });
 }
 
 
