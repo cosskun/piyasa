@@ -655,6 +655,7 @@ class GameController extends ChangeNotifier {
   }
 
   String get playerTitle => PlayerLevelInfo.getInfoForLevel(playerLevel).title;
+  PlayerLevelInfo get playerLevelInfo => PlayerLevelInfo.getInfoForLevel(playerLevel);
 
   double get currentLevelMinNetWorth => PlayerLevelInfo.getInfoForLevel(playerLevel).minNetWorth;
 
@@ -2302,6 +2303,11 @@ class GameController extends ChangeNotifier {
       'offers': offers.map((o) => o.toJson()).toList(),
       'limitBuyOrders': limitBuyOrders.map((o) => o.toJson()).toList(),
       'highestNetWorth': highestNetWorth,
+      'netWorth': netWorth,
+      'playerLevel': playerLevel,
+      'playerTitle': playerTitle,
+      'totalFacilitiesCount': ownedFacilities.length,
+      'totalStoresCount': ownedStores.length,
     };
   }
 

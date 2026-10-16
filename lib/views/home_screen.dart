@@ -17,6 +17,7 @@ import '../services/audit_log_service.dart';
 import '../models/audit_log.dart';
 import 'admin_dashboard_view.dart';
 import 'banned_dialog.dart';
+import 'leaderboard_view.dart';
 
 class HomeScreen extends StatefulWidget {
   final GameController controller;
@@ -308,6 +309,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 14),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                LeaderboardView.show(context, controller: widget.controller);
+              },
+              icon: const Icon(Icons.emoji_events_rounded, size: 18),
+              label: const Text(
+                '🏆 Liderlik Tablosu & Sıralama',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF59E0B),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 10),
             if (fb.isAdmin) ...[
               ElevatedButton.icon(
                 onPressed: () {
@@ -398,6 +418,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     children: [
                       // Logo & İsim (FittedBox ile her ekranda kusursuz ölçeklenir)
                       Expanded(
+                        flex: 3,
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
@@ -444,151 +465,184 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(width: 4),
 
-                      // Depo Butonu
-                      InkWell(
-                        onTap: () => setState(() => _currentTabIndex = 1),
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: isDark ? Colors.blueGrey[800] : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: isDark ? Colors.transparent : const Color(0xFFCBD5E1),
-                            ),
-                          ),
+                      // Hızlı İşlem Butonları (FittedBox ile dar ekranlarda taşma yapmadan ölçeklenir)
+                      Expanded(
+                        flex: 5,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.inventory_2_outlined,
-                                size: 14,
-                                color: isDark ? Colors.white : const Color(0xFF334155),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${c.currentWarehouseWeight.toInt()} kg',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                            // Depo Butonu
+                            InkWell(
+                              onTap: () => setState(() => _currentTabIndex = 1),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.blueGrey[800] : const Color(0xFFF1F5F9),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isDark ? Colors.transparent : const Color(0xFFCBD5E1),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.inventory_2_outlined,
+                                      size: 14,
+                                      color: isDark ? Colors.white : const Color(0xFF334155),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${c.currentWarehouseWeight.toInt()} kg',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 5),
+                            ),
+                            const SizedBox(width: 4),
 
-                      // Banka Butonu
-                      InkWell(
-                        onTap: () => showDialog(
-                          context: context,
-                          barrierDismissible: true,
-                          builder: (_) => BankDialog(controller: c),
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: isDark ? Colors.blueAccent[700] : const Color(0xFF2563EB),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.account_balance, size: 13, color: Colors.white),
-                              SizedBox(width: 3),
-                              Text(
-                                'Banka',
-                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
+                            // Banka Butonu
+                            InkWell(
+                              onTap: () => showDialog(
+                                context: context,
+                                barrierDismissible: true,
+                                builder: (_) => BankDialog(controller: c),
                               ),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.blueAccent[700] : const Color(0xFF2563EB),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.account_balance, size: 13, color: Colors.white),
+                                    SizedBox(width: 3),
+                                    Text(
+                                      'Banka',
+                                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+
+                            // Şirket Defteri & İşlem Geçmişi Butonu
+                            InkWell(
+                              onTap: () => LedgerDialog.show(context),
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: isDark ? const Color(0xFF0F766E).withOpacity(0.6) : const Color(0xFFD1FAE5),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.history_edu,
+                                  size: 16,
+                                  color: isDark ? Colors.tealAccent : const Color(0xFF065F46),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+
+                            // Liderlik Tablosu & Sıralama Butonu (🏆)
+                            InkWell(
+                              onTap: () => LeaderboardView.show(context, controller: c),
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.withOpacity(0.2),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.amber, width: 1.2),
+                                ),
+                                child: const Icon(
+                                  Icons.emoji_events_rounded,
+                                  size: 16,
+                                  color: Colors.amber,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+
+                            // Yönetici Paneli Butonu (Sadece Admin Yetkisine Sahip Kullanıcılar İçin)
+                            if (FirebaseService().isAdmin) ...[
+                              InkWell(
+                                onTap: () => Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (_) => const AdminDashboardView()),
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                    color: Colors.amber.withOpacity(0.2),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.amber, width: 1.2),
+                                  ),
+                                  child: const Icon(
+                                    Icons.security_rounded,
+                                    size: 16,
+                                    color: Colors.amber,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
                             ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
 
-                      // Şirket Defteri & İşlem Geçmişi Butonu
-                      InkWell(
-                        onTap: () => LedgerDialog.show(context),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF0F766E).withOpacity(0.6) : const Color(0xFFD1FAE5),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.history_edu,
-                            size: 16,
-                            color: isDark ? Colors.tealAccent : const Color(0xFF065F46),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-
-                      // Yönetici Paneli Butonu (Sadece Admin Yetkisine Sahip Kullanıcılar İçin)
-                      if (FirebaseService().isAdmin) ...[
-                        InkWell(
-                          onTap: () => Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => const AdminDashboardView()),
-                          ),
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.withOpacity(0.2),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.amber, width: 1.2),
+                            // Tema Butonu
+                            InkWell(
+                              onTap: () => c.toggleTheme(),
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  isDark ? Icons.light_mode : Icons.dark_mode,
+                                  size: 16,
+                                  color: isDark ? Colors.amberAccent : const Color(0xFF475569),
+                                ),
+                              ),
                             ),
-                            child: const Icon(
-                              Icons.security_rounded,
-                              size: 16,
-                              color: Colors.amber,
+                            const SizedBox(width: 4),
+
+                            // Profil / Hesap Butonu
+                            InkWell(
+                              onTap: () => _showAccountSheet(context),
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.person_outline,
+                                  size: 16,
+                                  color: isDark ? Colors.amberAccent : const Color(0xFF475569),
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-
-                      // Tema Butonu
-                      InkWell(
-                        onTap: () => c.toggleTheme(),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            isDark ? Icons.light_mode : Icons.dark_mode,
-                            size: 16,
-                            color: isDark ? Colors.amberAccent : const Color(0xFF475569),
-                          ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 4),
-
-                      // Profil / Hesap Butonu
-                      InkWell(
-                        onTap: () => _showAccountSheet(context),
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: BoxDecoration(
-                            color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.person_outline,
-                            size: 16,
-                            color: isDark ? Colors.amberAccent : const Color(0xFF475569),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
+                  ],
                   ),
                   const SizedBox(height: 8),
 
@@ -652,10 +706,10 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(width: 8),
 
-                      // Net Servet Göstergesi
+                      // Net Servet Göstergesi (Dokununca Liderlik Tablosu & Sıralama Açılır)
                       Expanded(
                         child: InkWell(
-                          onTap: () => LedgerDialog.show(context),
+                          onTap: () => LeaderboardView.show(context, controller: c),
                           borderRadius: BorderRadius.circular(10),
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -680,14 +734,29 @@ class _HomeScreenState extends State<HomeScreen> {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(
-                                        'Net Servet',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: isDark ? Colors.grey : const Color(0xFFB45309),
-                                        ),
+                                      Row(
+                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              'Net Servet',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: isDark ? Colors.grey : const Color(0xFFB45309),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '🏆',
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                       Text(
                                         '${currencyFmt.format(c.netWorth)} ₺',
@@ -1053,6 +1122,28 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(dialogCtx).pop();
+                        LeaderboardView.show(context, controller: c);
+                      },
+                      icon: const Icon(Icons.emoji_events_rounded, size: 16),
+                      label: const Text(
+                        '🏆 Oyuncu Sıralamalarını & Liderliği İncele',
+                        style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF59E0B),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),

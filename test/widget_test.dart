@@ -24,6 +24,9 @@ import 'package:piyasa/views/ledger_dialog.dart';
 import 'package:piyasa/views/admin_dashboard_view.dart';
 import 'package:piyasa/views/banned_dialog.dart';
 import 'package:piyasa/views/game_loading_screen.dart';
+import 'package:piyasa/views/leaderboard_view.dart';
+import 'package:piyasa/services/leaderboard_service.dart';
+import 'package:piyasa/models/leaderboard_entry.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -1873,7 +1876,107 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('LeaderboardService streams, ranks, and sorts players by net worth and metrics', (WidgetTester tester) async {
+    final controller = GameController();
+    controller.cash = 1500000.0;
+    controller.bankSavings = 500000.0;
+
+    final stream = LeaderboardService().streamLeaderboard(
+      controller: controller,
+      sortMode: LeaderboardSortMode.netWorth,
+    );
+
+    final list = await stream.first;
+    expect(list, isNotEmpty);
+
+    // Current player should be in the list
+    final me = list.firstWhere((e) => e.isCurrentUser);
+    expect(me.cash, 1500000.0);
+    expect(me.bankSavings, 500000.0);
+    expect(me.netWorth, greaterThanOrEqualTo(2000000.0));
+
+    // Verify list is sorted in descending order
+    for (int i = 0; i < list.length - 1; i++) {
+      expect(list[i].netWorth, greaterThanOrEqualTo(list[i + 1].netWorth));
+      expect(list[i].rank, i + 1);
+    }
+
+    // Verify next rank target helper
+    final target = LeaderboardService().getNextRankTarget(
+      rankedList: list,
+      sortMode: LeaderboardSortMode.netWorth,
+    );
+    if (me.rank > 1) {
+      expect(target.aheadPlayer, isNotNull);
+      expect(target.difference, greaterThan(0));
+    }
+
+    controller.dispose();
+  });
+
+  testWidgets('LeaderboardView renders podium, search, filter chips, and player portfolio sheet', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(500, 950);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController();
+    controller.cash = 3000000.0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: LeaderboardView(controller: controller),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // Verify Title and Subtitle elements
+    expect(find.text('PİYASA LİDERLİK TABLOSU'), findsOneWidget);
+    expect(find.text('Mal Varlığı'), findsWidgets);
+    expect(find.text('Kasa Nakdi'), findsOneWidget);
+    expect(find.text('TİCARETİN ZİRVE LİDERLERİ'), findsOneWidget);
+
+    // Podium ranks
+    expect(find.text('#1'), findsWidgets);
+    expect(find.text('#2'), findsWidgets);
+    expect(find.text('#3'), findsWidgets);
+
+    // Sticky bottom bar
+    expect(find.textContaining('Şirketiniz:'), findsOneWidget);
+
+    // Test filter chip switching
+    await tester.ensureVisible(find.text('Kasa Nakdi'));
+    await tester.tap(find.text('Kasa Nakdi'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+    expect(find.text('Kasa Nakdi'), findsWidgets);
+
+    // Test search field filtering
+    final searchField = find.byType(TextField);
+    expect(searchField, findsOneWidget);
+    await tester.enterText(searchField, 'Koçer');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Koçer'), findsWidgets);
+
+    // Clear search
+    await tester.tap(find.byIcon(Icons.clear_rounded));
+    await tester.pumpAndSettle();
+
+    // Tap first rank card to view player portfolio modal sheet
+    await tester.tap(find.text('#1').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Net Mal Varlığı'), findsOneWidget);
+    expect(find.text('Zirve Servet'), findsWidgets);
+    expect(find.text('Kasadaki Nakit'), findsOneWidget);
+
+    controller.dispose();
+  });
 }
+
 
 
 

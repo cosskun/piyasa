@@ -165,13 +165,39 @@ class FirebaseService {
   // OYUNCU MAL VARLIĞI BULUT SENKRONİZASYONU
   // ==========================================
   Future<void> syncPlayerAssetsToCloud(Map<String, dynamic> assetData, {String? targetPlayerId}) async {
+    final targetId = (targetPlayerId != null && targetPlayerId.isNotEmpty) ? targetPlayerId : playerId;
+
+    // 1. Yerel hesap havuzunu güncelle (Offline / Local modda da sıralama için anlık yansıtır)
+    try {
+      final localAccounts = await getLocalAccounts();
+      for (var acc in localAccounts.values) {
+        if (acc['uid'] == targetId) {
+          if (assetData.containsKey('netWorth')) acc['netWorth'] = assetData['netWorth'];
+          if (assetData.containsKey('highestNetWorth')) acc['highestNetWorth'] = assetData['highestNetWorth'];
+          if (assetData.containsKey('cash')) acc['cash'] = assetData['cash'];
+          if (assetData.containsKey('playerLevel')) acc['level'] = assetData['playerLevel'];
+          if (assetData.containsKey('playerTitle')) acc['levelTitle'] = assetData['playerTitle'];
+          if (assetData.containsKey('companyName')) acc['companyName'] = assetData['companyName'];
+          if (assetData.containsKey('totalFacilitiesCount')) acc['facilitiesCount'] = assetData['totalFacilitiesCount'];
+          if (assetData.containsKey('totalStoresCount')) acc['storesCount'] = assetData['totalStoresCount'];
+          acc['lastActiveAt'] = DateTime.now().toIso8601String();
+          await saveLocalAccount(acc);
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('FirebaseService: Yerel hesap servet güncelleme hatası: $e');
+    }
+
     if (!isCloudConnected) return;
 
-    final targetId = (targetPlayerId != null && targetPlayerId.isNotEmpty) ? targetPlayerId : playerId;
     try {
       final docRef = _firestore!.collection('players').doc(targetId);
       assetData['updatedAt'] = FieldValue.serverTimestamp();
       assetData['companyName'] = companyName;
+      if (_username != null && _username!.isNotEmpty) {
+        assetData['username'] = _username;
+      }
       await docRef.set(assetData, SetOptions(merge: true));
     } catch (e) {
       debugPrint('FirebaseService: Mal varlığı buluta kaydedilemedi: $e');
