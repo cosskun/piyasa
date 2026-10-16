@@ -24,6 +24,17 @@ class FirebaseService {
   String? _username;
   bool _isGuest = false;
 
+  // Baş Yönetici (Admin) Yetkilendirme Bilgileri
+  static const String adminEmail = 'furkanc28@gmail.com';
+  static const String adminUsername = 'COSSKUN';
+
+  String _role = 'user';
+  bool _isBanned = false;
+  String? _banReason;
+  StreamSubscription<DocumentSnapshot>? _banSubscription;
+  final ValueNotifier<bool> isBannedNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<String?> banReasonNotifier = ValueNotifier<String?>(null);
+
   static const String _localPlayerIdKey = 'piyasa_player_unique_id';
   static const String _localCompanyNameKey = 'piyasa_player_company_name';
   static const String _localUsernameKey = 'piyasa_player_username';
@@ -38,6 +49,43 @@ class FirebaseService {
   bool get isGuest => _isGuest;
   bool get isAuthenticated => isLoggedIn || _isGuest;
   String? get email => _auth?.currentUser?.email;
+
+  bool get isAdmin {
+    if (_role == 'admin') return true;
+    final currEmail = (email ?? '').trim().toLowerCase();
+    if (currEmail.isNotEmpty && currEmail == adminEmail.toLowerCase()) return true;
+    final currUser = (_username ?? '').trim().toUpperCase();
+    if (currUser.isNotEmpty && currUser == adminUsername.toUpperCase()) return true;
+    return false;
+  }
+
+  bool get isBanned => _isBanned;
+  String? get banReason => _banReason;
+  String get role => _role;
+
+  void _listenToBanStatus(String uid) {
+    _banSubscription?.cancel();
+    if (!isCloudConnected || _firestore == null) return;
+    try {
+      _banSubscription = _firestore!.collection('players').doc(uid).snapshots().listen((snapshot) {
+        if (snapshot.exists && snapshot.data() != null) {
+          final data = snapshot.data()!;
+          final banned = data['isBanned'] == true;
+          final reason = data['banReason'] as String?;
+          final roleStr = data['role'] as String? ?? 'user';
+          _role = roleStr;
+          _isBanned = banned;
+          _banReason = reason;
+          isBannedNotifier.value = banned;
+          banReasonNotifier.value = reason;
+        }
+      }, onError: (e) {
+        debugPrint('FirebaseService: Ban dinleyici hatası: $e');
+      });
+    } catch (e) {
+      debugPrint('FirebaseService: _listenToBanStatus hatası: $e');
+    }
+  }
 
   Future<void> initialize() async {
     final prefs = await SharedPreferences.getInstance();
@@ -83,12 +131,25 @@ class FirebaseService {
                 _companyName = data['companyName'] as String;
                 await prefs.setString(_localCompanyNameKey, _companyName!);
               }
+              if (data['role'] != null) {
+                _role = data['role'] as String;
+              }
+              _isBanned = data['isBanned'] == true;
+              _banReason = data['banReason'] as String?;
+              isBannedNotifier.value = _isBanned;
+              banReasonNotifier.value = _banReason;
+
+              if (isAdmin && _role != 'admin') {
+                _role = 'admin';
+                _firestore!.collection('players').doc(_playerId).set({'role': 'admin'}, SetOptions(merge: true));
+              }
+              _listenToBanStatus(_playerId!);
             }
           } catch (e) {
             debugPrint('FirebaseService: Oyuncu profili çekilemedi: $e');
           }
         }
-        debugPrint('FirebaseService: Bulut bağlantısı başarıyla kuruldu! (UID: $_playerId, LoggedIn: $isLoggedIn)');
+        debugPrint('FirebaseService: Bulut bağlantısı başarıyla kuruldu! (UID: $_playerId, LoggedIn: $isLoggedIn, Admin: $isAdmin)');
       } catch (e) {
         debugPrint('FirebaseService: Bulut başlatma hatası, yerel modda devam ediliyor: $e');
         _initialized = false;
@@ -382,12 +443,20 @@ class FirebaseService {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      final isAdminUser = cleanEmail.toLowerCase() == adminEmail.toLowerCase() ||
+          cleanUsername.toUpperCase() == adminUsername.toUpperCase();
+      if (isAdminUser) {
+        _role = 'admin';
+      }
+
       batch.set(_firestore!.collection('players').doc(user.uid), {
         'uid': user.uid,
         'username': cleanUsername,
         'username_lowercase': normalizedUsername,
         'email': cleanEmail,
         'companyName': effectiveCompanyName,
+        'role': isAdminUser ? 'admin' : 'user',
+        'isBanned': false,
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
@@ -477,6 +546,24 @@ class FirebaseService {
           _companyName = data['companyName'] as String? ?? '$_username Holding';
           await prefs.setString(_localUsernameKey, _username!);
           await prefs.setString(_localCompanyNameKey, _companyName!);
+
+          if (data['isBanned'] == true) {
+            _isBanned = true;
+            _banReason = data['banReason'] as String? ?? 'Oyun kurallarını ihlal';
+            isBannedNotifier.value = true;
+            banReasonNotifier.value = _banReason;
+            await _auth!.signOut();
+            return 'HESAP_BANLANDI: $_banReason';
+          }
+
+          if (data['role'] != null) {
+            _role = data['role'] as String;
+          }
+          if (isAdmin && _role != 'admin') {
+            _role = 'admin';
+            _firestore!.collection('players').doc(user.uid).set({'role': 'admin'}, SetOptions(merge: true));
+          }
+          _listenToBanStatus(user.uid);
         }
       } catch (e) {
         debugPrint('FirebaseService: Profil çekilemedi: $e');
@@ -513,6 +600,13 @@ class FirebaseService {
 
   /// Çıkış yapma
   Future<void> signOut() async {
+    _banSubscription?.cancel();
+    _isBanned = false;
+    _banReason = null;
+    _role = 'user';
+    isBannedNotifier.value = false;
+    banReasonNotifier.value = null;
+
     try {
       await _auth?.signOut();
     } catch (e) {
@@ -552,6 +646,155 @@ class FirebaseService {
       debugPrint('FirebaseService: İşlem logu Firestore\'a başarıyla yazıldı (${log.action})');
     } catch (e) {
       debugPrint('FirebaseService: Denetim logu buluta kaydedilemedi: $e');
+    }
+  }
+
+  // ==========================================
+  // YÖNETİCİ (ADMIN) & ANTI-CHEAT PANEL METOTLARI
+  // ==========================================
+
+  /// Sistemdeki tüm oyuncuları anlık olarak dinler
+  Stream<List<Map<String, dynamic>>> streamAllPlayers() {
+    if (!isCloudConnected || _firestore == null) {
+      return Stream.value([
+        {
+          'uid': playerId,
+          'username': username ?? 'COSSKUN',
+          'email': email ?? adminEmail,
+          'companyName': companyName,
+          'cash': 100000.0,
+          'netWorth': 250000.0,
+          'level': 5,
+          'isBanned': false,
+          'role': 'admin',
+        }
+      ]);
+    }
+
+    return _firestore!
+        .collection('players')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final data = doc.data();
+              data['uid'] = doc.id;
+              return data;
+            }).toList());
+  }
+
+  /// Belirtilen oyuncunun tüm işlem defteri loglarını dinler
+  Stream<List<AuditLog>> streamPlayerAuditLogs(String targetUid) {
+    if (!isCloudConnected || _firestore == null) {
+      return Stream.value([]);
+    }
+
+    return _firestore!
+        .collection('players')
+        .doc(targetUid)
+        .collection('activity_logs')
+        .orderBy('timestamp', descending: true)
+        .limit(100)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => AuditLog.fromJson(doc.data()))
+            .toList());
+  }
+
+  /// Tüm sunucudaki global denetim loglarını dinler
+  Stream<List<AuditLog>> streamGlobalAuditLogs({int limit = 100}) {
+    if (!isCloudConnected || _firestore == null) {
+      return Stream.value([]);
+    }
+
+    return _firestore!
+        .collection('audit_logs')
+        .orderBy('timestamp', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => AuditLog.fromJson(doc.data()))
+            .toList());
+  }
+
+  /// Oyuncu hesabını banlar ve pazardaki açık ilanlarını otomatik iptal eder
+  Future<String?> banPlayer({required String targetUid, required String reason}) async {
+    if (!isAdmin) return 'Bu işlem için yönetici yetkiniz bulunmamaktadır.';
+    if (!isCloudConnected || _firestore == null) return null;
+
+    try {
+      final cleanReason = reason.trim().isEmpty ? 'Oyun kurallarına aykırı hareket ve hile tespiti' : reason.trim();
+      await _firestore!.collection('players').doc(targetUid).set({
+        'isBanned': true,
+        'banReason': cleanReason,
+        'bannedAt': FieldValue.serverTimestamp(),
+        'bannedBy': username ?? email ?? 'Admin',
+      }, SetOptions(merge: true));
+
+      // Pazardaki açık ilanlarını kapat
+      final openListings = await _firestore!
+          .collection('market_listings')
+          .where('sellerId', isEqualTo: targetUid)
+          .where('isCompleted', isEqualTo: false)
+          .get();
+
+      if (openListings.docs.isNotEmpty) {
+        final batch = _firestore!.batch();
+        for (final doc in openListings.docs) {
+          batch.update(doc.reference, {'isCompleted': true, 'cancelledByAdmin': true});
+        }
+        await batch.commit();
+      }
+
+      // Denetim loguna ban işlemini yaz
+      await writeAuditLog(AuditLog(
+        id: 'ban_${DateTime.now().millisecondsSinceEpoch}',
+        timestamp: DateTime.now(),
+        playerId: targetUid,
+        username: 'Admin ($username)',
+        category: LogCategory.auth,
+        action: 'ADMIN_BAN_PLAYER',
+        title: 'Oyuncu Hesabı Banlandı',
+        description: 'Oyuncu hesabı askıya alındı. Sebep: $cleanReason',
+        amountChange: 0,
+        cashAfter: 0,
+        details: {'targetUid': targetUid, 'reason': cleanReason},
+      ));
+
+      return null;
+    } catch (e) {
+      return 'Banlama hatası: $e';
+    }
+  }
+
+  /// Banlı oyuncunun banını kaldırır
+  Future<String?> unbanPlayer({required String targetUid}) async {
+    if (!isAdmin) return 'Bu işlem için yönetici yetkiniz bulunmamaktadır.';
+    if (!isCloudConnected || _firestore == null) return null;
+
+    try {
+      await _firestore!.collection('players').doc(targetUid).update({
+        'isBanned': false,
+        'banReason': FieldValue.delete(),
+        'unbannedAt': FieldValue.serverTimestamp(),
+        'unbannedBy': username ?? email ?? 'Admin',
+      });
+
+      await writeAuditLog(AuditLog(
+        id: 'unban_${DateTime.now().millisecondsSinceEpoch}',
+        timestamp: DateTime.now(),
+        playerId: targetUid,
+        username: 'Admin ($username)',
+        category: LogCategory.auth,
+        action: 'ADMIN_UNBAN_PLAYER',
+        title: 'Oyuncu Banı Kaldırıldı',
+        description: 'Oyuncu hesabı tekrar aktif edildi.',
+        amountChange: 0,
+        cashAfter: 0,
+        details: {'targetUid': targetUid},
+      ));
+
+      return null;
+    } catch (e) {
+      return 'Ban kaldırma hatası: $e';
     }
   }
 }

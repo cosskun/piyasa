@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 
 enum LogCategory {
   trade,    // Borsa, Pazar Alımı, Satımı, İlan, Teklif
@@ -7,6 +8,59 @@ enum LogCategory {
   finance,  // Banka kredisi, taksit, faiz geliri
   auth,     // Kayıt, giriş, çıkış, misafir
   system,   // Seviye atlama, çevrimdışı kazançlar
+}
+
+extension LogCategoryExt on LogCategory {
+  String get label {
+    switch (this) {
+      case LogCategory.trade:
+        return '🛒 Borsa & Pazar';
+      case LogCategory.facility:
+        return '🏭 Tesis & Üretim';
+      case LogCategory.retail:
+        return '🏪 Mağaza & Satış';
+      case LogCategory.finance:
+        return '🏦 Banka & Finans';
+      case LogCategory.auth:
+        return '🔐 Kimlik & Oturum';
+      case LogCategory.system:
+        return '⚙️ Sistem & Ödül';
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case LogCategory.trade:
+        return Colors.cyanAccent;
+      case LogCategory.facility:
+        return Colors.orangeAccent;
+      case LogCategory.retail:
+        return Colors.purpleAccent;
+      case LogCategory.finance:
+        return Colors.greenAccent;
+      case LogCategory.auth:
+        return Colors.blueAccent;
+      case LogCategory.system:
+        return Colors.amberAccent;
+    }
+  }
+
+  IconData get icon {
+    switch (this) {
+      case LogCategory.trade:
+        return Icons.candlestick_chart;
+      case LogCategory.facility:
+        return Icons.factory;
+      case LogCategory.retail:
+        return Icons.storefront;
+      case LogCategory.finance:
+        return Icons.account_balance;
+      case LogCategory.auth:
+        return Icons.badge;
+      case LogCategory.system:
+        return Icons.settings_suggest;
+    }
+  }
 }
 
 class AuditLog {

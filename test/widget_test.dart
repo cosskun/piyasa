@@ -20,6 +20,8 @@ import 'package:piyasa/services/audit_log_service.dart';
 import 'package:piyasa/models/audit_log.dart';
 import 'package:piyasa/views/auth_screen.dart';
 import 'package:piyasa/views/ledger_dialog.dart';
+import 'package:piyasa/views/admin_dashboard_view.dart';
+import 'package:piyasa/views/banned_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -1325,6 +1327,73 @@ void main() {
     expect(errDep, isNull);
     expect(service.logs.any((l) => l.action == 'BANK_DEPOSIT'), isTrue);
   });
+
+  test('Admin credentials and role authorization test', () {
+    expect(FirebaseService.adminEmail, 'furkanc28@gmail.com');
+    expect(FirebaseService.adminUsername, 'COSSKUN');
+
+    final fb = FirebaseService();
+    // Default guest is not admin
+    expect(fb.isAdmin, isFalse);
+  });
+
+  testWidgets('BannedDialog renders suspension warning, reason, and logout button', (WidgetTester tester) async {
+    bool loggedOutCalled = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BannedDialog(
+            reason: 'Pazar manipülasyonu ve hile tespiti',
+            onLoggedOut: () {
+              loggedOutCalled = true;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('HESABINIZ ASKIYA ALINDI'), findsOneWidget);
+    expect(find.text('Erişim Kısıtlaması & Güvenlik Uyarısı'), findsOneWidget);
+    expect(find.text('Pazar manipülasyonu ve hile tespiti'), findsOneWidget);
+    expect(find.text('İtiraz: furkanc28@gmail.com'), findsOneWidget);
+    expect(find.text('Oturumu Kapat'), findsOneWidget);
+
+    await tester.tap(find.text('Oturumu Kapat'));
+    await tester.pumpAndSettle();
+    expect(loggedOutCalled, isTrue);
+  });
+
+  testWidgets('AdminDashboardView renders tabs, player search, and anti-cheat radar', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(500, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AdminDashboardView(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('YÖNETİCİ & GÜVENLİK PANELİ'), findsOneWidget);
+    expect(find.text('COSSKUN (furkanc28@gmail.com)'), findsOneWidget);
+    expect(find.text('Oyuncular'), findsOneWidget);
+    expect(find.text('Global Defter'), findsOneWidget);
+    expect(find.text('Hile Radarı'), findsOneWidget);
+
+    // Switch to Global Defter tab
+    await tester.tap(find.text('Global Defter'));
+    await tester.pumpAndSettle();
+    expect(find.text('Tüm İşlemler'), findsOneWidget);
+
+    // Switch to Hile Radarı tab
+    await tester.tap(find.text('Hile Radarı'));
+    await tester.pumpAndSettle();
+    expect(find.text('OTOMATİK HİLE & ANOMALİ RADARI'), findsOneWidget);
+  });
 }
+
 
 

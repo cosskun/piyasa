@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/firebase_service.dart';
 import '../services/audit_log_service.dart';
 import '../models/audit_log.dart';
+import 'banned_dialog.dart';
 
 class AuthScreen extends StatefulWidget {
   final VoidCallback onAuthenticated;
@@ -71,8 +72,12 @@ class _AuthScreenState extends State<AuthScreen> {
     if (error != null) {
       setState(() {
         _isLoading = false;
-        _errorMessage = error;
+        _errorMessage = error.startsWith('HESAP_BANLANDI:') ? 'Hesabınız askıya alınmıştır.' : error;
       });
+      if (error.startsWith('HESAP_BANLANDI:')) {
+        final reason = error.replaceFirst('HESAP_BANLANDI:', '').trim();
+        BannedDialog.show(context, reason: reason);
+      }
     } else {
       setState(() {
         _isLoading = false;

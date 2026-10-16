@@ -15,6 +15,8 @@ import 'ledger_dialog.dart';
 import '../services/firebase_service.dart';
 import '../services/audit_log_service.dart';
 import '../models/audit_log.dart';
+import 'admin_dashboard_view.dart';
+import 'banned_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   final GameController controller;
@@ -35,11 +37,21 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerUpdate);
+    FirebaseService().isBannedNotifier.addListener(_checkBanStatus);
     _notificationSub =
         NotificationService().onNotificationTapped.listen(_handlePhoneNotificationTap);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkOfflineReport();
+      _checkBanStatus();
     });
+  }
+
+  void _checkBanStatus() {
+    if (!mounted) return;
+    if (FirebaseService().isBannedNotifier.value) {
+      final reason = FirebaseService().banReasonNotifier.value;
+      BannedDialog.show(context, reason: reason, onLoggedOut: widget.onLoggedOut);
+    }
   }
 
   void _checkOfflineReport() {
@@ -53,6 +65,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    FirebaseService().isBannedNotifier.removeListener(_checkBanStatus);
     _notificationSub?.cancel();
     widget.controller.removeListener(_onControllerUpdate);
     super.dispose();
@@ -295,7 +308,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            if (fb.isAdmin) ...[
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const AdminDashboardView()),
+                  );
+                },
+                icon: const Icon(Icons.security_rounded, size: 18),
+                label: const Text(
+                  '🛡️ Yönetici Paneli (Admin)',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFD97706),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             ElevatedButton.icon(
               onPressed: () async {
                 Navigator.of(ctx).pop();
@@ -491,6 +525,30 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       const SizedBox(width: 4),
+
+                      // Yönetici Paneli Butonu (Sadece Admin Yetkisine Sahip Kullanıcılar İçin)
+                      if (FirebaseService().isAdmin) ...[
+                        InkWell(
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => const AdminDashboardView()),
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.amber, width: 1.2),
+                            ),
+                            child: const Icon(
+                              Icons.security_rounded,
+                              size: 16,
+                              color: Colors.amber,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
 
                       // Tema Butonu
                       InkWell(
