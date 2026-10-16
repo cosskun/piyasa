@@ -5,160 +5,511 @@ import '../controllers/game_controller.dart';
 import '../models/facility.dart';
 import '../models/item.dart';
 
-class ProductionTab extends StatelessWidget {
+class ProductionTab extends StatefulWidget {
   final GameController controller;
 
   const ProductionTab({super.key, required this.controller});
 
   @override
+  State<ProductionTab> createState() => _ProductionTabState();
+}
+
+class _ProductionTabState extends State<ProductionTab> {
+  int _selectedCategoryIndex = 0; // 0: Tümü, 1: Tarım & Kaynak, 2: Fabrika & Sanayi
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
     final currencyFmt = NumberFormat("#,##0", "tr_TR");
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return ListenableBuilder(
       listenable: controller,
-      builder: (context, _) => Scaffold(
-      backgroundColor: Colors.transparent,
-      body: controller.ownedFacilities.isEmpty
-          ? _buildEmptyState(context, isDark, currencyFmt)
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 10,
-                  runSpacing: 10,
+      builder: (context, _) {
+        if (controller.ownedFacilities.isEmpty) {
+          return Scaffold(
+            backgroundColor: Colors.transparent,
+            body: _buildEmptyState(context, isDark, currencyFmt),
+          );
+        }
+
+        final blueprints = ProductionFacility.getBlueprints();
+        final bpOrder = {for (int i = 0; i < blueprints.length; i++) blueprints[i].id: i};
+
+        final totalCount = controller.ownedFacilities.length;
+        final agriCount = controller.ownedFacilities.where((f) => f.type == FacilityType.agriculture).length;
+        final factoryCount = controller.ownedFacilities.where((f) => f.type == FacilityType.factory).length;
+
+        // Kategoriye göre filtrele
+        final filteredFacilities = controller.ownedFacilities.where((fac) {
+          if (_selectedCategoryIndex == 1) return fac.type == FacilityType.agriculture;
+          if (_selectedCategoryIndex == 2) return fac.type == FacilityType.factory;
+          return true;
+        }).toList();
+
+        // Aynı tür tesisleri alt alta getirmek için blueprint sırasına göre sırala
+        filteredFacilities.sort((a, b) {
+          final orderA = bpOrder[a.blueprintId] ?? 999;
+          final orderB = bpOrder[b.blueprintId] ?? 999;
+          if (orderA != orderB) {
+            return orderA.compareTo(orderB);
+          }
+          final idxA = controller.ownedFacilities.indexOf(a);
+          final idxB = controller.ownedFacilities.indexOf(b);
+          return idxA.compareTo(idxB);
+        });
+
+        // Blueprint türü başına sahip olunan tesis haritası
+        final Map<String, List<ProductionFacility>> sameTypeMap = {};
+        for (final f in controller.ownedFacilities) {
+          sameTypeMap.putIfAbsent(f.blueprintId, () => []).add(f);
+        }
+
+        final displayedTotalPerMin = filteredFacilities.fold<double>(
+          0.0,
+          (sum, f) => sum + f.itemsPerMinute,
+        );
+
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  Text(
+                    'Tesislerim ($totalCount)',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _showBuyFacilitySheet(
+                      context,
+                      initialCategory: _selectedCategoryIndex == 1 ? 2 : (_selectedCategoryIndex == 2 ? 3 : 0),
+                    ),
+                    icon: const Icon(Icons.add_business, size: 18),
+                    label: const Text('Yeni Tesis Al'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isDark ? Colors.amber[700] : const Color(0xFFD97706),
+                      foregroundColor: isDark ? Colors.black : Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Kategori Sekmeleri (Tabs)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
                   children: [
-                    Text(
-                      'Tesislerim (${controller.ownedFacilities.length})',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    _buildCategoryTabItem(
+                      index: 0,
+                      title: 'Tümü',
+                      count: totalCount,
+                      icon: Icons.dashboard_outlined,
+                      isDark: isDark,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildCategoryTabItem(
+                      index: 1,
+                      title: '🌾 Tarım & Kaynak',
+                      count: agriCount,
+                      icon: Icons.agriculture_outlined,
+                      isDark: isDark,
+                    ),
+                    const SizedBox(width: 8),
+                    _buildCategoryTabItem(
+                      index: 2,
+                      title: '🏭 Fabrika & Sanayi',
+                      count: factoryCount,
+                      icon: Icons.factory_outlined,
+                      isDark: isDark,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Toplam Üretim Gücü Özeti
+              Container(
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF16233B) : const Color(0xFFE6FFFA),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isDark ? const Color(0xFF0D9488).withOpacity(0.4) : const Color(0xFF99F6E4),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.speed, size: 20, color: Color(0xFF0D9488)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _selectedCategoryIndex == 0
+                            ? '⚡ Tesislerinizin Toplam Üretim Kapasitesi:'
+                            : (_selectedCategoryIndex == 1
+                                ? '🌾 Tarım Tesisleri Üretim Kapasitesi:'
+                                : '🏭 Fabrika Tesisleri Üretim Kapasitesi:'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.grey[300] : const Color(0xFF0F766E),
+                        ),
                       ),
                     ),
-                    ElevatedButton.icon(
-                      onPressed: () => _showBuyFacilitySheet(context),
-                      icon: const Icon(Icons.add_business, size: 18),
-                      label: const Text('Yeni Tesis Al'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isDark ? Colors.amber[700] : const Color(0xFFD97706),
-                        foregroundColor: isDark ? Colors.black : Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    Text(
+                      '~${displayedTotalPerMin.toStringAsFixed(0)} adet / dk',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.tealAccent : const Color(0xFF0D9488),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                // Toplam Üretim Gücü Özeti
-                Builder(
-                  builder: (ctx) {
-                    final totalPerMin = controller.ownedFacilities.fold<double>(
-                      0.0,
-                      (sum, f) => sum + f.itemsPerMinute,
-                    );
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 14),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF16233B) : const Color(0xFFE6FFFA),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: isDark ? const Color(0xFF0D9488).withOpacity(0.4) : const Color(0xFF99F6E4),
-                        ),
-                      ),
-                      child: Row(
+              ),
+
+              if (filteredFacilities.isEmpty)
+                _buildEmptyCategoryView(context, isDark)
+              else
+                ..._buildFacilityListWithGroupHeaders(
+                  context,
+                  filteredFacilities,
+                  sameTypeMap,
+                  isDark,
+                  currencyFmt,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCategoryTabItem({
+    required int index,
+    required String title,
+    required int count,
+    required IconData icon,
+    required bool isDark,
+  }) {
+    final isSelected = _selectedCategoryIndex == index;
+    final primaryColor = index == 1
+        ? (isDark ? Colors.greenAccent[400]! : const Color(0xFF10B981))
+        : (index == 2
+            ? (isDark ? Colors.blueAccent[400]! : const Color(0xFF3B82F6))
+            : (isDark ? Colors.amberAccent[400]! : const Color(0xFFD97706)));
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedCategoryIndex = index;
+        });
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark ? primaryColor.withOpacity(0.2) : primaryColor.withOpacity(0.12))
+              : (isDark ? const Color(0xFF1E283C) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected
+                ? primaryColor
+                : (isDark ? Colors.white12 : const Color(0xFFCBD5E1)),
+            width: isSelected ? 1.4 : 1.0,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 16,
+              color: isSelected
+                  ? primaryColor
+                  : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected
+                    ? (isDark ? Colors.white : const Color(0xFF0F172A))
+                    : (isDark ? Colors.grey[300] : const Color(0xFF475569)),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? primaryColor
+                    : (isDark ? Colors.black26 : const Color(0xFFE2E8F0)),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected
+                      ? (isDark ? Colors.black : Colors.white)
+                      : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyCategoryView(BuildContext context, bool isDark) {
+    final isAgri = _selectedCategoryIndex == 1;
+    final title = isAgri
+        ? 'Henüz Tarım & Hammadde Tesisiniz Yok'
+        : 'Henüz Fabrika & Sanayi Tesisiniz Yok';
+    final desc = isAgri
+        ? 'Tarlalar, maden ocakları veya çiftlikler kurarak sanayi tesislerinizin ihtiyacı olan hammaddeleri üretebilirsiniz.'
+        : 'Tarlalarınızdan çıkan hammaddeleri işleyerek katma değerli nihai ürünler üretmek için yeni bir fabrika kurabilirsiniz.';
+    final emoji = isAgri ? '🌾' : '🏭';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 24),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E283C) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? Colors.white12 : const Color(0xFFE2E8F0),
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 44)),
+          const SizedBox(height: 12),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: isDark ? Colors.white : const Color(0xFF0F172A),
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            desc,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+              height: 1.4,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => _showBuyFacilitySheet(
+              context,
+              initialCategory: isAgri ? 2 : 3,
+            ),
+            icon: const Icon(Icons.add_business, size: 16),
+            label: Text(isAgri ? 'Yeni Tarım Tesisi Satın Al' : 'Yeni Fabrika Satın Al'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isDark ? Colors.amber[700] : const Color(0xFFD97706),
+              foregroundColor: isDark ? Colors.black : Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildFacilityListWithGroupHeaders(
+    BuildContext context,
+    List<ProductionFacility> filteredFacilities,
+    Map<String, List<ProductionFacility>> sameTypeMap,
+    bool isDark,
+    NumberFormat currencyFmt,
+  ) {
+    final widgets = <Widget>[];
+
+    for (int i = 0; i < filteredFacilities.length; i++) {
+      final fac = filteredFacilities[i];
+      final sameTypeFacilities = sameTypeMap[fac.blueprintId] ?? [fac];
+      final isMultiple = sameTypeFacilities.length > 1;
+      final facIndex = sameTypeFacilities.indexOf(fac) + 1;
+      final isFirstOfGroup = i == 0 || filteredFacilities[i - 1].blueprintId != fac.blueprintId;
+
+      // Aynı türden birden fazla tesis varsa, grubun ilk elemanının üstünde zarif bir küme başlığı göster
+      if (isFirstOfGroup && isMultiple) {
+        final groupTotalPerMin = sameTypeFacilities.fold<double>(
+          0.0,
+          (sum, f) => sum + f.itemsPerMinute,
+        );
+
+        widgets.add(
+          Container(
+            margin: EdgeInsets.only(top: i == 0 ? 0 : 10, bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF16233B) : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: isDark ? Colors.tealAccent.withOpacity(0.2) : const Color(0xFFCBD5E1),
+              ),
+            ),
+            child: Row(
+              children: [
+                Text(fac.emoji, style: const TextStyle(fontSize: 16)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${fac.name} Kümesi (${sameTypeFacilities.length} Tesis)',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white70 : const Color(0xFF334155),
+                    ),
+                  ),
+                ),
+                Text(
+                  'Toplam ~${groupTotalPerMin.toStringAsFixed(0)} adet / dk',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.tealAccent : const Color(0xFF0D9488),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+
+      widgets.add(_buildFacilityCard(context, fac, isMultiple, facIndex, isDark, currencyFmt));
+    }
+
+    return widgets;
+  }
+
+  Widget _buildFacilityCard(
+    BuildContext context,
+    ProductionFacility fac,
+    bool isMultiple,
+    int facIndex,
+    bool isDark,
+    NumberFormat currencyFmt,
+  ) {
+    final controller = widget.controller;
+    final outItem = ItemRegistry.get(fac.recipe.outputItemId);
+
+    return Card(
+      color: isDark ? const Color(0xFF1E2638) : Colors.white,
+      margin: const EdgeInsets.only(bottom: 14),
+      elevation: isDark ? 2 : 1.5,
+      shadowColor: Colors.black12,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: fac.type == FacilityType.agriculture
+              ? (isDark ? Colors.green.withOpacity(0.3) : const Color(0xFF10B981).withOpacity(0.4))
+              : (isDark ? Colors.blue.withOpacity(0.3) : const Color(0xFF3B82F6).withOpacity(0.4)),
+          width: 1.2,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(fac.emoji, style: const TextStyle(fontSize: 28)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        runSpacing: 4,
                         children: [
-                          const Icon(Icons.speed, size: 20, color: Color(0xFF0D9488)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '⚡ Tesislerinizin Toplam Üretim Kapasitesi:',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.grey[300] : const Color(0xFF0F766E),
+                          Text(
+                            fac.name,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
+                          ),
+                          if (isMultiple)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.amber.withOpacity(0.18) : const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: isDark ? Colors.amberAccent.withOpacity(0.6) : const Color(0xFFF59E0B),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Text(
+                                '#$facIndex',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                ),
                               ),
                             ),
-                          ),
-                          Text(
-                            '~${totalPerMin.toStringAsFixed(0)} adet / dk',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.tealAccent : const Color(0xFF0D9488),
-                            ),
-                          ),
                         ],
                       ),
-                    );
-                  },
-                ),
-                ...controller.ownedFacilities.map((fac) {
-                  final outItem = ItemRegistry.get(fac.recipe.outputItemId);
-
-                  return Card(
-                    color: isDark ? const Color(0xFF1E2638) : Colors.white,
-                    margin: const EdgeInsets.only(bottom: 14),
-                    elevation: isDark ? 2 : 1.5,
-                    shadowColor: Colors.black12,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      side: BorderSide(
-                        color: fac.type == FacilityType.agriculture
-                            ? (isDark ? Colors.green.withOpacity(0.3) : const Color(0xFF10B981).withOpacity(0.4))
-                            : (isDark ? Colors.blue.withOpacity(0.3) : const Color(0xFF3B82F6).withOpacity(0.4)),
-                        width: 1.2,
+                      const SizedBox(height: 4),
+                      Text(
+                        fac.type == FacilityType.agriculture
+                            ? '🌿 Tarım: Hasat döngüsü'
+                            : '🏭 Fabrika: Reçete üretimi',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                        ),
                       ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(fac.emoji, style: const TextStyle(fontSize: 28)),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      fac.name,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      fac.type == FacilityType.agriculture
-                                          ? '🌿 Tarım: Hasat döngüsü'
-                                          : '🏭 Fabrika: Reçete üretimi',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                     decoration: BoxDecoration(
@@ -418,13 +769,10 @@ class ProductionTab extends StatelessWidget {
                       ),
                     ),
                   );
-                }),
-              ],
-            ),
-    ));
   }
 
-  void _showBuyFacilitySheet(BuildContext context) {
+  void _showBuyFacilitySheet(BuildContext context, {int initialCategory = 0}) {
+    final controller = widget.controller;
     final currencyFmt = NumberFormat("#,##0", "tr_TR");
     final blueprints = ProductionFacility.getBlueprints();
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -437,7 +785,7 @@ class ProductionTab extends StatelessWidget {
       ),
       isScrollControlled: true,
       builder: (ctx) {
-        int filterCategory = 0; // 0: Tümü, 1: Başlangıç (≤15k), 2: Tarım & Kaynak, 3: Fabrika
+        int filterCategory = initialCategory; // 0: Tümü, 1: Başlangıç (≤15k), 2: Tarım & Kaynak, 3: Fabrika
         const starterThreshold = 15000.0;
 
         return StatefulBuilder(
@@ -673,6 +1021,7 @@ class ProductionTab extends StatelessWidget {
     NumberFormat currencyFmt,
     bool isDark,
   ) {
+    final controller = widget.controller;
     final nextLevel = fac.level + 1;
     final cost = fac.upgradeCost;
     final canAfford = controller.cash >= cost;
@@ -847,6 +1196,7 @@ class ProductionTab extends StatelessWidget {
     NumberFormat currencyFmt,
     bool isDark,
   ) {
+    final controller = widget.controller;
     final invested = fac.totalInvestedValue;
     final refund = fac.resaleValue;
     const depreciationPercent = 30; // %70 iade, %30 kesinti
@@ -1022,6 +1372,7 @@ class ProductionTab extends StatelessWidget {
   }
 
   Widget _buildEmptyState(BuildContext context, bool isDark, NumberFormat currencyFmt) {
+    final controller = widget.controller;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),

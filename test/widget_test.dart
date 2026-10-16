@@ -1974,6 +1974,89 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('ProductionTab sorts same-type facilities adjacently with #badges and cluster headers, and category tabs filter properly', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 2200);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController();
+    final blueprints = ProductionFacility.getBlueprints();
+
+    final wheatBp = blueprints.firstWhere((b) => b.id == 'wheat_farm');
+    final flourBp = blueprints.firstWhere((b) => b.id == 'flour_mill');
+    final dairyBp = blueprints.firstWhere((b) => b.id == 'dairy_farm');
+
+    // Add facilities in interleaved (mixed) order
+    controller.ownedFacilities.add(wheatBp.copy(newId: 'wheat_1'));
+    controller.ownedFacilities.add(flourBp.copy(newId: 'flour_1'));
+    controller.ownedFacilities.add(dairyBp.copy(newId: 'dairy_1'));
+    controller.ownedFacilities.add(wheatBp.copy(newId: 'wheat_2'));
+    controller.ownedFacilities.add(flourBp.copy(newId: 'flour_2'));
+
+    expect(controller.ownedFacilities.length, 5);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProductionTab(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verify Header and Category Tabs
+    expect(find.text('Tesislerim (5)'), findsOneWidget);
+    expect(find.text('Tümü'), findsOneWidget);
+    expect(find.text('🌾 Tarım & Kaynak'), findsOneWidget);
+    expect(find.text('🏭 Fabrika & Sanayi'), findsOneWidget);
+
+    // Verify Tab counts
+    expect(find.text('5'), findsWidgets); // Total
+    expect(find.text('3'), findsWidgets); // 2 wheat + 1 dairy = 3 agriculture
+    expect(find.text('2'), findsWidgets); // 2 flour = 2 factory
+
+    // 2. Verify Same-Type Grouping and Badges
+    // Multiple instances should show cluster headers and #1, #2 badges
+    expect(find.textContaining('Buğday Tarlası Kümesi (2 Tesis)'), findsOneWidget);
+    expect(find.textContaining('Un Değirmeni Kümesi (2 Tesis)'), findsOneWidget);
+    expect(find.text('#1'), findsWidgets);
+    expect(find.text('#2'), findsWidgets);
+
+    // 3. Test Switching to Agriculture Tab
+    await tester.ensureVisible(find.text('🌾 Tarım & Kaynak'));
+    await tester.tap(find.text('🌾 Tarım & Kaynak'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    // Agriculture tab should show 3 facilities and capacity
+    expect(find.textContaining('Tarım Tesisleri Üretim Kapasitesi:'), findsOneWidget);
+    expect(find.text('Buğday Tarlası'), findsWidgets);
+    expect(find.text('Mandıra Çiftliği'), findsOneWidget);
+    // Factories should be hidden
+    expect(find.text('Un Değirmeni'), findsNothing);
+
+    // 4. Test Switching to Factory Tab
+    await tester.ensureVisible(find.text('🏭 Fabrika & Sanayi'));
+    await tester.tap(find.text('🏭 Fabrika & Sanayi'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    // Factory tab should show 2 facilities and capacity
+    expect(find.textContaining('Fabrika Tesisleri Üretim Kapasitesi:'), findsOneWidget);
+    expect(find.text('Un Değirmeni'), findsWidgets);
+    expect(find.text('Buğday Tarlası'), findsNothing);
+    expect(find.text('Mandıra Çiftliği'), findsNothing);
+
+    // 5. Test Switching back to All Tab
+    await tester.ensureVisible(find.text('Tümü'));
+    await tester.tap(find.text('Tümü'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Buğday Tarlası'), findsWidgets);
+    expect(find.text('Un Değirmeni'), findsWidgets);
+    expect(find.text('Mandıra Çiftliği'), findsOneWidget);
+
+    controller.dispose();
+  });
 }
 
 
