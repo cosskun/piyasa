@@ -178,4 +178,64 @@ class AuditLogService extends ChangeNotifier {
 
   /// Net finansal akış (Gelir - Gider)
   double get netFlow => totalIncome - totalExpense;
+
+  /// Belirli bir oyuncuya ait kaydedilmiş yerel logları getirir
+  Future<List<AuditLog>> getLogsForPlayer(String playerId) async {
+    if (playerId == _currentPlayerId && _logs.isNotEmpty) {
+      return List.unmodifiable(_logs);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = _getStorageKey(playerId);
+      final raw = prefs.getString(key);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as List;
+        final list = <AuditLog>[];
+        for (final item in decoded) {
+          if (item is Map<String, dynamic>) {
+            list.add(AuditLog.fromJson(item));
+          } else if (item is Map) {
+            list.add(AuditLog.fromJson(Map<String, dynamic>.from(item)));
+          }
+        }
+        list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+        return list;
+      }
+    } catch (e) {
+      debugPrint('AuditLogService: getLogsForPlayer error: $e');
+    }
+    return [];
+  }
+
+  /// Cihazdaki tüm yerel hesaplara ait işlem loglarını birleştirip getirir
+  Future<List<AuditLog>> getAllLocalLogs() async {
+    final Map<String, AuditLog> combined = {};
+    for (var l in _logs) {
+      combined[l.id] = l;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys().where((k) => k.startsWith(_baseStorageKey));
+      for (final k in keys) {
+        final raw = prefs.getString(k);
+        if (raw != null && raw.isNotEmpty) {
+          final decoded = jsonDecode(raw) as List;
+          for (final item in decoded) {
+            if (item is Map<String, dynamic>) {
+              final log = AuditLog.fromJson(item);
+              combined[log.id] = log;
+            } else if (item is Map) {
+              final log = AuditLog.fromJson(Map<String, dynamic>.from(item));
+              combined[log.id] = log;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('AuditLogService: getAllLocalLogs error: $e');
+    }
+    final sorted = combined.values.toList();
+    sorted.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return sorted;
+  }
 }

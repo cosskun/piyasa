@@ -17,6 +17,7 @@ import 'package:piyasa/views/offline_summary_dialog.dart';
 import 'package:piyasa/services/save_service.dart';
 import 'package:piyasa/services/firebase_service.dart';
 import 'package:piyasa/services/audit_log_service.dart';
+import 'package:piyasa/services/notification_service.dart';
 import 'package:piyasa/models/audit_log.dart';
 import 'package:piyasa/views/auth_screen.dart';
 import 'package:piyasa/views/ledger_dialog.dart';
@@ -401,7 +402,7 @@ void main() {
     // Verify state in controller 1
     expect(controller1.ownedFacilities.length, 1);
     expect(controller1.ownedStores.length, 1);
-    expect(controller1.warehouse['wheat'], 80); // 120 - 40 listed
+    expect(controller1.warehouse['wheat'], 120); // Pazara koyulduğunda depodan düşmez, satıldıkça düşer
     expect(controller1.warehouse['flour'], 45);
     expect(controller1.bankSavings, 5000.0);
     expect(controller1.activeListings.length, 1);
@@ -431,7 +432,7 @@ void main() {
     expect(controller2.ownedFacilities.first.name, 'Buğday Tarlası');
     expect(controller2.ownedStores.length, 1);
     expect(controller2.ownedStores.first.name, 'Köşe Büfe & Fırın');
-    expect(controller2.warehouse['wheat'], 80);
+    expect(controller2.warehouse['wheat'], 120);
     expect(controller2.warehouse['flour'], 45);
     expect(controller2.activeListings.length, 1);
     expect(controller2.activeListings.first.pricePerUnit, 9.50);
@@ -1603,6 +1604,71 @@ void main() {
 
     expect(loadedInvoked, isTrue);
     controller.dispose();
+  });
+
+  testWidgets('Market listing retains stock in warehouse until sold, and starting capacity is 5000 kg', (WidgetTester tester) async {
+    final controller = GameController();
+    // 1. Initial capacity is 5000 kg
+    expect(controller.maxWarehouseCapacity, 5000.0);
+
+    // 2. Put 100 wheat in warehouse
+    controller.warehouse['wheat'] = 100;
+    expect(controller.warehouse['wheat'], 100);
+
+    // 3. Create listing for 40 wheat: warehouse MUST NOT decrease immediately
+    final err = controller.createListing('wheat', 40, 1.00);
+    expect(err, isNull);
+    expect(controller.warehouse['wheat'], 100); // Goods remain in warehouse!
+
+    // 4. Over-listing check: attempting to list 70 wheat when only 60 are unlisted fails
+    final errOver = controller.createListing('wheat', 70, 1.00);
+    expect(errOver, isNotNull);
+    expect(errOver, contains('boşta'));
+
+    // 5. Simulate market purchase tick: goods sell and are deducted from warehouse
+    final listing = controller.activeListings.firstWhere((l) => l.itemId == 'wheat');
+    listing.saleProgressTimer = 1.0;
+    controller.tickForTesting(5.0);
+
+    // After tick, some batch was sold and deducted from warehouse
+    expect(controller.warehouse['wheat']!, lessThan(100));
+    expect(controller.warehouse['wheat'], listing.remainingQuantity + (100 - 40));
+
+    // 6. Canceling listing does not duplicate stock into warehouse
+    final stockBeforeCancel = controller.warehouse['wheat']!;
+    controller.cancelListing(listing);
+    expect(controller.warehouse['wheat'], stockBeforeCancel); // Did not re-add!
+
+    controller.dispose();
+  });
+
+  testWidgets('Foreground notification suppression, online/offline status, and unified audit logs test', (WidgetTester tester) async {
+    // 1. Foreground suppression
+    final notif = NotificationService();
+    notif.setAppInForeground(true);
+    expect(notif.isAppInForeground, isTrue);
+
+    // Calling notification in foreground completes silently without exceptions
+    await notif.showIncomingOfferNotification(
+      buyerName: 'Ahmet Usta',
+      itemName: 'Buğday',
+      quantity: 20,
+      price: 5.0,
+    );
+
+    // 2. Online / Offline status
+    final fb = FirebaseService();
+    await fb.setPlayerOnlineStatus(isOnline: true);
+    final accounts = await fb.getLocalAccounts();
+    expect(accounts, isNotNull);
+
+    await fb.setPlayerOnlineStatus(isOnline: false);
+
+    // 3. Unified audit logs
+    final logsStream = fb.streamGlobalAuditLogs(limit: 50);
+    expect(logsStream, isNotNull);
+    final logsList = await logsStream.first;
+    expect(logsList, isA<List<AuditLog>>());
   });
 }
 

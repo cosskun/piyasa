@@ -213,6 +213,35 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
     final role = player['role']?.toString() ?? 'user';
     final isTargetAdmin = role == 'admin' || email.toLowerCase() == FirebaseService.adminEmail.toLowerCase();
 
+    // Çevrimiçi / Çevrimdışı ve Son Görülme Kontrolü
+    final bool rawIsOnline = player['isOnline'] == true;
+    DateTime? lastActive;
+    if (player['lastActiveAt'] != null) {
+      if (player['lastActiveAt'] is String) {
+        lastActive = DateTime.tryParse(player['lastActiveAt'] as String);
+      } else if (player['lastActiveAt'] is int) {
+        lastActive = DateTime.fromMillisecondsSinceEpoch(player['lastActiveAt'] as int);
+      }
+    }
+    // Son 3 dakika içinde aktif mi ve rawIsOnline true mu?
+    final bool isRecentlyActive = lastActive != null &&
+        DateTime.now().difference(lastActive).inMinutes <= 3;
+    final bool isReallyOnline = rawIsOnline && isRecentlyActive;
+
+    String lastSeenText = '';
+    if (lastActive != null && !isReallyOnline) {
+      final diff = DateTime.now().difference(lastActive);
+      if (diff.inMinutes < 1) {
+        lastSeenText = 'Az önce';
+      } else if (diff.inMinutes < 60) {
+        lastSeenText = '${diff.inMinutes} dk önce';
+      } else if (diff.inHours < 24) {
+        lastSeenText = '${diff.inHours} sa önce';
+      } else {
+        lastSeenText = '${diff.inDays} gün önce';
+      }
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -289,24 +318,62 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
                 ),
               ),
               // Durum Rozeti
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isBanned ? Colors.redAccent.withValues(alpha: 0.2) : Colors.green.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isBanned ? Colors.redAccent : Colors.green,
-                    width: 1,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isBanned
+                          ? Colors.redAccent.withValues(alpha: 0.2)
+                          : (isReallyOnline
+                              ? Colors.green.withValues(alpha: 0.2)
+                              : Colors.grey.withValues(alpha: 0.15)),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isBanned
+                            ? Colors.redAccent
+                            : (isReallyOnline ? Colors.green : Colors.grey.shade600),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isBanned
+                                ? Colors.redAccent
+                                : (isReallyOnline ? Colors.greenAccent : Colors.grey),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          isBanned
+                              ? 'BANLANDI'
+                              : (isReallyOnline ? 'ÇEVRİMİÇİ' : 'ÇEVRİMDIŞI'),
+                          style: TextStyle(
+                            color: isBanned
+                                ? Colors.redAccent
+                                : (isReallyOnline ? Colors.greenAccent : Colors.grey.shade400),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                child: Text(
-                  isBanned ? 'BANLANDI' : 'AKTİF',
-                  style: TextStyle(
-                    color: isBanned ? Colors.redAccent : Colors.greenAccent,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                  if (lastSeenText.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      lastSeenText,
+                      style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
@@ -781,89 +848,12 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.8,
-          minChildSize: 0.4,
-          maxChildSize: 0.95,
-          expand: false,
-          builder: (context, scrollController) {
-            return Column(
-              children: [
-                // Tutamaç
-                Container(
-                  margin: const EdgeInsets.symmetric(vertical: 10),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.menu_book_rounded, color: Colors.amber, size: 22),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '$username • Şirket Defteri',
-                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                            Text(
-                              'UID: $targetUid',
-                              style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.grey),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(color: Colors.white12),
-                Expanded(
-                  child: StreamBuilder<List<AuditLog>>(
-                    stream: FirebaseService().streamPlayerAuditLogs(targetUid),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator(color: Colors.amber));
-                      }
-
-                      final logs = snapshot.data ?? [];
-                      if (logs.isEmpty) {
-                        return Center(
-                          child: Text(
-                            'Bu oyuncuya ait işlem kaydı bulunamadı.',
-                            style: TextStyle(color: Colors.grey.shade400),
-                          ),
-                        );
-                      }
-
-                      return ListView.builder(
-                        controller: scrollController,
-                        padding: const EdgeInsets.all(12),
-                        itemCount: logs.length,
-                        itemBuilder: (context, index) {
-                          final log = logs[index];
-                          return _buildLogItemCard(log);
-                        },
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      builder: (context) => _PlayerLedgerBottomSheet(
+        targetUid: targetUid,
+        username: username,
+        currencyFormat: _currencyFormat,
+        dateFormat: _dateFormat,
+      ),
     );
   }
 
@@ -987,6 +977,193 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
           ],
         );
       },
+    );
+  }
+}
+
+class _PlayerLedgerBottomSheet extends StatefulWidget {
+  final String targetUid;
+  final String username;
+  final NumberFormat currencyFormat;
+  final DateFormat dateFormat;
+
+  const _PlayerLedgerBottomSheet({
+    required this.targetUid,
+    required this.username,
+    required this.currencyFormat,
+    required this.dateFormat,
+  });
+
+  @override
+  State<_PlayerLedgerBottomSheet> createState() => _PlayerLedgerBottomSheetState();
+}
+
+class _PlayerLedgerBottomSheetState extends State<_PlayerLedgerBottomSheet> {
+  late final Stream<List<AuditLog>> _playerLogsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    // Stream initState'te bir kez memoize edilerek sonsuz döngü ve titreme engellenir
+    _playerLogsStream = FirebaseService().streamPlayerAuditLogs(widget.targetUid);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.8,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Column(
+          children: [
+            // Tutamaç
+            Container(
+              margin: const EdgeInsets.symmetric(vertical: 10),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.white24,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: Row(
+                children: [
+                  const Icon(Icons.menu_book_rounded, color: Colors.amber, size: 22),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${widget.username} • Şirket Defteri',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                        Text(
+                          'UID: ${widget.targetUid}',
+                          style: TextStyle(color: Colors.grey.shade400, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.grey),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(color: Colors.white12),
+            Expanded(
+              child: StreamBuilder<List<AuditLog>>(
+                stream: _playerLogsStream,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(color: Colors.amber));
+                  }
+
+                  final logs = snapshot.data ?? [];
+                  if (logs.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey.shade600),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Bu oyuncuya ait işlem kaydı bulunamadı.',
+                            style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.all(12),
+                    itemCount: logs.length,
+                    itemBuilder: (context, index) {
+                      final log = logs[index];
+                      return _buildLogCard(log);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildLogCard(AuditLog log) {
+    final amt = log.amountChange ?? 0.0;
+    final isIncome = amt > 0;
+    final isExpense = amt < 0;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        leading: CircleAvatar(
+          backgroundColor: log.category.color.withValues(alpha: 0.15),
+          radius: 18,
+          child: Icon(log.category.icon, color: log.category.color, size: 18),
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${log.username} • ${log.title}',
+                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (amt != 0)
+              Text(
+                '${isIncome ? '+' : ''}${widget.currencyFormat.format(amt)} TL',
+                style: TextStyle(
+                  color: isIncome ? Colors.greenAccent : (isExpense ? Colors.redAccent : Colors.grey),
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+          ],
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 2),
+            Text(
+              log.description,
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  widget.dateFormat.format(log.timestamp),
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                ),
+                Text(
+                  'Kasa: ${widget.currencyFormat.format(log.cashAfter)} TL',
+                  style: TextStyle(color: Colors.amber.shade200, fontSize: 11, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

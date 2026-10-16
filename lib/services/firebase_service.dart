@@ -622,6 +622,7 @@ class FirebaseService {
       await prefs.setString(_localCompanyNameKey, _companyName!);
       await prefs.setBool(_localIsGuestKey, false);
 
+      await setPlayerOnlineStatus(isOnline: true);
       return null;
     }
 
@@ -704,6 +705,7 @@ class FirebaseService {
         debugPrint('FirebaseService: Profil çekilemedi: $e');
       }
 
+      await setPlayerOnlineStatus(isOnline: true);
       return null; // Başarılı!
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
@@ -737,10 +739,12 @@ class FirebaseService {
     await prefs.setString(_localPlayerIdKey, _playerId!);
     await prefs.setString(_localUsernameKey, _username!);
     await prefs.setString(_localCompanyNameKey, _companyName!);
+    await setPlayerOnlineStatus(isOnline: true);
   }
 
   /// Çıkış yapma
   Future<void> signOut() async {
+    await setPlayerOnlineStatus(isOnline: false);
     _banSubscription?.cancel();
     _isBanned = false;
     _banReason = null;
@@ -798,6 +802,94 @@ class FirebaseService {
   // YÖNETİCİ (ADMIN) & ANTI-CHEAT PANEL METOTLARI
   // ==========================================
 
+  /// Oyuncunun çevrimiçi / çevrimdışı durumunu günceller
+  Future<void> setPlayerOnlineStatus({required bool isOnline}) async {
+    final pid = playerId;
+    if (pid.isEmpty) return;
+
+    final nowIso = DateTime.now().toIso8601String();
+
+    // 1. Yerel hesap havuzunda güncelle
+    try {
+      final localAccounts = await getLocalAccounts();
+      for (var acc in localAccounts.values) {
+        if (acc['uid'] == pid) {
+          acc['isOnline'] = isOnline;
+          acc['lastActiveAt'] = nowIso;
+          await saveLocalAccount(acc);
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('FirebaseService: setPlayerOnlineStatus yerel hata: $e');
+    }
+
+    // 2. Cloud Firestore'da güncelle
+    if (isCloudConnected && _firestore != null) {
+      try {
+        await _firestore!.collection('players').doc(pid).set({
+          'isOnline': isOnline,
+          'lastActiveAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('FirebaseService: setPlayerOnlineStatus bulut hata: $e');
+      }
+    }
+  }
+
+  /// Cihazdaki belirli bir oyuncunun yerel loglarını okur
+  Future<List<AuditLog>> getLocalAuditLogsForPlayer(String targetUid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final key = 'piyasa_audit_logs_v2_$targetUid';
+      final raw = prefs.getString(key);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as List;
+        final list = <AuditLog>[];
+        for (final item in decoded) {
+          if (item is Map<String, dynamic>) {
+            list.add(AuditLog.fromJson(item));
+          } else if (item is Map) {
+            list.add(AuditLog.fromJson(Map<String, dynamic>.from(item)));
+          }
+        }
+        return list;
+      }
+    } catch (e) {
+      debugPrint('FirebaseService: getLocalAuditLogsForPlayer error: $e');
+    }
+    return [];
+  }
+
+  /// Cihazdaki tüm yerel oyuncuların loglarını birleştirip getirir
+  Future<List<AuditLog>> getAllLocalAuditLogs() async {
+    final Map<String, AuditLog> map = {};
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys().where((k) => k.startsWith('piyasa_audit_logs_v2_'));
+      for (final k in keys) {
+        final raw = prefs.getString(k);
+        if (raw != null && raw.isNotEmpty) {
+          final decoded = jsonDecode(raw) as List;
+          for (final item in decoded) {
+            if (item is Map<String, dynamic>) {
+              final log = AuditLog.fromJson(item);
+              map[log.id] = log;
+            } else if (item is Map) {
+              final log = AuditLog.fromJson(Map<String, dynamic>.from(item));
+              map[log.id] = log;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('FirebaseService: getAllLocalAuditLogs error: $e');
+    }
+    final list = map.values.toList();
+    list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+    return list;
+  }
+
   /// Sistemdeki tüm oyuncuları anlık olarak dinler
   Stream<List<Map<String, dynamic>>> streamAllPlayers() {
     if (!isCloudConnected || _firestore == null) {
@@ -813,6 +905,8 @@ class FirebaseService {
               'netWorth': 10000.0,
               'level': 1,
               'isBanned': false,
+              'isOnline': true,
+              'lastActiveAt': DateTime.now().toIso8601String(),
               'role': isAdmin ? 'admin' : 'user',
             }
           ];
@@ -831,10 +925,10 @@ class FirebaseService {
             }).toList());
   }
 
-  /// Belirtilen oyuncunun tüm işlem defteri loglarını dinler
+  /// Belirtilen oyuncunun tüm işlem defteri loglarını hem yerel hem buluttan birleştirerek dinler
   Stream<List<AuditLog>> streamPlayerAuditLogs(String targetUid) {
     if (!isCloudConnected || _firestore == null) {
-      return Stream.value([]);
+      return Stream.fromFuture(getLocalAuditLogsForPlayer(targetUid));
     }
 
     return _firestore!
@@ -844,15 +938,26 @@ class FirebaseService {
         .orderBy('timestamp', descending: true)
         .limit(100)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => AuditLog.fromJson(doc.data()))
-            .toList());
+        .asyncMap((snapshot) async {
+      final cloudLogs = snapshot.docs.map((doc) => AuditLog.fromJson(doc.data())).toList();
+      final localLogs = await getLocalAuditLogsForPlayer(targetUid);
+      final Map<String, AuditLog> combined = {};
+      for (var l in cloudLogs) {
+        combined[l.id] = l;
+      }
+      for (var l in localLogs) {
+        combined[l.id] = l;
+      }
+      final result = combined.values.toList();
+      result.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return result;
+    });
   }
 
-  /// Tüm sunucudaki global denetim loglarını dinler
+  /// Tüm sunucudaki global denetim loglarını yerel ve bulut kaynaklarından birleştirerek dinler
   Stream<List<AuditLog>> streamGlobalAuditLogs({int limit = 100}) {
     if (!isCloudConnected || _firestore == null) {
-      return Stream.value([]);
+      return Stream.fromFuture(getAllLocalAuditLogs());
     }
 
     return _firestore!
@@ -860,9 +965,20 @@ class FirebaseService {
         .orderBy('timestamp', descending: true)
         .limit(limit)
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => AuditLog.fromJson(doc.data()))
-            .toList());
+        .asyncMap((snapshot) async {
+      final cloudLogs = snapshot.docs.map((doc) => AuditLog.fromJson(doc.data())).toList();
+      final localLogs = await getAllLocalAuditLogs();
+      final Map<String, AuditLog> combined = {};
+      for (var l in cloudLogs) {
+        combined[l.id] = l;
+      }
+      for (var l in localLogs) {
+        combined[l.id] = l;
+      }
+      final result = combined.values.toList();
+      result.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      return result.take(limit).toList();
+    });
   }
 
   /// Oyuncu hesabını banlar ve pazardaki açık ilanlarını otomatik iptal eder

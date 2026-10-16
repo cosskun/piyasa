@@ -24,7 +24,7 @@ class GameController extends ChangeNotifier {
   double _legacyActiveLoan = 0.0;
   BankLoan? currentLoan;
   double get activeLoan => currentLoan?.remainingTotal ?? _legacyActiveLoan;
-  double maxWarehouseCapacity = 500.0; // 500 kg başlangıç deposu
+  double maxWarehouseCapacity = 5000.0; // 5.000 kg başlangıç deposu ve siloları
 
   // Son aktiflik ve Çevrimdışı Kazanç Raporu
   DateTime? lastActiveAt;
@@ -299,6 +299,15 @@ class GameController extends ChangeNotifier {
       if (listing.saleProgressTimer >= 1.0) {
         listing.saleProgressTimer = 0.0;
         int batch = min(listing.remainingQuantity, max(1, (priceRatio * 2.5).round()));
+
+        // Pazara koyulan ürün satıldıkça merkezi depo ve silolardan düşer
+        int currentStock = warehouse[listing.itemId] ?? 0;
+        int actualDeduct = min(batch, currentStock);
+        if (actualDeduct > 0) {
+          warehouse[listing.itemId] = currentStock - actualDeduct;
+          if (warehouse[listing.itemId]! <= 0) warehouse.remove(listing.itemId);
+        }
+
         listing.remainingQuantity -= batch;
         double earn = batch * listing.pricePerUnit;
         cash += earn;
@@ -1017,6 +1026,17 @@ class GameController extends ChangeNotifier {
       return 'İlanınızdaki ürünler pazarda tam fiyattan satıldığı için bu teklif otomatik olarak kapandı.';
     }
 
+    // Depodan satıldıkça stok düşer
+    int currentStock = warehouse[listing.itemId] ?? 0;
+    if (currentStock < offer.quantity) {
+      offer.status = OfferStatus.expired;
+      notifyListeners();
+      saveState();
+      return 'Deponuzda bu teklifi karşılayacak kadar ${offer.item.name} kalmadı!';
+    }
+    warehouse[listing.itemId] = currentStock - offer.quantity;
+    if (warehouse[listing.itemId]! <= 0) warehouse.remove(listing.itemId);
+
     listing.remainingQuantity -= offer.quantity;
     double earnings = offer.totalOfferedPrice;
     cash += earnings;
@@ -1063,12 +1083,15 @@ class GameController extends ChangeNotifier {
     if (data == null) return 'Ürün bulunamadı.';
 
     int currentStock = warehouse[itemId] ?? 0;
-    if (currentStock < qty) {
-      return 'Deponuzda bu miktarda ${data.name} yok! (Mevcut: $currentStock)';
+    int alreadyListed = activeListings
+        .where((l) => l.itemId == itemId && !l.isCompleted)
+        .fold(0, (sum, l) => sum + l.remainingQuantity);
+
+    if (currentStock < alreadyListed + qty) {
+      return 'Deponuzda bu miktarda boşta ${data.name} yok! (Depo: $currentStock, İlandaki: $alreadyListed)';
     }
 
-    warehouse[itemId] = currentStock - qty;
-    if (warehouse[itemId]! <= 0) warehouse.remove(itemId);
+    // DİKKAT: Ürünler satıldıkça merkezi depo ve silolardan düşer, ilan açarken fiziksel stok depoda kalır.
 
     final listing = MarketListing(
       id: 'list_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(999)}',
@@ -1104,16 +1127,7 @@ class GameController extends ChangeNotifier {
   }
 
   String? cancelListing(MarketListing listing) {
-    if (listing.remainingQuantity > 0) {
-      var data = listing.item;
-      double neededWeight = listing.remainingQuantity * data.weight;
-      if (currentWarehouseWeight + neededWeight > maxWarehouseCapacity) {
-        return 'Deponuzda kalan ürünleri geri alacak yeterli yer yok! Depoyu büyütün.';
-      }
-
-      warehouse[listing.itemId] = (warehouse[listing.itemId] ?? 0) + listing.remainingQuantity;
-    }
-
+    // Ürün ilana koyulduğunda depodan silinmediği için iptal anında depoya iade eklemesi yapılmaz.
     // İlan iptal edilirse bekleyen teklifler de düşer
     for (var off in offers) {
       if (off.direction == OfferDirection.incoming &&
@@ -1130,7 +1144,7 @@ class GameController extends ChangeNotifier {
       category: LogCategory.trade,
       action: 'LISTING_CANCELLED',
       title: 'İlan İptal Edildi: ${listing.item.name}',
-      description: 'Pazar ilanı iptal edildi ve kalan ${listing.remainingQuantity} adet ${listing.item.name} depoya iade edildi.',
+      description: 'Pazar ilanı iptal edildi (${listing.remainingQuantity} adet ${listing.item.name}).',
       cashAfter: cash,
       details: {
         'listingId': listing.id,
@@ -1965,6 +1979,15 @@ class GameController extends ChangeNotifier {
         while (listing.saleProgressTimer >= 1.0 && listing.remainingQuantity > 0) {
           listing.saleProgressTimer -= 1.0;
           int batch = min(listing.remainingQuantity, max(1, (priceRatio * 2.5).round()));
+
+          // Depodan satıldıkça düş
+          int currentStock = warehouse[listing.itemId] ?? 0;
+          int actualDeduct = min(batch, currentStock);
+          if (actualDeduct > 0) {
+            warehouse[listing.itemId] = currentStock - actualDeduct;
+            if (warehouse[listing.itemId]! <= 0) warehouse.remove(listing.itemId);
+          }
+
           listing.remainingQuantity -= batch;
           double earn = batch * listing.pricePerUnit;
           cash += earn;
@@ -1985,6 +2008,15 @@ class GameController extends ChangeNotifier {
       for (var sale in offlineSales) {
         final rev = (sale['totalRevenue'] as num?)?.toDouble() ?? 0.0;
         final qty = (sale['quantity'] as num?)?.toInt() ?? 0;
+        final saleItemId = sale['itemId'] as String?;
+        if (saleItemId != null && qty > 0) {
+          int currentStock = warehouse[saleItemId] ?? 0;
+          int deduct = min(currentStock, qty);
+          if (deduct > 0) {
+            warehouse[saleItemId] = currentStock - deduct;
+            if (warehouse[saleItemId]! <= 0) warehouse.remove(saleItemId);
+          }
+        }
         if (!FirebaseService().isCloudConnected) {
           cash += rev;
         }
@@ -2121,7 +2153,7 @@ class GameController extends ChangeNotifier {
     _legacyActiveLoan = 0.0;
     currentLoan = null;
     highestNetWorth = 10000.0;
-    maxWarehouseCapacity = 500.0;
+    maxWarehouseCapacity = 5000.0; // 5.000 kg başlangıç deposu
     lastActiveAt = DateTime.now();
     latestOfflineReport = null;
     latestNotificationToast = null;
@@ -2235,6 +2267,11 @@ class GameController extends ChangeNotifier {
     }
     if (data.containsKey('maxWarehouseCapacity')) {
       maxWarehouseCapacity = (data['maxWarehouseCapacity'] as num).toDouble();
+      if (maxWarehouseCapacity < 5000.0) {
+        maxWarehouseCapacity = 5000.0;
+      }
+    } else {
+      maxWarehouseCapacity = 5000.0;
     }
     if (data.containsKey('isDarkMode')) {
       isDarkMode = data['isDarkMode'] as bool? ?? isDarkMode;

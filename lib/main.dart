@@ -82,23 +82,33 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
       }
     }
     _isAuthenticated = widget.skipAuthForTesting ?? FirebaseService().isAuthenticated;
+    NotificationService().setAppInForeground(true);
+    if (_isAuthenticated) {
+      FirebaseService().setPlayerOnlineStatus(isOnline: true);
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused ||
+    if (state == AppLifecycleState.resumed) {
+      NotificationService().setAppInForeground(true);
+      FirebaseService().setPlayerOnlineStatus(isOnline: true);
+      _controller.onAppResumed();
+    } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
+      NotificationService().setAppInForeground(false);
+      FirebaseService().setPlayerOnlineStatus(isOnline: false);
       _controller.saveState();
-    } else if (state == AppLifecycleState.resumed) {
-      _controller.onAppResumed();
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    NotificationService().setAppInForeground(false);
+    FirebaseService().setPlayerOnlineStatus(isOnline: false);
     _controller.saveState();
     if (_createdInternally) {
       _controller.dispose();

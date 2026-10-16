@@ -16,6 +16,13 @@ class NotificationService {
 
   bool _isInitialized = false;
 
+  /// Kullanıcı oyun içindeyken (foreground) telefon bildirim çubuğunu rahatsız etmeme bayrağı
+  bool isAppInForeground = true;
+
+  void setAppInForeground(bool inForeground) {
+    isAppInForeground = inForeground;
+  }
+
   Future<void> initialize() async {
     if (_isInitialized) return;
 
@@ -178,6 +185,12 @@ class NotificationService {
     required String body,
     required String payload,
   }) async {
+    // Kullanıcı oyunun içindeyse bildirim telefon çubuğuna düşürülmez.
+    // Oyun içi banner ve toast zaten GameController tarafından anlık gösterilir.
+    if (isAppInForeground) {
+      return;
+    }
+
     if (!_isInitialized) return;
     try {
       const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
