@@ -8,6 +8,7 @@ on:
       - 'pubspec.yaml'
       - 'android/**'
       - 'assets/**'
+      - 'Assets/**'
   workflow_dispatch:
 
 jobs:
