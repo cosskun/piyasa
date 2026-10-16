@@ -912,7 +912,7 @@ class FirebaseService {
           ];
         }
         return accounts.values.toList();
-      });
+      }).asBroadcastStream();
     }
 
     return _firestore!
@@ -928,7 +928,7 @@ class FirebaseService {
   /// Belirtilen oyuncunun tüm işlem defteri loglarını hem yerel hem buluttan birleştirerek dinler
   Stream<List<AuditLog>> streamPlayerAuditLogs(String targetUid) {
     if (!isCloudConnected || _firestore == null) {
-      return Stream.fromFuture(getLocalAuditLogsForPlayer(targetUid));
+      return Stream.fromFuture(getLocalAuditLogsForPlayer(targetUid)).asBroadcastStream();
     }
 
     return _firestore!
@@ -957,7 +957,7 @@ class FirebaseService {
   /// Tüm sunucudaki global denetim loglarını yerel ve bulut kaynaklarından birleştirerek dinler
   Stream<List<AuditLog>> streamGlobalAuditLogs({int limit = 100}) {
     if (!isCloudConnected || _firestore == null) {
-      return Stream.fromFuture(getAllLocalAuditLogs());
+      return Stream.fromFuture(getAllLocalAuditLogs()).asBroadcastStream();
     }
 
     return _firestore!

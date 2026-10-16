@@ -1430,6 +1430,22 @@ void main() {
     await tester.tap(find.text('Hile Radarı'));
     await tester.pumpAndSettle();
     expect(find.text('OTOMATİK HİLE & ANOMALİ RADARI'), findsOneWidget);
+
+    // Switch back to Oyuncular tab
+    await tester.tap(find.text('Oyuncular'));
+    await tester.pumpAndSettle();
+
+    // Swipe left from Oyuncular to Global Defter
+    await tester.drag(find.byType(TabBarView), const Offset(-400, 0));
+    await tester.pumpAndSettle();
+
+    // Swipe left from Global Defter to Hile Radarı
+    await tester.drag(find.byType(TabBarView), const Offset(-400, 0));
+    await tester.pumpAndSettle();
+
+    // Swipe right back
+    await tester.drag(find.byType(TabBarView), const Offset(400, 0));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('AuthScreen does not auto-login upon registration, switches to login tab, pre-fills username, and displays success snackbar', (WidgetTester tester) async {
