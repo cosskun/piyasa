@@ -187,23 +187,39 @@ class _AuthScreenState extends State<AuthScreen> {
                   // 1. OYUN LOGOSU VE BAŞLIK
                   Center(
                     child: Container(
-                      padding: const EdgeInsets.all(18),
+                      width: 90,
+                      height: 90,
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFD97706), Color(0xFFF59E0B)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(24),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.amber.withOpacity(0.35),
-                            blurRadius: 16,
-                            offset: const Offset(0, 6),
+                            color: const Color(0xFFD97706).withValues(alpha: 0.35),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
                           ),
                         ],
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.6),
+                          width: 2,
+                        ),
                       ),
-                      child: const Text('🪙', style: TextStyle(fontSize: 42)),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(22),
+                        child: Image.asset(
+                          'assets/icon/app_icon.png',
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              color: const Color(0xFF0F766E),
+                              child: const Icon(
+                                Icons.storefront_rounded,
+                                color: Colors.amberAccent,
+                                size: 48,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 14),

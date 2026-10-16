@@ -1,6 +1,14 @@
 name: Deploy to TestFlight
 
 on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/deploy_testflight.yml'
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'ios/**'
+      - 'assets/**'
   workflow_dispatch:
 
 jobs:
