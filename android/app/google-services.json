@@ -1,0 +1,295 @@
+{
+  "project_info": {
+    "project_number": "842382725401",
+    "project_id": "coskun-apps",
+    "storage_bucket": "coskun-apps.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:ebd4e62d197284bff33588",
+        "android_client_info": {
+          "package_name": "com.algokids.algobot_flutter"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:ce5e6cd5e57d63abf33588",
+        "android_client_info": {
+          "package_name": "com.antigravity.animalsvs.animals_vs"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:acea14acff03922af33588",
+        "android_client_info": {
+          "package_name": "com.antigravity.hydro_reminder.hydro_reminder"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:5c226bdb0234b284f33588",
+        "android_client_info": {
+          "package_name": "com.antigravity.sessizsinema.sessiz_sinema"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:64609fd1f99884bef33588",
+        "android_client_info": {
+          "package_name": "com.antigravity.trueiq"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:98cbe1ce2280a912f33588",
+        "android_client_info": {
+          "package_name": "com.antigravity.yesilsepet.yesil_sepet"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:b3a7d2fac66d2c52f33588",
+        "android_client_info": {
+          "package_name": "com.evekonomisi.ev_butcesi"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:b2a70258ed5becfff33588",
+        "android_client_info": {
+          "package_name": "com.example.tarif_matik"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:eb7965cbf07b6f0cf33588",
+        "android_client_info": {
+          "package_name": "com.fitpastel.fitpastel"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:0f83639e685dfe0bf33588",
+        "android_client_info": {
+          "package_name": "com.halisaha.app.halisaha_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:887ed631945e80daf33588",
+        "android_client_info": {
+          "package_name": "com.hedefbirikim.hedef_birikim"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:81bca0ed931619c4f33588",
+        "android_client_info": {
+          "package_name": "com.lezzet.chefmerge.chef_merge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:d2ccdd47a7c386bbf33588",
+        "android_client_info": {
+          "package_name": "com.piyasa.piyasa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:b17ce33d82efc492f33588",
+        "android_client_info": {
+          "package_name": "com.remote.worktracker.remote_work_tracker"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:842382725401:android:4fec097afff1f4e8f33588",
+        "android_client_info": {
+          "package_name": "com.sifirlandi.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcf5Df0no_7rlKl6KnQA08twrhH-MYkTw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

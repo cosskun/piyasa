@@ -2,20 +2,26 @@ import 'package:flutter/material.dart';
 import 'controllers/game_controller.dart';
 import 'services/notification_service.dart';
 import 'services/save_service.dart';
+import 'services/firebase_service.dart';
+import 'services/audit_log_service.dart';
 import 'views/home_screen.dart';
+import 'views/auth_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await NotificationService().initialize();
+  await FirebaseService().initialize();
+  await AuditLogService().initialize();
   final controller = GameController();
-  await SaveService().load(controller);
+  await controller.loadFromStorage();
   runApp(PiyasaApp(controller: controller));
 }
 
 class PiyasaApp extends StatefulWidget {
   final GameController? controller;
+  final bool? skipAuthForTesting;
 
-  const PiyasaApp({super.key, this.controller});
+  const PiyasaApp({super.key, this.controller, this.skipAuthForTesting});
 
   @override
   State<PiyasaApp> createState() => _PiyasaAppState();
@@ -24,6 +30,7 @@ class PiyasaApp extends StatefulWidget {
 class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
   late final GameController _controller;
   bool _createdInternally = false;
+  late bool _isAuthenticated;
 
   @override
   void initState() {
@@ -36,6 +43,7 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
       _controller = GameController();
       _controller.loadFromStorage();
     }
+    _isAuthenticated = widget.skipAuthForTesting ?? FirebaseService().isAuthenticated;
   }
 
   @override
@@ -45,6 +53,8 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
         state == AppLifecycleState.detached ||
         state == AppLifecycleState.hidden) {
       _controller.saveState();
+    } else if (state == AppLifecycleState.resumed) {
+      _controller.onAppResumed();
     }
   }
 
@@ -107,7 +117,23 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
           ),
-          home: HomeScreen(controller: _controller),
+          home: _isAuthenticated
+              ? HomeScreen(
+                  controller: _controller,
+                  onLoggedOut: () {
+                    setState(() {
+                      _isAuthenticated = false;
+                    });
+                  },
+                )
+              : AuthScreen(
+                  onAuthenticated: () async {
+                    await _controller.loadFromStorage();
+                    setState(() {
+                      _isAuthenticated = true;
+                    });
+                  },
+                ),
         );
       },
     );

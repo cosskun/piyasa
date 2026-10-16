@@ -10,15 +10,23 @@ import 'package:piyasa/models/market_offer.dart';
 import 'package:piyasa/models/store.dart';
 import 'package:piyasa/models/facility.dart';
 import 'package:piyasa/models/bank_loan.dart';
+import 'package:piyasa/models/offline_report.dart';
 import 'package:piyasa/views/bank_dialog.dart';
 import 'package:piyasa/views/home_screen.dart';
+import 'package:piyasa/views/offline_summary_dialog.dart';
 import 'package:piyasa/services/save_service.dart';
+import 'package:piyasa/services/firebase_service.dart';
+import 'package:piyasa/services/audit_log_service.dart';
+import 'package:piyasa/models/audit_log.dart';
+import 'package:piyasa/views/auth_screen.dart';
+import 'package:piyasa/views/ledger_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     SaveService().resetForTesting();
+    AuditLogService().resetForTesting();
   });
 
   testWidgets('Piyasa App smoke test', (WidgetTester tester) async {
@@ -941,6 +949,381 @@ void main() {
 
     tester.view.resetPhysicalSize();
     tester.view.resetDevicePixelRatio();
+  });
+
+  testWidgets('Offline Catch-Up Engine: Facilities produce, stores sell, bank earns interest, loans auto-pay while game is closed', (tester) async {
+    final controller = GameController();
+
+    // 1. Setup Wheat Farm
+    final farm = ProductionFacility.getBlueprints().firstWhere((f) => f.id == 'wheat_farm').copy();
+    farm.level = 1;
+    farm.isProducing = true;
+    controller.ownedFacilities.add(farm);
+
+    // 2. Setup Bakery store with initial shelf stock
+    final bakery = RetailStore.getBlueprints().firstWhere((s) => s.id == 'kiosk_bread').copy();
+    bakery.level = 1;
+    bakery.isSelling = true;
+    bakery.productSlots[0].shelfStock = 20;
+    bakery.productSlots[0].isSelling = true;
+    bakery.productSlots[0].retailPrice = 18.0;
+    controller.ownedStores.add(bakery);
+
+    // 3. Bank deposit
+    controller.bankSavings = 10000.0;
+
+    // 4. Setup Bank Loan
+    controller.currentLoan = BankLoan(
+      id: 'loan_offline_test',
+      title: 'İşletme Kredisi',
+      principal: 10000.0,
+      interestRate: 0.01,
+      totalInstallments: 10,
+      remainingPrincipal: 10000.0,
+      remainingInterest: 1000.0,
+      takenAt: DateTime.now().subtract(const Duration(hours: 1)),
+      schedule: BankLoan.generateSchedule(
+        principal: 10000.0,
+        interestRatePerPeriod: 0.01,
+        installments: 10,
+      ),
+    );
+
+    final pastTime = DateTime.now().subtract(const Duration(minutes: 10));
+
+    // Simulate 10 minutes offline
+    final report = controller.processOfflineCatchUp(pastTime);
+
+    expect(report.hasAnyActivity, isTrue);
+    expect(report.producedItems['wheat'], isNotNull);
+    expect(report.producedItems['wheat']!, greaterThan(0));
+    expect(controller.warehouse['wheat'], greaterThan(0));
+
+    // Bakery retail sales happened
+    expect(report.retailItemsSold, greaterThan(0));
+    expect(report.retailRevenue, greaterThan(0));
+
+    // Bank interest compounded
+    expect(report.bankInterestEarned, greaterThan(0));
+    expect(controller.bankSavings, greaterThan(10000.0));
+
+    // Loan installments processed
+    expect(report.loanInstallmentsPaid, greaterThan(0));
+
+    // Controller holds latestOfflineReport
+    expect(controller.latestOfflineReport, isNotNull);
+    expect(controller.latestOfflineReport, equals(report));
+
+    controller.dispose();
+  });
+
+  testWidgets('OfflineSummaryDialog renders all offline earnings and dismisses smoothly', (tester) async {
+    tester.view.physicalSize = const Size(400, 950);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final report = OfflineCatchUpReport(
+      elapsedDuration: const Duration(hours: 2, minutes: 15),
+      producedItems: {'wheat': 120, 'bread': 40},
+      warehouseFull: false,
+      retailItemsSold: 45,
+      retailRevenue: 4500.0,
+      marketItemsSold: 30,
+      marketRevenue: 3000.0,
+      incomingOffersCount: 2,
+      bankInterestEarned: 250.0,
+      loanInstallmentsPaid: 2,
+      loanInstallmentsOverdue: 0,
+      loanPenaltiesIncurred: 0.0,
+      totalLoanPaidAmount: 4200.0,
+      startingCash: 10000.0,
+      endingCash: 13550.0,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => ElevatedButton(
+              onPressed: () => OfflineSummaryDialog.show(ctx, report),
+              child: const Text('Raporu Aç'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // Tap to open dialog
+    await tester.tap(find.text('Raporu Aç'));
+    await tester.pumpAndSettle();
+
+    // Verify dialog content
+    expect(find.text('Siz Yokken Şirketiniz Çalıştı!'), findsOneWidget);
+    expect(find.textContaining('2 sa 15 dk'), findsOneWidget);
+    expect(find.text('Üretim Tesisleri'), findsOneWidget);
+    expect(find.text('Perakende Dükkanlarım'), findsOneWidget);
+    expect(find.text('Oyuncu Pazarı & Teklifler'), findsOneWidget);
+    expect(find.text('Banka & Krediler'), findsOneWidget);
+    expect(find.textContaining('Şirketi Yönetmeye Devam Et'), findsOneWidget);
+
+    // Tap to close dialog
+    await tester.tap(find.textContaining('Şirketi Yönetmeye Devam Et'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Siz Yokken Şirketiniz Çalıştı!'), findsNothing);
+  });
+
+  testWidgets('AuthScreen renders login and registration tabs and toggles between them', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(500, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthScreen(onAuthenticated: () {}),
+      ),
+    );
+
+    // Initial Login tab is selected
+    expect(find.text('Giriş Yap'), findsWidgets);
+    expect(find.text('Kayıt Ol'), findsWidgets);
+    expect(find.text('Kullanıcı Adı veya E-posta'), findsOneWidget);
+    expect(find.text('Oyuna Giriş Yap ›'), findsOneWidget);
+    expect(find.text('Hesapsız Hızlı Başla (Misafir Modu)'), findsOneWidget);
+
+    // Switch to Register tab
+    await tester.tap(find.text('Kayıt Ol'));
+    await tester.pumpAndSettle();
+
+    // Register fields are present
+    expect(find.text('Kullanıcı Adı (Benzersiz)'), findsOneWidget);
+    expect(find.text('Şirket Adı (İsteğe Bağlı)'), findsOneWidget);
+    expect(find.text('E-posta Adresi (Benzersiz)'), findsOneWidget);
+    expect(find.text('Şifre Tekrarı'), findsOneWidget);
+    expect(find.text('Şirketini Kur & Kayıt Ol ›'), findsOneWidget);
+  });
+
+  testWidgets('AuthScreen registration form validates fields and password matching', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(500, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthScreen(onAuthenticated: () {}),
+      ),
+    );
+
+    // Switch to Register tab
+    await tester.tap(find.text('Kayıt Ol'));
+    await tester.pumpAndSettle();
+
+    final registerBtn = find.text('Şirketini Kur & Kayıt Ol ›');
+    await tester.ensureVisible(registerBtn);
+
+    // Tap register with empty inputs
+    await tester.tap(registerBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Kullanıcı adı boş bırakılamaz.'), findsOneWidget);
+    expect(find.text('E-posta adresi boş bırakılamaz.'), findsOneWidget);
+    expect(find.text('Şifre boş bırakılamaz.'), findsOneWidget);
+
+    // Enter short username (< 3 chars)
+    final usernameFinder = find.widgetWithText(TextFormField, 'Kullanıcı Adı (Benzersiz)');
+    await tester.enterText(usernameFinder, 'ab');
+    await tester.tap(registerBtn);
+    await tester.pumpAndSettle();
+    expect(find.text('En az 3 karakter olmalıdır.'), findsOneWidget);
+
+    // Enter invalid username with symbols
+    await tester.enterText(usernameFinder, 'user#test!');
+    await tester.tap(registerBtn);
+    await tester.pumpAndSettle();
+    expect(find.text('Yalnızca harf, rakam, nokta ve alt çizgi kullanılabilir.'), findsOneWidget);
+
+    // Enter invalid email
+    final emailFinder = find.widgetWithText(TextFormField, 'E-posta Adresi (Benzersiz)');
+    await tester.enterText(emailFinder, 'invalidemail');
+    await tester.tap(registerBtn);
+    await tester.pumpAndSettle();
+    expect(find.text('Lütfen geçerli bir e-posta adresi girin.'), findsOneWidget);
+
+    // Enter mismatching passwords
+    final passwordFinder = find.widgetWithText(TextFormField, 'Şifre');
+    final confirmFinder = find.widgetWithText(TextFormField, 'Şifre Tekrarı');
+    await tester.enterText(passwordFinder, '123456');
+    await tester.enterText(confirmFinder, '654321');
+    await tester.tap(registerBtn);
+    await tester.pumpAndSettle();
+    expect(find.text('Şifreler eşleşmiyor.'), findsOneWidget);
+  });
+
+  testWidgets('AuthScreen guest mode triggers onAuthenticated callback', (WidgetTester tester) async {
+    bool authenticated = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthScreen(onAuthenticated: () {
+          authenticated = true;
+        }),
+      ),
+    );
+
+    await tester.tap(find.text('Hesapsız Hızlı Başla (Misafir Modu)'));
+    await tester.pumpAndSettle();
+
+    expect(authenticated, isTrue);
+  });
+
+  test('FirebaseService username format validation and registration logic', () async {
+    final fb = FirebaseService();
+
+    // Username length checks
+    final tooShort = await fb.registerWithEmail(
+      email: 'test@example.com',
+      password: 'password123',
+      username: 'yo',
+    );
+    expect(tooShort, contains('3 ile 20 karakter'));
+
+    // Username characters check
+    final invalidChars = await fb.registerWithEmail(
+      email: 'test@example.com',
+      password: 'password123',
+      username: 'bad*name!',
+    );
+    expect(invalidChars, contains('harf, rakam, nokta'));
+
+    // Password length check
+    final shortPass = await fb.registerWithEmail(
+      email: 'test@example.com',
+      password: '123',
+      username: 'good_user',
+    );
+    expect(shortPass, contains('en az 6 karakter'));
+
+    // Successful local registration
+    final success = await fb.registerWithEmail(
+      email: 'valid@example.com',
+      password: 'password123',
+      username: 'valid_trader',
+      companyName: 'Anadolu Ticaret',
+    );
+    expect(success, isNull);
+    expect(fb.username, equals('valid_trader'));
+    expect(fb.companyName, equals('Anadolu Ticaret'));
+    expect(fb.isGuest, isFalse);
+  });
+
+  test('AuditLogService records granular logs, calculates income/expense, and filters by category', () async {
+    final service = AuditLogService();
+    service.resetForTesting();
+
+    await service.log(
+      category: LogCategory.trade,
+      action: 'MARKET_BUY',
+      title: 'Borsa Alımı: Buğday',
+      description: '50 adet Buğday 12 ₺ fiyattan alındı.',
+      amountChange: -600.0,
+      cashAfter: 9400.0,
+      details: {'item': 'Bugday', 'qty': 50, 'unitPrice': 12.0},
+    );
+
+    await service.log(
+      category: LogCategory.trade,
+      action: 'MARKET_SELL',
+      title: 'Borsa Satışı: Ekmek',
+      description: '100 adet Ekmek 20 ₺ fiyattan satıldı.',
+      amountChange: 2000.0,
+      cashAfter: 11400.0,
+      details: {'item': 'Ekmek', 'qty': 100, 'unitPrice': 20.0},
+    );
+
+    await service.log(
+      category: LogCategory.finance,
+      action: 'LOAN_TAKEN',
+      title: 'Kredi Çekildi',
+      description: '50.000 ₺ işletme kredisi onaylandı.',
+      amountChange: 50000.0,
+      cashAfter: 61400.0,
+      details: {'principal': 50000.0},
+    );
+
+    expect(service.logs.length, 3);
+    expect(service.totalIncome, 52000.0);
+    expect(service.totalExpense, 600.0);
+    expect(service.netFlow, 51400.0);
+
+    final tradeLogs = service.getLogsFiltered(category: LogCategory.trade);
+    expect(tradeLogs.length, 2);
+
+    final searchLogs = service.getLogsFiltered(query: 'kredi');
+    expect(searchLogs.length, 1);
+    expect(searchLogs.first.action, 'LOAN_TAKEN');
+  });
+
+  testWidgets('LedgerDialog renders summary cards, filter chips, and log items', (WidgetTester tester) async {
+    final service = AuditLogService();
+    service.resetForTesting();
+
+    await service.log(
+      category: LogCategory.trade,
+      action: 'MARKET_BUY',
+      title: 'Borsa Alımı: Pamuk',
+      description: '20 adet Pamuk satın alındı.',
+      amountChange: -400.0,
+      cashAfter: 9600.0,
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LedgerDialog(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Şirket Defteri & İşlem Logları'), findsOneWidget);
+    expect(find.text('Toplam Gelir'), findsOneWidget);
+    expect(find.text('Toplam Gider'), findsOneWidget);
+    expect(find.text('Net Akış'), findsOneWidget);
+    expect(find.text('🛒 Borsa & Pazar'), findsOneWidget);
+    expect(find.text('Borsa Alımı: Pamuk'), findsOneWidget);
+
+    // Tap on log item to open detail sheet
+    await tester.tap(find.text('Borsa Alımı: Pamuk'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Açıklama:'), findsOneWidget);
+    expect(find.text('20 adet Pamuk satın alındı.'), findsWidgets);
+    expect(find.text('Kapat'), findsOneWidget);
+
+    await tester.tap(find.text('Kapat'));
+    await tester.pumpAndSettle();
+  });
+
+  test('GameController actions automatically append to AuditLogService', () async {
+    final controller = GameController();
+    final service = AuditLogService();
+    service.resetForTesting();
+
+    // 1. Buy from market
+    controller.cash = 10000.0;
+    final errBuy = controller.buyFromMarket('wheat', 10);
+    expect(errBuy, isNull);
+    expect(service.logs.any((l) => l.action == 'MARKET_BUY'), isTrue);
+
+    // 2. Sell to market
+    final errSell = controller.sellToMarket('wheat', 5);
+    expect(errSell, isNull);
+    expect(service.logs.any((l) => l.action == 'MARKET_SELL'), isTrue);
+
+    // 3. Deposit to bank
+    final errDep = controller.depositToBank(1000.0);
+    expect(errDep, isNull);
+    expect(service.logs.any((l) => l.action == 'BANK_DEPOSIT'), isTrue);
   });
 }
 

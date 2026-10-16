@@ -10,11 +10,17 @@ import 'bank_dialog.dart';
 import 'inventory_sheet.dart';
 import 'warehouse_tab.dart';
 import '../models/player_level.dart';
+import 'offline_summary_dialog.dart';
+import 'ledger_dialog.dart';
+import '../services/firebase_service.dart';
+import '../services/audit_log_service.dart';
+import '../models/audit_log.dart';
 
 class HomeScreen extends StatefulWidget {
   final GameController controller;
+  final VoidCallback? onLoggedOut;
 
-  const HomeScreen({super.key, required this.controller});
+  const HomeScreen({super.key, required this.controller, this.onLoggedOut});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -31,6 +37,18 @@ class _HomeScreenState extends State<HomeScreen> {
     widget.controller.addListener(_onControllerUpdate);
     _notificationSub =
         NotificationService().onNotificationTapped.listen(_handlePhoneNotificationTap);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkOfflineReport();
+    });
+  }
+
+  void _checkOfflineReport() {
+    if (!mounted) return;
+    if (widget.controller.latestOfflineReport != null) {
+      final report = widget.controller.latestOfflineReport!;
+      widget.controller.clearLatestOfflineReport();
+      OfflineSummaryDialog.show(context, report);
+    }
   }
 
   @override
@@ -55,6 +73,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onControllerUpdate() {
+    if (widget.controller.latestOfflineReport != null) {
+      final report = widget.controller.latestOfflineReport!;
+      widget.controller.clearLatestOfflineReport();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        OfflineSummaryDialog.show(context, report);
+      });
+    }
+
     if (widget.controller.latestNotificationToast != null) {
       final msg = widget.controller.latestNotificationToast!;
       widget.controller.clearNotificationToast();
@@ -166,7 +193,136 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       });
     }
-    if (mounted) setState(() {});
+  }
+
+  void _showAccountSheet(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fb = FirebaseService();
+    final username = fb.username ?? (fb.isGuest ? 'Misafir Oyuncu' : 'Oyuncu');
+    final company = fb.companyName;
+    final email = fb.email ?? (fb.isGuest ? 'Giriş yapılmadı (Misafir Modu)' : 'Tanımlı değil');
+    final isLoggedIn = fb.isLoggedIn;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: isDark ? const Color(0xFF1E293B) : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: Border.all(color: isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white24 : Colors.black12,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: isDark ? const Color(0xFF0F766E) : const Color(0xFFD1FAE5),
+                  child: Text(
+                    username.isNotEmpty ? username[0].toUpperCase() : 'P',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF065F46),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        username,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        company,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        email,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isLoggedIn
+                        ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5))
+                        : (isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isLoggedIn ? const Color(0xFF10B981) : Colors.grey.withOpacity(0.4),
+                    ),
+                  ),
+                  child: Text(
+                    isLoggedIn ? 'Bulut Bağlı ☁️' : 'Misafir 👤',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isLoggedIn ? const Color(0xFF10B981) : Colors.grey,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: () async {
+                Navigator.of(ctx).pop();
+                AuditLogService().log(
+                  category: LogCategory.auth,
+                  action: 'AUTH_LOGOUT',
+                  title: 'Çıkış Yapıldı',
+                  description: '$username oturumu kapattı.',
+                  cashAfter: widget.controller.cash,
+                );
+                await FirebaseService().signOut();
+                widget.onLoggedOut?.call();
+              },
+              icon: const Icon(Icons.logout, size: 18),
+              label: Text(isLoggedIn ? 'Oturumu Kapat' : 'Giriş / Kayıt Ekranına Dön'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark ? const Color(0xFFDC2626) : const Color(0xFFEF4444),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -297,7 +453,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         borderRadius: BorderRadius.circular(8),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
                           decoration: BoxDecoration(
                             color: isDark ? Colors.blueAccent[700] : const Color(0xFF2563EB),
                             borderRadius: BorderRadius.circular(8),
@@ -306,12 +462,31 @@ class _HomeScreenState extends State<HomeScreen> {
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.account_balance, size: 13, color: Colors.white),
-                              SizedBox(width: 4),
+                              SizedBox(width: 3),
                               Text(
                                 'Banka',
-                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                                style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
                               ),
                             ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+
+                      // Şirket Defteri & İşlem Geçmişi Butonu
+                      InkWell(
+                        onTap: () => LedgerDialog.show(context),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0F766E).withOpacity(0.6) : const Color(0xFFD1FAE5),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.history_edu,
+                            size: 16,
+                            color: isDark ? Colors.tealAccent : const Color(0xFF065F46),
                           ),
                         ),
                       ),
@@ -334,57 +509,84 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
+                      const SizedBox(width: 4),
+
+                      // Profil / Hesap Butonu
+                      InkWell(
+                        onTap: () => _showAccountSheet(context),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.person_outline,
+                            size: 16,
+                            color: isDark ? Colors.amberAccent : const Color(0xFF475569),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
 
-                  // 2. Satır: Nakit & Net Servet Finansal Kartları
+                  // 2. Satır: Nakit & Net Servet Finansal Kartları (Dokununca Şirket Defteri Açılır)
                   Row(
                     children: [
                       // Nakit Göstergesi
                       Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF0D121D) : const Color(0xFFECFDF5),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isDark
-                                  ? Colors.greenAccent.withOpacity(0.4)
-                                  : const Color(0xFF10B981).withOpacity(0.4),
+                        child: InkWell(
+                          onTap: () => LedgerDialog.show(context),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF0D121D) : const Color(0xFFECFDF5),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.greenAccent.withOpacity(0.4)
+                                    : const Color(0xFF10B981).withOpacity(0.4),
+                              ),
                             ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.account_balance_wallet_outlined,
-                                size: 18,
-                                color: isDark ? Colors.greenAccent : const Color(0xFF059669),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Kasadaki Nakit',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: isDark ? Colors.grey : const Color(0xFF047857),
-                                      ),
-                                    ),
-                                    Text(
-                                      '${currencyFmt.format(c.cash)} ₺',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.greenAccent : const Color(0xFF065F46),
-                                      ),
-                                    ),
-                                  ],
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.account_balance_wallet_outlined,
+                                  size: 18,
+                                  color: isDark ? Colors.greenAccent : const Color(0xFF059669),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 6),
+                                 Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Kasadaki Nakit',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: isDark ? Colors.grey : const Color(0xFF047857),
+                                        ),
+                                      ),
+                                      Text(
+                                        '${currencyFmt.format(c.cash)} ₺',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 14.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark ? Colors.greenAccent : const Color(0xFF065F46),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -392,48 +594,56 @@ class _HomeScreenState extends State<HomeScreen> {
 
                       // Net Servet Göstergesi
                       Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF0D121D) : const Color(0xFFFFFBEB),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isDark
-                                  ? Colors.amber.withOpacity(0.4)
-                                  : const Color(0xFFF59E0B).withOpacity(0.4),
+                        child: InkWell(
+                          onTap: () => LedgerDialog.show(context),
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: isDark ? const Color(0xFF0D121D) : const Color(0xFFFFFBEB),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.amber.withOpacity(0.4)
+                                    : const Color(0xFFF59E0B).withOpacity(0.4),
+                              ),
                             ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.trending_up,
-                                size: 18,
-                                color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Net Servet',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: isDark ? Colors.grey : const Color(0xFFB45309),
-                                      ),
-                                    ),
-                                    Text(
-                                      '${currencyFmt.format(c.netWorth)} ₺',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.amberAccent : const Color(0xFF92400E),
-                                      ),
-                                    ),
-                                  ],
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.trending_up,
+                                  size: 18,
+                                  color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Net Servet',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: isDark ? Colors.grey : const Color(0xFFB45309),
+                                        ),
+                                      ),
+                                      Text(
+                                        '${currencyFmt.format(c.netWorth)} ₺',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 14.5,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark ? Colors.amberAccent : const Color(0xFF92400E),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),

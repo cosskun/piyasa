@@ -10,8 +10,12 @@ import '../models/market_offer.dart';
 import '../models/bank_loan.dart';
 import '../models/limit_order.dart';
 import '../models/player_level.dart';
+import '../models/offline_report.dart';
 import '../services/notification_service.dart';
 import '../services/save_service.dart';
+import '../services/firebase_service.dart';
+import '../services/audit_log_service.dart';
+import '../models/audit_log.dart';
 
 class GameController extends ChangeNotifier {
   // Finans (Sıfırdan Başlangıç Sermayesi: 10.000 TL)
@@ -21,6 +25,13 @@ class GameController extends ChangeNotifier {
   BankLoan? currentLoan;
   double get activeLoan => currentLoan?.remainingTotal ?? _legacyActiveLoan;
   double maxWarehouseCapacity = 500.0; // 500 kg başlangıç deposu
+
+  // Son aktiflik ve Çevrimdışı Kazanç Raporu
+  DateTime? lastActiveAt;
+  OfflineCatchUpReport? latestOfflineReport;
+  void clearLatestOfflineReport() {
+    latestOfflineReport = null;
+  }
 
   // Depo (Hammadde ve Ürünler - Tamamen Boş)
   final Map<String, int> warehouse = {};
@@ -69,6 +80,7 @@ class GameController extends ChangeNotifier {
 
   // Sayaçlar ve Simülasyon
   Timer? _gameLoopTimer;
+  StreamSubscription<List<MarketListing>>? _cloudMarketSub;
   final Random _random = Random();
   double _marketTickTimer = 0.0;
   double _bankTickTimer = 0.0;
@@ -646,6 +658,23 @@ class GameController extends ChangeNotifier {
     cash -= totalCost;
     warehouse[itemId] = (warehouse[itemId] ?? 0) + qty;
     mItem.updatePrice(bias: 0.02, rnd: _random);
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'MARKET_BUY',
+      title: 'Borsa Alımı: ${data.name}',
+      description: '$qty adet ${data.name} birim başı ${mItem.wholesaleBuyPrice.toStringAsFixed(2)} ₺ fiyattan satın alındı.',
+      amountChange: -totalCost,
+      cashAfter: cash,
+      details: {
+        'itemId': itemId,
+        'itemName': data.name,
+        'quantity': qty,
+        'unitPrice': mItem.wholesaleBuyPrice,
+        'totalCost': totalCost,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -668,6 +697,23 @@ class GameController extends ChangeNotifier {
 
     cash += totalEarnings;
     mItem.updatePrice(bias: -0.02, rnd: _random);
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'MARKET_SELL',
+      title: 'Borsa Satışı: ${data.name}',
+      description: '$qty adet ${data.name} birim başı ${mItem.quickSellPrice.toStringAsFixed(2)} ₺ fiyattan toptan satıldı.',
+      amountChange: totalEarnings,
+      cashAfter: cash,
+      details: {
+        'itemId': itemId,
+        'itemName': data.name,
+        'quantity': qty,
+        'unitPrice': mItem.quickSellPrice,
+        'totalEarnings': totalEarnings,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -717,6 +763,23 @@ class GameController extends ChangeNotifier {
     );
 
     limitBuyOrders.insert(0, order);
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'LIMIT_ORDER_PLACED',
+      title: 'Limit Alış Emri: ${itemData.name}',
+      description: '$quantity adet ${itemData.name} için ${order.targetPrice.toStringAsFixed(2)} ₺ hedef fiyat emri verildi (${totalCost.toStringAsFixed(0)} ₺ bloke edildi).',
+      amountChange: -totalCost,
+      cashAfter: cash,
+      details: {
+        'orderId': order.id,
+        'itemId': itemId,
+        'quantity': quantity,
+        'targetPrice': targetPrice,
+        'reservedCost': totalCost,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -729,6 +792,20 @@ class GameController extends ChangeNotifier {
     cash += order.totalReservedCost;
     order.status = LimitOrderStatus.cancelled;
     order.statusMessage = 'İptal edildi.';
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'LIMIT_ORDER_CANCELLED',
+      title: 'Alış Emri İptal: ${order.item.name}',
+      description: 'Bekleyen emir iptal edildi ve bloke edilen ${order.totalReservedCost.toStringAsFixed(0)} ₺ kasanıza iade edildi.',
+      amountChange: order.totalReservedCost,
+      cashAfter: cash,
+      details: {
+        'orderId': order.id,
+        'refund': order.totalReservedCost,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -763,6 +840,21 @@ class GameController extends ChangeNotifier {
           order.executedAt = DateTime.now();
           order.executedPrice = actualPrice;
           order.statusMessage = 'İcra Edildi: ${actualPrice.toStringAsFixed(2)} ₺';
+
+          AuditLogService().log(
+            category: LogCategory.trade,
+            action: 'LIMIT_ORDER_EXECUTED',
+            title: 'Alış Emri İcra Edildi: ${itemData.name}',
+            description: '${order.quantity} adet ${itemData.name} birim başı ${actualPrice.toStringAsFixed(2)} ₺ fiyattan satın alındı.${refund > 0 ? ' (${refund.toStringAsFixed(0)} ₺ fiyat iyileşme iadesi)' : ''}',
+            amountChange: refund > 0 ? refund : null,
+            cashAfter: cash,
+            details: {
+              'orderId': order.id,
+              'quantity': order.quantity,
+              'executedPrice': actualPrice,
+              'refund': refund,
+            },
+          );
 
           latestNotificationToast =
               '🎯 ALIŞ EMRİ GERÇEKLEŞTİ! ${order.quantity} adet ${itemData.name}, '
@@ -803,6 +895,27 @@ class GameController extends ChangeNotifier {
     if (listing.remainingQuantity <= 0) {
       communityListings.remove(listing);
     }
+    if (FirebaseService().isCloudConnected) {
+      FirebaseService().buyFromPublicMarket(listing: listing, quantityToBuy: qty);
+    }
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'COMMUNITY_BUY',
+      title: 'Pazar Alımı: ${listing.item.name}',
+      description: '$qty adet ${listing.item.name}, ${listing.sellerName} satıcısından ${listing.pricePerUnit.toStringAsFixed(2)} ₺ fiyattan alındı.',
+      amountChange: -totalCost,
+      cashAfter: cash,
+      details: {
+        'listingId': listing.id,
+        'itemId': listing.itemId,
+        'sellerName': listing.sellerName,
+        'quantity': qty,
+        'pricePerUnit': listing.pricePerUnit,
+        'totalCost': totalCost,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -868,6 +981,23 @@ class GameController extends ChangeNotifier {
         communityListings.remove(target);
       }
     }
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'OFFER_BOUGHT',
+      title: 'Teklif Satın Alındı: ${offer.item.name}',
+      description: '${offer.sellerName} satıcısından ${offer.quantity} adet ${offer.item.name} ${offer.offeredPricePerUnit.toStringAsFixed(2)} ₺ fiyattan teslim alındı.',
+      amountChange: -totalCost,
+      cashAfter: cash,
+      details: {
+        'offerId': offer.id,
+        'sellerName': offer.sellerName,
+        'quantity': offer.quantity,
+        'unitPrice': offer.offeredPricePerUnit,
+        'totalCost': totalCost,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -896,6 +1026,23 @@ class GameController extends ChangeNotifier {
     if (listing.isCompleted) {
       activeListings.remove(listing);
     }
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'OFFER_ACCEPTED',
+      title: 'Gelen Teklif Satıldı: ${offer.item.name}',
+      description: '${offer.buyerName} alıcısına ${offer.quantity} adet ${offer.item.name} ${offer.offeredPricePerUnit.toStringAsFixed(2)} ₺ fiyattan satıldı.',
+      amountChange: earnings,
+      cashAfter: cash,
+      details: {
+        'offerId': offer.id,
+        'buyerName': offer.buyerName,
+        'quantity': offer.quantity,
+        'unitPrice': offer.offeredPricePerUnit,
+        'totalEarnings': earnings,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -935,6 +1082,22 @@ class GameController extends ChangeNotifier {
     );
 
     activeListings.add(listing);
+    FirebaseService().publishListingToMarket(listing);
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'LISTING_CREATED',
+      title: 'Pazar İlanı Açıldı: ${data.name}',
+      description: '$qty adet ${data.name} birim başı ${pricePerUnit.toStringAsFixed(2)} ₺ fiyatla satışa koyuldu.',
+      cashAfter: cash,
+      details: {
+        'listingId': listing.id,
+        'itemId': itemId,
+        'quantity': qty,
+        'pricePerUnit': pricePerUnit,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -961,6 +1124,21 @@ class GameController extends ChangeNotifier {
     }
 
     activeListings.remove(listing);
+    FirebaseService().cancelListingInMarket(listing.id);
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'LISTING_CANCELLED',
+      title: 'İlan İptal Edildi: ${listing.item.name}',
+      description: 'Pazar ilanı iptal edildi ve kalan ${listing.remainingQuantity} adet ${listing.item.name} depoya iade edildi.',
+      cashAfter: cash,
+      details: {
+        'listingId': listing.id,
+        'itemId': listing.itemId,
+        'remainingQuantity': listing.remainingQuantity,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -978,6 +1156,22 @@ class GameController extends ChangeNotifier {
     for (int i = 0; i < quantity; i++) {
       ownedFacilities.add(bp.copy());
     }
+
+    AuditLogService().log(
+      category: LogCategory.facility,
+      action: 'FACILITY_BUY',
+      title: 'Tesis Kuruldu: ${bp.name}',
+      description: '$quantity adet ${bp.name} ${totalCost.toStringAsFixed(0)} ₺ yatırımla kuruldu.',
+      amountChange: -totalCost,
+      cashAfter: cash,
+      details: {
+        'facilityId': bp.id,
+        'facilityName': bp.name,
+        'quantity': quantity,
+        'totalCost': totalCost,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -1001,6 +1195,20 @@ class GameController extends ChangeNotifier {
         ownedFacilities.add(entry.key.copy());
       }
     }
+
+    AuditLogService().log(
+      category: LogCategory.facility,
+      action: 'PACKAGE_BUY',
+      title: 'Başlangıç Paketi Kuruldu: $packageName',
+      description: '$packageName ${totalCost.toStringAsFixed(0)} ₺ yatırımla kuruldu.',
+      amountChange: -totalCost,
+      cashAfter: cash,
+      details: {
+        'packageName': packageName,
+        'totalCost': totalCost,
+      },
+    );
+
     latestNotificationToast = '🎉 $packageName başarıyla kuruldu! Tesisleriniz üretime başladı.';
     notifyListeners();
     saveState();
@@ -1015,6 +1223,22 @@ class GameController extends ChangeNotifier {
 
     cash -= cost;
     fac.level++;
+
+    AuditLogService().log(
+      category: LogCategory.facility,
+      action: 'FACILITY_UPGRADE',
+      title: 'Tesis Geliştirildi: ${fac.name}',
+      description: '${fac.name} Seviye ${fac.level}\'e yükseltildi (${cost.toStringAsFixed(0)} ₺).',
+      amountChange: -cost,
+      cashAfter: cash,
+      details: {
+        'facilityId': fac.id,
+        'facilityName': fac.name,
+        'newLevel': fac.level,
+        'cost': cost,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -1029,6 +1253,21 @@ class GameController extends ChangeNotifier {
     final refund = fac.resaleValue;
     ownedFacilities.remove(fac);
     cash += refund;
+
+    AuditLogService().log(
+      category: LogCategory.facility,
+      action: 'FACILITY_SELL',
+      title: 'Tesis Devredildi: ${fac.name}',
+      description: '${fac.name} satıldı ve ${refund.toStringAsFixed(0)} ₺ tahsil edildi.',
+      amountChange: refund,
+      cashAfter: cash,
+      details: {
+        'facilityId': fac.id,
+        'facilityName': fac.name,
+        'refund': refund,
+      },
+    );
+
     latestNotificationToast = '💰 ${fac.emoji} ${fac.name} satıldı ve ${refund.toStringAsFixed(0)} ₺ nakite dönüştürüldü.';
     notifyListeners();
     saveState();
@@ -1042,6 +1281,21 @@ class GameController extends ChangeNotifier {
 
     cash -= bp.purchaseCost;
     ownedStores.add(bp.copy());
+
+    AuditLogService().log(
+      category: LogCategory.retail,
+      action: 'STORE_BUY',
+      title: 'Dükkan Açıldı: ${bp.name}',
+      description: '${bp.name} ${bp.purchaseCost.toStringAsFixed(0)} ₺ yatırımla açıldı.',
+      amountChange: -bp.purchaseCost,
+      cashAfter: cash,
+      details: {
+        'storeId': bp.id,
+        'storeName': bp.name,
+        'cost': bp.purchaseCost,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -1059,6 +1313,21 @@ class GameController extends ChangeNotifier {
     for (var s in store.productSlots) {
       s.shelfCapacity += 10;
     }
+
+    AuditLogService().log(
+      category: LogCategory.retail,
+      action: 'STORE_UPGRADE',
+      title: 'Dükkan Geliştirildi: ${store.name}',
+      description: '${store.name} Seviye ${store.level}\'e yükseltildi (${cost.toStringAsFixed(0)} ₺).',
+      amountChange: -cost,
+      cashAfter: cash,
+      details: {
+        'storeId': store.id,
+        'storeName': store.name,
+        'newLevel': store.level,
+        'cost': cost,
+      },
+    );
 
     if (store.level <= 5) {
       latestNotificationToast = '🎉 ${store.name} Seviye ${store.level}\'e yükseldi! Yeni ürün rafı (${store.maxProductSlots} ürün) açıldı.';
@@ -1255,6 +1524,22 @@ class GameController extends ChangeNotifier {
     cash += (refund + totalLiquidatedEarnings);
     ownedStores.remove(store);
 
+    AuditLogService().log(
+      category: LogCategory.retail,
+      action: 'STORE_SELL',
+      title: 'Dükkan Devredildi: ${store.name}',
+      description: '${store.name} devredildi (${(refund + totalLiquidatedEarnings).toStringAsFixed(0)} ₺ tahsil edildi).',
+      amountChange: refund + totalLiquidatedEarnings,
+      cashAfter: cash,
+      details: {
+        'storeId': store.id,
+        'storeName': store.name,
+        'refund': refund,
+        'liquidatedStock': totalLiquidatedEarnings,
+        'totalGained': refund + totalLiquidatedEarnings,
+      },
+    );
+
     String detail = '🏪 ${store.emoji} ${store.name} devredildi ve ${refund.toStringAsFixed(0)} ₺ nakit alındı.';
     if (totalReturnedToWarehouse > 0) {
       detail += ' Raflardaki $totalReturnedToWarehouse ürün depoya aktarıldı.';
@@ -1279,6 +1564,17 @@ class GameController extends ChangeNotifier {
     if (amount <= 0 || cash < amount) return 'Yetersiz nakit.';
     cash -= amount;
     bankSavings += amount;
+
+    AuditLogService().log(
+      category: LogCategory.finance,
+      action: 'BANK_DEPOSIT',
+      title: 'Mevduat Yatırıldı',
+      description: '${amount.toStringAsFixed(0)} ₺ banka mevduat hesabına yatırıldı.',
+      amountChange: -amount,
+      cashAfter: cash,
+      details: {'amount': amount, 'bankSavingsAfter': bankSavings},
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -1288,6 +1584,17 @@ class GameController extends ChangeNotifier {
     if (amount <= 0 || bankSavings < amount) return 'Hesapta yeterli para yok.';
     bankSavings -= amount;
     cash += amount;
+
+    AuditLogService().log(
+      category: LogCategory.finance,
+      action: 'BANK_WITHDRAW',
+      title: 'Mevduat Çekildi',
+      description: '${amount.toStringAsFixed(0)} ₺ mevduat hesabından nakite çekildi.',
+      amountChange: amount,
+      cashAfter: cash,
+      details: {'amount': amount, 'bankSavingsAfter': bankSavings},
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -1351,6 +1658,23 @@ class GameController extends ChangeNotifier {
     );
 
     cash += principal;
+
+    AuditLogService().log(
+      category: LogCategory.finance,
+      action: 'LOAN_TAKEN',
+      title: 'Kredi Çekildi: ${currentLoan!.title}',
+      description: '${principal.toStringAsFixed(0)} ₺ tutarında, $installments gün vadeli kredi onaylandı.',
+      amountChange: principal,
+      cashAfter: cash,
+      details: {
+        'loanId': currentLoan!.id,
+        'title': currentLoan!.title,
+        'principal': principal,
+        'installments': installments,
+        'interestRate': rate,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -1384,6 +1708,21 @@ class GameController extends ChangeNotifier {
     if (installment.penaltyAmount > 0) {
       currentLoan!.totalPenalty = max(0.0, currentLoan!.totalPenalty - installment.penaltyAmount);
     }
+
+    AuditLogService().log(
+      category: LogCategory.finance,
+      action: 'LOAN_INSTALLMENT_PAID',
+      title: 'Kredi Taksiti Ödendi: ${currentLoan!.title}',
+      description: '${installment.installmentNumber}. gün taksiti (${amountToPay.toStringAsFixed(0)} ₺) ödendi.',
+      amountChange: -amountToPay,
+      cashAfter: cash,
+      details: {
+        'loanId': currentLoan!.id,
+        'installmentNumber': installment.installmentNumber,
+        'amount': amountToPay,
+        'penalty': installment.penaltyAmount,
+      },
+    );
 
     if (currentLoan!.isFullyPaid) {
       latestNotificationToast =
@@ -1426,6 +1765,20 @@ class GameController extends ChangeNotifier {
     }
 
     cash -= earlyCost;
+
+    AuditLogService().log(
+      category: LogCategory.finance,
+      action: 'LOAN_EARLY_SETTLED',
+      title: 'Kredi Erken Kapatıldı: ${currentLoan!.title}',
+      description: 'Kalan borç ${earlyCost.toStringAsFixed(0)} ₺ ödenerek tamamen kapatıldı.',
+      amountChange: -earlyCost,
+      cashAfter: cash,
+      details: {
+        'loanId': currentLoan!.id,
+        'settlementCost': earlyCost,
+      },
+    );
+
     latestNotificationToast =
         '🎉 ${currentLoan!.title} kredisi erken kapatıldı! (%50 faiz indirimi uygulandı)';
     NotificationService().showLoanFullyPaidNotification(loanTitle: currentLoan!.title);
@@ -1468,18 +1821,343 @@ class GameController extends ChangeNotifier {
 
     cash -= cost;
     maxWarehouseCapacity += 500; // +500 kg kapasite
+
+    AuditLogService().log(
+      category: LogCategory.facility,
+      action: 'WAREHOUSE_EXPAND',
+      title: 'Depo Genişletildi (+500 kg)',
+      description: 'Depo kapasitesi ${maxWarehouseCapacity.toStringAsFixed(0)} kg\'a çıkarıldı (${cost.toStringAsFixed(0)} ₺).',
+      amountChange: -cost,
+      cashAfter: cash,
+      details: {'cost': cost, 'newCapacity': maxWarehouseCapacity},
+    );
+
     notifyListeners();
     saveState();
     return null;
   }
 
-  // === OYUN KAYDI & YEREL DEPOLAMA (PERSISTENCE) ===
+  // === ÇEVRİMDIŞI ZAMAN MOTORU (OFFLINE CATCH-UP SIMULATION) ===
+  OfflineCatchUpReport processOfflineCatchUp(
+    DateTime fromTime, {
+    DateTime? toTime,
+    List<Map<String, dynamic>>? offlineSales,
+  }) {
+    final now = toTime ?? DateTime.now();
+    final elapsed = now.difference(fromTime);
+    final totalSeconds = max(0.0, elapsed.inSeconds.toDouble());
+    final startingCash = cash;
+    final Map<String, int> producedItems = {};
+    bool warehouseFull = false;
+
+    if (totalSeconds < 5) {
+      lastActiveAt = now;
+      return OfflineCatchUpReport(
+        elapsedDuration: elapsed,
+        producedItems: {},
+        startingCash: startingCash,
+        endingCash: cash,
+      );
+    }
+
+    // Mikro-adım simülasyonu (Zincirleme: Tarla -> Fabrika -> Depo -> Dükkan -> Nakit)
+    const stepSeconds = 4.0;
+    final steps = min(1500, max(1, (totalSeconds / stepSeconds).round()));
+    final dt = totalSeconds / steps;
+
+    int retailItemsSold = 0;
+    double retailRevenue = 0.0;
+    int marketItemsSold = 0;
+    double marketRevenue = 0.0;
+
+    for (int step = 0; step < steps; step++) {
+      // 1. Tesisler (Tarlalar ve Fabrikalar)
+      for (var fac in ownedFacilities) {
+        if (!fac.isProducing) continue;
+
+        bool canProceed = true;
+        fac.recipe.inputs.forEach((inItemId, inCount) {
+          int inWarehouse = warehouse[inItemId] ?? 0;
+          if (inWarehouse < inCount) canProceed = false;
+        });
+
+        if (!canProceed) continue;
+
+        fac.progress += dt / fac.effectiveDuration;
+        while (fac.progress >= 1.0) {
+          fac.progress -= 1.0;
+
+          // Girdi tüketimi
+          fac.recipe.inputs.forEach((inItemId, inCount) {
+            warehouse[inItemId] = (warehouse[inItemId] ?? 0) - inCount;
+            if (warehouse[inItemId]! <= 0) warehouse.remove(inItemId);
+          });
+
+          int outCount = fac.effectiveOutput;
+          var outItemData = ItemRegistry.get(fac.recipe.outputItemId);
+          double addedWeight = outCount * (outItemData?.weight ?? 1.0);
+
+          if (currentWarehouseWeight + addedWeight <= maxWarehouseCapacity) {
+            warehouse[fac.recipe.outputItemId] =
+                (warehouse[fac.recipe.outputItemId] ?? 0) + outCount;
+            producedItems[fac.recipe.outputItemId] =
+                (producedItems[fac.recipe.outputItemId] ?? 0) + outCount;
+          } else {
+            warehouseFull = true;
+            fac.progress = 1.0;
+            break;
+          }
+        }
+      }
+
+      // 2. Perakende Dükkanlar (Otomatik Raf Doldurma ve Müşteri Satışları)
+      for (var store in ownedStores) {
+        if (!store.isSelling) continue;
+
+        for (var slot in store.productSlots) {
+          if (slot.autoRestock && slot.shelfStock < slot.shelfCapacity) {
+            int need = slot.shelfCapacity - slot.shelfStock;
+            int inWh = warehouse[slot.itemId] ?? 0;
+            if (inWh > 0) {
+              int take = min(need, inWh);
+              warehouse[slot.itemId] = inWh - take;
+              if (warehouse[slot.itemId]! <= 0) warehouse.remove(slot.itemId);
+              slot.shelfStock += take;
+            }
+          }
+        }
+
+        final activeSellingSlots =
+            store.productSlots.where((s) => s.isSelling && s.shelfStock > 0).toList();
+        for (var slot in activeSellingSlots) {
+          final demandRatio = getProductDemandRatio(slot.itemId, slot.retailPrice);
+          final slotInterval = max(0.4, store.effectiveInterval / demandRatio);
+          slot.saleTimerProgress += dt / slotInterval;
+
+          while (slot.saleTimerProgress >= 1.0 && slot.shelfStock > 0) {
+            slot.saleTimerProgress -= 1.0;
+            slot.shelfStock--;
+            retailRevenue += slot.retailPrice;
+            retailItemsSold++;
+            cash += slot.retailPrice;
+            store.totalRevenue += slot.retailPrice;
+            _statsHourlyRevenue += slot.retailPrice;
+          }
+        }
+      }
+
+      // 3. Açık Pazar İlan Satışları (Lokal Simülasyon)
+      for (int i = activeListings.length - 1; i >= 0; i--) {
+        final listing = activeListings[i];
+        if (listing.isCompleted) {
+          activeListings.removeAt(i);
+          continue;
+        }
+
+        final mItem = marketItems[listing.itemId];
+        if (mItem == null) continue;
+
+        double priceRatio = mItem.currentPrice / listing.pricePerUnit;
+        double speedFactor = (priceRatio * priceRatio).clamp(0.12, 3.5);
+        double interval = 4.0 / speedFactor;
+
+        listing.saleProgressTimer += dt / interval;
+        while (listing.saleProgressTimer >= 1.0 && listing.remainingQuantity > 0) {
+          listing.saleProgressTimer -= 1.0;
+          int batch = min(listing.remainingQuantity, max(1, (priceRatio * 2.5).round()));
+          listing.remainingQuantity -= batch;
+          double earn = batch * listing.pricePerUnit;
+          cash += earn;
+          listing.totalEarned += earn;
+          marketItemsSold += batch;
+          marketRevenue += earn;
+
+          if (listing.isCompleted) {
+            activeListings.removeAt(i);
+            break;
+          }
+        }
+      }
+    }
+
+    // 4. Çevrimdışı Pazar Satışları (Firebase Bulut Pazarı)
+    if (offlineSales != null && offlineSales.isNotEmpty) {
+      for (var sale in offlineSales) {
+        final rev = (sale['totalRevenue'] as num?)?.toDouble() ?? 0.0;
+        final qty = (sale['quantity'] as num?)?.toInt() ?? 0;
+        if (!FirebaseService().isCloudConnected) {
+          cash += rev;
+        }
+        marketRevenue += rev;
+        marketItemsSold += qty;
+      }
+    }
+
+    // 5. Banka Vadeli Mevduat Faizi (Her 60 saniyede %0.5)
+    double bankInterestEarned = 0.0;
+    final bankCycles = (totalSeconds / 60.0).floor();
+    if (bankCycles > 0 && bankSavings > 0) {
+      final initialSavings = bankSavings;
+      for (int i = 0; i < min(bankCycles, 720); i++) {
+        bankSavings += bankSavings * 0.005;
+      }
+      bankInterestEarned = bankSavings - initialSavings;
+    }
+
+    // 6. Kredi Taksit Döngüsü (Her 45 saniyede bir gün/taksit)
+    int loanInstallmentsPaid = 0;
+    int loanInstallmentsOverdue = 0;
+    double loanPenaltiesIncurred = 0.0;
+    double totalLoanPaidAmount = 0.0;
+
+    if (currentLoan != null && !currentLoan!.isFullyPaid) {
+      final loanCycles = (totalSeconds / BankLoan.installmentInterval).floor();
+      for (int i = 0; i < loanCycles && !currentLoan!.isFullyPaid; i++) {
+        final nextIdx = currentLoan!.paidInstallments;
+        if (nextIdx >= currentLoan!.schedule.length) break;
+
+        final installment = currentLoan!.schedule[nextIdx];
+        final amountToPay = installment.effectiveTotalAmount;
+
+        if (cash >= amountToPay) {
+          cash -= amountToPay;
+          totalLoanPaidAmount += amountToPay;
+          installment.isPaid = true;
+          installment.isOverdue = false;
+          currentLoan!.paidInstallments++;
+          currentLoan!.remainingPrincipal =
+              max(0.0, currentLoan!.remainingPrincipal - installment.principalAmount);
+          currentLoan!.remainingInterest =
+              max(0.0, currentLoan!.remainingInterest - installment.interestAmount);
+          loanInstallmentsPaid++;
+          if (currentLoan!.isFullyPaid) {
+            currentLoan = null;
+            break;
+          }
+        } else {
+          installment.isOverdue = true;
+          installment.overdueCycles++;
+          final penaltyIncrement =
+              max(50.0, (installment.totalAmount * 0.05).roundToDouble());
+          installment.penaltyAmount += penaltyIncrement;
+          currentLoan!.totalPenalty += penaltyIncrement;
+          loanInstallmentsOverdue++;
+          loanPenaltiesIncurred += penaltyIncrement;
+        }
+      }
+    }
+
+    lastActiveAt = now;
+    if (netWorth > highestNetWorth) {
+      highestNetWorth = netWorth;
+    }
+
+    final report = OfflineCatchUpReport(
+      elapsedDuration: elapsed,
+      producedItems: producedItems,
+      warehouseFull: warehouseFull,
+      retailItemsSold: retailItemsSold,
+      retailRevenue: retailRevenue,
+      marketItemsSold: marketItemsSold,
+      marketRevenue: marketRevenue,
+      incomingOffersCount: 0,
+      bankInterestEarned: bankInterestEarned,
+      loanInstallmentsPaid: loanInstallmentsPaid,
+      loanInstallmentsOverdue: loanInstallmentsOverdue,
+      loanPenaltiesIncurred: loanPenaltiesIncurred,
+      totalLoanPaidAmount: totalLoanPaidAmount,
+      startingCash: startingCash,
+      endingCash: cash,
+    );
+
+    if (report.hasAnyActivity) {
+      latestOfflineReport = report;
+
+      AuditLogService().log(
+        category: LogCategory.system,
+        action: 'OFFLINE_CATCHUP',
+        title: 'Çevrimdışı Şirket Kazancı',
+        description: 'Siz yokken işletmeleriniz ${(retailRevenue + marketRevenue).toStringAsFixed(0)} ₺ ciro yaptı.',
+        amountChange: cash - startingCash,
+        cashAfter: cash,
+        details: {
+          'retailRevenue': retailRevenue,
+          'marketRevenue': marketRevenue,
+          'bankInterestEarned': bankInterestEarned,
+          'totalLoanPaidAmount': totalLoanPaidAmount,
+        },
+      );
+    }
+
+    notifyListeners();
+    saveState();
+    return report;
+  }
+
+  // === OYUN KAYDI & YEREL + BULUT DEPOLAMA (HYBRID PERSISTENCE) ===
   void saveState() {
+    lastActiveAt = DateTime.now();
     SaveService().save(this);
+    FirebaseService().syncPlayerAssetsToCloud(toSaveJson());
+  }
+
+  Future<void> onAppResumed() async {
+    if (lastActiveAt != null) {
+      final offlineSales = await FirebaseService().claimOfflineSales();
+      final elapsed = DateTime.now().difference(lastActiveAt!);
+      if (elapsed.inSeconds >= 5) {
+        processOfflineCatchUp(lastActiveAt!, offlineSales: offlineSales);
+      }
+    }
+    lastActiveAt = DateTime.now();
+    saveState();
   }
 
   Future<bool> loadFromStorage() async {
-    return await SaveService().load(this);
+    // 1. Önce buluttan daha güncel veri var mı kontrol et
+    final cloudData = await FirebaseService().fetchPlayerAssetsFromCloud();
+    if (cloudData != null && cloudData.isNotEmpty) {
+      loadFromSaveJson(cloudData);
+    } else {
+      await SaveService().load(this);
+    }
+
+    // 2. Çevrimdışı pazar satışlarını çek
+    final offlineSales = await FirebaseService().claimOfflineSales();
+
+    // 3. Oyun kapalıyken geçen süre boyunca Tesisleri, Dükkanları ve Bankayı çalıştır!
+    if (lastActiveAt != null) {
+      final elapsed = DateTime.now().difference(lastActiveAt!);
+      if (elapsed.inSeconds >= 5) {
+        processOfflineCatchUp(lastActiveAt!, offlineSales: offlineSales);
+      }
+    } else {
+      lastActiveAt = DateTime.now();
+    }
+
+    _setupCloudMarketSync();
+
+    return true;
+  }
+
+  void _setupCloudMarketSync() {
+    if (FirebaseService().isCloudConnected) {
+      _cloudMarketSub?.cancel();
+      _cloudMarketSub = FirebaseService().streamPublicMarketListings().listen((cloudListings) {
+        final others = cloudListings.where((l) => !l.isPlayerListing).toList();
+        if (others.isNotEmpty) {
+          for (var cListing in others) {
+            final idx = communityListings.indexWhere((l) => l.id == cListing.id);
+            if (idx >= 0) {
+              communityListings[idx] = cListing;
+            } else {
+              communityListings.insert(0, cListing);
+            }
+          }
+          notifyListeners();
+        }
+      });
+    }
   }
 
   Future<void> resetProgress() async {
@@ -1490,6 +2168,8 @@ class GameController extends ChangeNotifier {
     currentLoan = null;
     highestNetWorth = 0.0;
     maxWarehouseCapacity = 500.0;
+    lastActiveAt = DateTime.now();
+    latestOfflineReport = null;
     warehouse.clear();
     ownedFacilities.clear();
     ownedStores.clear();
@@ -1505,6 +2185,7 @@ class GameController extends ChangeNotifier {
     return {
       'version': 1,
       'savedAt': DateTime.now().toIso8601String(),
+      'lastActiveAt': (lastActiveAt ?? DateTime.now()).toIso8601String(),
       'cash': cash,
       'bankSavings': bankSavings,
       'maxWarehouseCapacity': maxWarehouseCapacity,
@@ -1523,6 +2204,9 @@ class GameController extends ChangeNotifier {
   }
 
   void loadFromSaveJson(Map<String, dynamic> data) {
+    if (data.containsKey('lastActiveAt') && data['lastActiveAt'] != null) {
+      lastActiveAt = DateTime.tryParse(data['lastActiveAt'] as String) ?? lastActiveAt;
+    }
     if (data.containsKey('highestNetWorth')) {
       highestNetWorth = (data['highestNetWorth'] as num).toDouble();
     }
@@ -1646,6 +2330,7 @@ class GameController extends ChangeNotifier {
   void dispose() {
     saveState();
     _gameLoopTimer?.cancel();
+    _cloudMarketSub?.cancel();
     super.dispose();
   }
 }
