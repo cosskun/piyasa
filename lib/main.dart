@@ -29,10 +29,15 @@ void main() async {
   }
 
   final controller = GameController();
-  try {
-    await controller.loadFromStorage();
-  } catch (e) {
-    debugPrint('GameController loadFromStorage hatası: $e');
+  if (FirebaseService().isAuthenticated) {
+    try {
+      await controller.loadFromStorage(playerId: FirebaseService().playerId);
+      await AuditLogService().initializeForPlayer(FirebaseService().playerId);
+    } catch (e) {
+      debugPrint('GameController loadFromStorage hatası: $e');
+    }
+  } else {
+    controller.resetToNewGame();
   }
 
   runApp(PiyasaApp(controller: controller));
@@ -62,7 +67,11 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
     } else {
       _createdInternally = true;
       _controller = GameController();
-      _controller.loadFromStorage();
+      if (FirebaseService().isAuthenticated) {
+        _controller.loadFromStorage(playerId: FirebaseService().playerId);
+      } else {
+        _controller.resetToNewGame();
+      }
     }
     _isAuthenticated = widget.skipAuthForTesting ?? FirebaseService().isAuthenticated;
   }
@@ -142,14 +151,19 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
               ? HomeScreen(
                   controller: _controller,
                   onLoggedOut: () {
+                    _controller.resetToNewGame();
+                    AuditLogService().clearInProcess();
                     setState(() {
                       _isAuthenticated = false;
                     });
                   },
                 )
               : AuthScreen(
+                  controller: _controller,
                   onAuthenticated: () async {
-                    await _controller.loadFromStorage();
+                    final pid = FirebaseService().playerId;
+                    await _controller.loadFromStorage(playerId: pid);
+                    await AuditLogService().initializeForPlayer(pid);
                     setState(() {
                       _isAuthenticated = true;
                     });

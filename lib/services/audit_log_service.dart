@@ -11,29 +11,51 @@ class AuditLogService extends ChangeNotifier {
   factory AuditLogService() => _instance;
   AuditLogService._internal();
 
-  static const String _storageKey = 'piyasa_audit_logs_v1';
+  static const String _baseStorageKey = 'piyasa_audit_logs_v2';
   static const int maxStoredLogs = 500;
 
   final List<AuditLog> _logs = [];
   bool _initialized = false;
+  String? _currentPlayerId;
 
   List<AuditLog> get logs => List.unmodifiable(_logs);
+
+  String _getStorageKey([String? playerId]) {
+    final effectiveId = (playerId != null && playerId.isNotEmpty)
+        ? playerId
+        : (FirebaseService().playerId.isNotEmpty ? FirebaseService().playerId : 'guest');
+    return '${_baseStorageKey}_$effectiveId';
+  }
 
   @visibleForTesting
   void resetForTesting() {
     _logs.clear();
     _initialized = false;
+    _currentPlayerId = null;
   }
 
-  /// Yerel logları hafızaya yükler
-  Future<void> initialize() async {
-    if (_initialized) return;
+  /// Aktif oturumdaki logları hafızadan temizler (Çıkış yapıldığında çağrılır)
+  void clearInProcess() {
+    _logs.clear();
+    _initialized = false;
+    _currentPlayerId = null;
+    notifyListeners();
+  }
+
+  /// Belirli bir oyuncuya ait yerel logları hafızaya yükler
+  Future<void> initializeForPlayer(String? playerId) async {
+    final effectiveId = (playerId != null && playerId.isNotEmpty)
+        ? playerId
+        : (FirebaseService().playerId.isNotEmpty ? FirebaseService().playerId : 'guest');
+
+    _logs.clear();
+    _currentPlayerId = effectiveId;
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_storageKey);
+      final key = _getStorageKey(effectiveId);
+      final raw = prefs.getString(key);
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw) as List;
-        _logs.clear();
         for (final item in decoded) {
           if (item is Map<String, dynamic>) {
             _logs.add(AuditLog.fromJson(item));
@@ -45,10 +67,17 @@ class AuditLogService extends ChangeNotifier {
         _logs.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       }
       _initialized = true;
+      notifyListeners();
     } catch (e) {
       debugPrint('AuditLogService: Log yükleme hatası: $e');
       _initialized = true;
     }
+  }
+
+  /// Genel başlatma (mevcut oturumdaki oyuncu için)
+  Future<void> initialize() async {
+    if (_initialized && _currentPlayerId == FirebaseService().playerId) return;
+    await initializeForPlayer(FirebaseService().playerId);
   }
 
   /// Yeni bir denetim ve işlem logu kaydeder
@@ -89,7 +118,7 @@ class AuditLogService extends ChangeNotifier {
     notifyListeners();
 
     // 1. Yerel depolamaya kaydet
-    unawaited(_saveToPrefs());
+    unawaited(_saveToPrefs(currentPlayerId));
 
     // 2. Firebase Cloud Firestore'a senkronize et
     unawaited(fb.writeAuditLog(entry));
@@ -97,11 +126,12 @@ class AuditLogService extends ChangeNotifier {
     return entry;
   }
 
-  Future<void> _saveToPrefs() async {
+  Future<void> _saveToPrefs(String playerId) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final listToSave = _logs.take(maxStoredLogs).map((l) => l.toJson()).toList();
-      await prefs.setString(_storageKey, jsonEncode(listToSave));
+      final key = _getStorageKey(playerId);
+      await prefs.setString(key, jsonEncode(listToSave));
     } catch (e) {
       debugPrint('AuditLogService: Yerel log kaydetme hatası: $e');
     }

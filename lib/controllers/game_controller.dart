@@ -2095,10 +2095,11 @@ class GameController extends ChangeNotifier {
   }
 
   // === OYUN KAYDI & YEREL + BULUT DEPOLAMA (HYBRID PERSISTENCE) ===
-  void saveState() {
+  void saveState({String? targetPlayerId}) {
     lastActiveAt = DateTime.now();
-    SaveService().save(this);
-    FirebaseService().syncPlayerAssetsToCloud(toSaveJson());
+    final pid = targetPlayerId ?? FirebaseService().playerId;
+    SaveService().save(this, playerId: pid);
+    FirebaseService().syncPlayerAssetsToCloud(toSaveJson(), targetPlayerId: pid);
   }
 
   Future<void> onAppResumed() async {
@@ -2113,13 +2114,43 @@ class GameController extends ChangeNotifier {
     saveState();
   }
 
-  Future<bool> loadFromStorage() async {
-    // 1. Önce buluttan daha güncel veri var mı kontrol et
-    final cloudData = await FirebaseService().fetchPlayerAssetsFromCloud();
-    if (cloudData != null && cloudData.isNotEmpty) {
+  /// Yeni bir oyuncu için tertemiz, fabrikasız, dükkansız başlangıç durumu oluşturur
+  void resetToNewGame() {
+    cash = 10000.0;
+    bankSavings = 0.0;
+    _legacyActiveLoan = 0.0;
+    currentLoan = null;
+    highestNetWorth = 10000.0;
+    maxWarehouseCapacity = 500.0;
+    lastActiveAt = DateTime.now();
+    latestOfflineReport = null;
+    latestNotificationToast = null;
+    warehouse.clear();
+    ownedFacilities.clear();
+    ownedStores.clear();
+    activeListings.clear();
+    offers.clear();
+    limitBuyOrders.clear();
+    _initializeMarket();
+    _initializeCommunityListings();
+    notifyListeners();
+  }
+
+  Future<bool> loadFromStorage({String? playerId}) async {
+    final pid = playerId ?? FirebaseService().playerId;
+
+    // 1. Önce buluttan bu oyuncuya ait veri var mı kontrol et
+    final cloudData = await FirebaseService().fetchPlayerAssetsFromCloud(targetPlayerId: pid);
+    if (cloudData != null && cloudData.containsKey('cash')) {
       loadFromSaveJson(cloudData);
     } else {
-      await SaveService().load(this);
+      final loaded = await SaveService().load(this, playerId: pid);
+      if (!loaded) {
+        // Yeni bir oyuncu profili! Kesinlikle eski veriler yüklenmemeli, sıfırdan başlat:
+        resetToNewGame();
+        await SaveService().save(this, playerId: pid);
+        return true;
+      }
     }
 
     // 2. Çevrimdışı pazar satışlarını çek
@@ -2160,25 +2191,11 @@ class GameController extends ChangeNotifier {
     }
   }
 
-  Future<void> resetProgress() async {
-    await SaveService().clear();
-    cash = 10000.0;
-    bankSavings = 0.0;
-    _legacyActiveLoan = 0.0;
-    currentLoan = null;
-    highestNetWorth = 0.0;
-    maxWarehouseCapacity = 500.0;
-    lastActiveAt = DateTime.now();
-    latestOfflineReport = null;
-    warehouse.clear();
-    ownedFacilities.clear();
-    ownedStores.clear();
-    activeListings.clear();
-    offers.clear();
-    limitBuyOrders.clear();
-    _initializeMarket();
-    _initializeCommunityListings();
-    notifyListeners();
+  Future<void> resetProgress({String? playerId}) async {
+    final pid = playerId ?? FirebaseService().playerId;
+    await SaveService().clear(playerId: pid);
+    resetToNewGame();
+    await SaveService().save(this, playerId: pid);
   }
 
   Map<String, dynamic> toSaveJson() {

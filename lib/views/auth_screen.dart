@@ -1,13 +1,19 @@
 import 'package:flutter/material.dart';
 import '../services/firebase_service.dart';
 import '../services/audit_log_service.dart';
+import '../controllers/game_controller.dart';
 import '../models/audit_log.dart';
 import 'banned_dialog.dart';
 
 class AuthScreen extends StatefulWidget {
   final VoidCallback onAuthenticated;
+  final GameController? controller;
 
-  const AuthScreen({super.key, required this.onAuthenticated});
+  const AuthScreen({
+    super.key,
+    required this.onAuthenticated,
+    this.controller,
+  });
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -79,6 +85,13 @@ class _AuthScreenState extends State<AuthScreen> {
         BannedDialog.show(context, reason: reason);
       }
     } else {
+      final pid = FirebaseService().playerId;
+      if (widget.controller != null) {
+        await widget.controller!.loadFromStorage(playerId: pid);
+      }
+      await AuditLogService().initializeForPlayer(pid);
+
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -87,7 +100,7 @@ class _AuthScreenState extends State<AuthScreen> {
         action: 'AUTH_LOGIN',
         title: 'Oturum Açıldı',
         description: '$identifier başarıyla giriş yaptı.',
-        cashAfter: 0.0,
+        cashAfter: widget.controller?.cash ?? 10000.0,
         details: {'identifier': identifier},
       );
       widget.onAuthenticated();
@@ -130,22 +143,39 @@ class _AuthScreenState extends State<AuthScreen> {
         _errorMessage = error;
       });
     } else {
+      // Kayıt başarılı: Otomatik giriş YAPILMAZ!
+      // Bilgiler giriş formuna aktarılır ve kullanıcı şifresiyle giriş yapmaya yönlendirilir.
+      _loginIdentifierController.text = username;
+      _loginPasswordController.text = '';
+      _regPasswordController.text = '';
+      _regConfirmPasswordController.text = '';
+
       setState(() {
         _isLoading = false;
+        _isLogin = true;
+        _errorMessage = null;
       });
-      AuditLogService().log(
-        category: LogCategory.auth,
-        action: 'AUTH_REGISTER',
-        title: 'Yeni Hesap Kaydı',
-        description: '$username şirketiyle sisteme kayıt oldu.',
-        cashAfter: 10000.0,
-        details: {
-          'username': username,
-          'email': email,
-          'companyName': companyName.isNotEmpty ? companyName : '$username Holding',
-        },
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: Colors.white),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Kayıt başarılı! Lütfen belirlediğiniz şifrenizle giriş yapınız.',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF059669),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       );
-      widget.onAuthenticated();
     }
   }
 
@@ -154,6 +184,12 @@ class _AuthScreenState extends State<AuthScreen> {
       _isLoading = true;
     });
     await FirebaseService().continueAsGuest();
+    final pid = FirebaseService().playerId;
+    if (widget.controller != null) {
+      await widget.controller!.loadFromStorage(playerId: pid);
+    }
+    await AuditLogService().initializeForPlayer(pid);
+
     if (!mounted) return;
     setState(() {
       _isLoading = false;
@@ -163,7 +199,7 @@ class _AuthScreenState extends State<AuthScreen> {
       action: 'AUTH_GUEST',
       title: 'Misafir Girişi',
       description: 'Misafir oyuncu moduyla oyuna başlandı.',
-      cashAfter: 10000.0,
+      cashAfter: widget.controller?.cash ?? 10000.0,
     );
     widget.onAuthenticated();
   }

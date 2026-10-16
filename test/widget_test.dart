@@ -1205,7 +1205,7 @@ void main() {
     );
     expect(shortPass, contains('en az 6 karakter'));
 
-    // Successful local registration
+    // Successful local registration does NOT auto-login
     final success = await fb.registerWithEmail(
       email: 'valid@example.com',
       password: 'password123',
@@ -1213,9 +1213,35 @@ void main() {
       companyName: 'Anadolu Ticaret',
     );
     expect(success, isNull);
+    expect(fb.username, isNull);
+    expect(fb.isAuthenticated, isFalse);
+
+    // Duplicate username attempt must be strictly rejected
+    final dupUsername = await fb.registerWithEmail(
+      email: 'different@example.com',
+      password: 'password123',
+      username: 'valid_trader',
+    );
+    expect(dupUsername, contains('zaten kullanımda'));
+
+    // Duplicate email attempt must be strictly rejected
+    final dupEmail = await fb.registerWithEmail(
+      email: 'valid@example.com',
+      password: 'password123',
+      username: 'different_trader',
+    );
+    expect(dupEmail, contains('zaten kayıtlı'));
+
+    // Manual login with registered credentials succeeds
+    final loginErr = await fb.loginWithEmailOrUsername(
+      identifier: 'valid_trader',
+      password: 'password123',
+    );
+    expect(loginErr, isNull);
     expect(fb.username, equals('valid_trader'));
     expect(fb.companyName, equals('Anadolu Ticaret'));
     expect(fb.isGuest, isFalse);
+    expect(fb.isAuthenticated, isTrue);
   });
 
   test('AuditLogService records granular logs, calculates income/expense, and filters by category', () async {
@@ -1392,6 +1418,155 @@ void main() {
     await tester.tap(find.text('Hile Radarı'));
     await tester.pumpAndSettle();
     expect(find.text('OTOMATİK HİLE & ANOMALİ RADARI'), findsOneWidget);
+  });
+
+  testWidgets('AuthScreen does not auto-login upon registration, switches to login tab, pre-fills username, and displays success snackbar', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(500, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    bool authenticatedCalled = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AuthScreen(
+            onAuthenticated: () {
+              authenticatedCalled = true;
+            },
+          ),
+        ),
+      ),
+    );
+
+    // Switch to Register tab
+    await tester.tap(find.text('Kayıt Ol'));
+    await tester.pumpAndSettle();
+
+    // Fill valid registration fields
+    final usernameFinder = find.widgetWithText(TextFormField, 'Kullanıcı Adı (Benzersiz)');
+    final emailFinder = find.widgetWithText(TextFormField, 'E-posta Adresi (Benzersiz)');
+    final passFinder = find.widgetWithText(TextFormField, 'Şifre');
+    final confirmFinder = find.widgetWithText(TextFormField, 'Şifre Tekrarı');
+
+    await tester.enterText(usernameFinder, 'yeni_oyuncu');
+    await tester.enterText(emailFinder, 'yeni@piyasa.com');
+    await tester.enterText(passFinder, '123456');
+    await tester.enterText(confirmFinder, '123456');
+
+    final registerBtn = find.text('Şirketini Kur & Kayıt Ol ›');
+    await tester.ensureVisible(registerBtn);
+    await tester.tap(registerBtn);
+    await tester.pumpAndSettle();
+
+    // CRITICAL: onAuthenticated must NOT have been called!
+    expect(authenticatedCalled, isFalse);
+
+    // Success snackbar is displayed
+    expect(find.text('Kayıt başarılı! Lütfen belirlediğiniz şifrenizle giriş yapınız.'), findsOneWidget);
+
+    // Switched to Login tab
+    expect(find.text('Oyuna Giriş Yap ›'), findsOneWidget);
+
+    // Username is prefilled in login field
+    expect(find.text('yeni_oyuncu'), findsOneWidget);
+  });
+
+  test('Multi-user profile isolation: Player A and Player B have completely independent company saves, facilities, cash, and audit logs', () async {
+    final fb = FirebaseService();
+
+    // 1. Register Player A
+    await fb.registerWithEmail(
+      email: 'playerA@piyasa.com',
+      password: 'passwordA',
+      username: 'playerA',
+      companyName: 'A Holding',
+    );
+    await fb.loginWithEmailOrUsername(identifier: 'playerA', password: 'passwordA');
+    final playerAUid = fb.playerId;
+
+    final controllerA = GameController(autoLoad: false);
+    await controllerA.loadFromStorage(playerId: playerAUid);
+    expect(controllerA.cash, 10000.0);
+    expect(controllerA.ownedFacilities.isEmpty, isTrue);
+
+    // Player A buys a facility and earns money
+    final wheatFarmBp = ProductionFacility.getBlueprints().firstWhere((b) => b.id == 'wheat_farm');
+    controllerA.buyFacility(wheatFarmBp);
+    controllerA.cash = 95000.0;
+    controllerA.warehouse['wheat'] = 250;
+    controllerA.saveState(targetPlayerId: playerAUid);
+
+    await AuditLogService().initializeForPlayer(playerAUid);
+    await AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'ACTION_A',
+      title: 'A İşlemi',
+      description: 'Player A işlem yaptı',
+      cashAfter: 95000.0,
+    );
+    expect(AuditLogService().logs.length, 1);
+    expect(AuditLogService().logs.first.title, 'A İşlemi');
+
+    // Player A logs out
+    await fb.signOut();
+    controllerA.resetToNewGame();
+    AuditLogService().clearInProcess();
+    expect(controllerA.cash, 10000.0);
+    expect(controllerA.ownedFacilities.isEmpty, isTrue);
+    expect(AuditLogService().logs.isEmpty, isTrue);
+
+    // 2. Register Player B
+    await fb.registerWithEmail(
+      email: 'playerB@piyasa.com',
+      password: 'passwordB',
+      username: 'playerB',
+      companyName: 'B Holding',
+    );
+    await fb.loginWithEmailOrUsername(identifier: 'playerB', password: 'passwordB');
+    final playerBUid = fb.playerId;
+    expect(playerBUid, isNot(equals(playerAUid)));
+
+    final controllerB = GameController(autoLoad: false);
+    await controllerB.loadFromStorage(playerId: playerBUid);
+
+    // Player B MUST start fresh! No facilities from Player A, 10000 TL starter cash, empty warehouse!
+    expect(controllerB.cash, 10000.0);
+    expect(controllerB.ownedFacilities.isEmpty, isTrue);
+    expect(controllerB.warehouse.isEmpty, isTrue);
+
+    await AuditLogService().initializeForPlayer(playerBUid);
+    expect(AuditLogService().logs.isEmpty, isTrue); // Player B has no logs from Player A!
+
+    // Player B buys a bakery store and logs
+    final kioskBp = RetailStore.getBlueprints().firstWhere((b) => b.id == 'kiosk_bread');
+    controllerB.buyStore(kioskBp);
+    controllerB.saveState(targetPlayerId: playerBUid);
+    await AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'ACTION_B',
+      title: 'B İşlemi',
+      description: 'Player B işlem yaptı',
+      cashAfter: 6000.0,
+    );
+
+    // 3. Switch back to Player A: Player A's data must remain intact!
+    await fb.signOut();
+    await fb.loginWithEmailOrUsername(identifier: 'playerA', password: 'passwordA');
+    final controllerAReload = GameController(autoLoad: false);
+    await controllerAReload.loadFromStorage(playerId: playerAUid);
+    await AuditLogService().initializeForPlayer(playerAUid);
+
+    expect(controllerAReload.cash, 95000.0);
+    expect(controllerAReload.ownedFacilities.length, 1);
+    expect(controllerAReload.ownedFacilities.first.name, 'Buğday Tarlası');
+    expect(controllerAReload.ownedStores.isEmpty, isTrue); // Store was bought by B, not A!
+    expect(controllerAReload.warehouse['wheat'], 250);
+    expect(AuditLogService().logs.length, 1);
+    expect(AuditLogService().logs.first.title, 'A İşlemi');
+
+    controllerA.dispose();
+    controllerB.dispose();
+    controllerAReload.dispose();
   });
 }
 

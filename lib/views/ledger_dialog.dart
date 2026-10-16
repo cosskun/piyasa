@@ -156,9 +156,15 @@ class _LedgerDialogState extends State<LedgerDialog> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('İşlem Sonrası Kasa:', style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54)),
-                  Text(
-                    '${currencyPrecise.format(log.cashAfter)} ₺',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      '${currencyPrecise.format(log.cashAfter)} ₺',
+                      textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
                   ),
                 ],
               ),
@@ -167,9 +173,15 @@ class _LedgerDialogState extends State<LedgerDialog> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('Oyuncu / UID:', style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.black54)),
-                  Text(
-                    '${log.username} (${log.playerId})',
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      '${log.username} (${log.playerId})',
+                      textAlign: TextAlign.end,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                    ),
                   ),
                 ],
               ),

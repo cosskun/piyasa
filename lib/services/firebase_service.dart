@@ -40,12 +40,13 @@ class FirebaseService {
   static const String _localUsernameKey = 'piyasa_player_username';
   static const String _localIsGuestKey = 'piyasa_is_guest';
   static const String _localOfflineSalesKey = 'piyasa_unclaimed_market_sales';
+  static const String _localAccountsKey = 'piyasa_registered_accounts_v2';
 
   bool get isCloudConnected => _initialized && FirebaseConfig.isConfigured && _firestore != null;
   String get playerId => _playerId ?? 'player_guest';
   String get companyName => _companyName ?? 'Piyasa Holding';
   String? get username => _username;
-  bool get isLoggedIn => _auth?.currentUser != null;
+  bool get isLoggedIn => _auth?.currentUser != null || (!isCloudConnected && _username != null && _username!.isNotEmpty);
   bool get isGuest => _isGuest;
   bool get isAuthenticated => isLoggedIn || _isGuest;
   String? get email => _auth?.currentUser?.email;
@@ -163,11 +164,12 @@ class FirebaseService {
   // ==========================================
   // OYUNCU MAL VARLIĞI BULUT SENKRONİZASYONU
   // ==========================================
-  Future<void> syncPlayerAssetsToCloud(Map<String, dynamic> assetData) async {
+  Future<void> syncPlayerAssetsToCloud(Map<String, dynamic> assetData, {String? targetPlayerId}) async {
     if (!isCloudConnected) return;
 
+    final targetId = (targetPlayerId != null && targetPlayerId.isNotEmpty) ? targetPlayerId : playerId;
     try {
-      final docRef = _firestore!.collection('players').doc(playerId);
+      final docRef = _firestore!.collection('players').doc(targetId);
       assetData['updatedAt'] = FieldValue.serverTimestamp();
       assetData['companyName'] = companyName;
       await docRef.set(assetData, SetOptions(merge: true));
@@ -176,11 +178,12 @@ class FirebaseService {
     }
   }
 
-  Future<Map<String, dynamic>?> fetchPlayerAssetsFromCloud() async {
+  Future<Map<String, dynamic>?> fetchPlayerAssetsFromCloud({String? targetPlayerId}) async {
     if (!isCloudConnected) return null;
 
+    final targetId = (targetPlayerId != null && targetPlayerId.isNotEmpty) ? targetPlayerId : playerId;
     try {
-      final docRef = _firestore!.collection('players').doc(playerId);
+      final docRef = _firestore!.collection('players').doc(targetId);
       final snapshot = await docRef.get();
       if (snapshot.exists && snapshot.data() != null) {
         return snapshot.data()!;
@@ -348,11 +351,52 @@ class FirebaseService {
   // KULLANICI GİRİŞ, KAYIT VE HESAP YÖNETİMİ
   // ==========================================
 
+  /// Yerel kayıtlı hesaplar havuzunu getirir
+  Future<Map<String, Map<String, dynamic>>> getLocalAccounts() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_localAccountsKey);
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      final result = <String, Map<String, dynamic>>{};
+      decoded.forEach((key, val) {
+        if (val is Map<String, dynamic>) {
+          result[key] = val;
+        } else if (val is Map) {
+          result[key] = Map<String, dynamic>.from(val);
+        }
+      });
+      return result;
+    } catch (e) {
+      debugPrint('FirebaseService: getLocalAccounts decode error: $e');
+      return {};
+    }
+  }
+
+  /// Yerel hesabı kaydeder veya günceller
+  Future<void> saveLocalAccount(Map<String, dynamic> accountData) async {
+    final prefs = await SharedPreferences.getInstance();
+    final accounts = await getLocalAccounts();
+    final usernameLower = (accountData['username_lowercase'] as String? ??
+            accountData['username'] as String? ??
+            '')
+        .trim()
+        .toLowerCase();
+    if (usernameLower.isNotEmpty) {
+      accounts[usernameLower] = accountData;
+      await prefs.setString(_localAccountsKey, jsonEncode(accounts));
+    }
+  }
+
   /// Kullanıcı adının daha önce alınıp alınmadığını kontrol eder (Case-insensitive)
   Future<bool> isUsernameAvailable(String username) async {
     final clean = username.trim().toLowerCase();
     if (clean.length < 3 || clean.length > 20) return false;
     if (!RegExp(r'^[a-zA-Z0-9_.]+$').hasMatch(clean)) return false;
+
+    // 1. Yerel veritabanında benzersizlik kontrolü
+    final localAccounts = await getLocalAccounts();
+    if (localAccounts.containsKey(clean)) return false;
 
     if (!isCloudConnected) return true;
 
@@ -366,6 +410,7 @@ class FirebaseService {
   }
 
   /// Benzersiz kullanıcı adı ve e-posta ile yeni oyuncu hesabı oluşturur
+  /// NOT: Kayıt işlemi başarılı olduğunda ASLA otomatik oturum açılmaz, kullanıcı giriş ekranına yönlendirilir.
   Future<String?> registerWithEmail({
     required String email,
     required String password,
@@ -386,27 +431,59 @@ class FirebaseService {
       return 'Kullanıcı adı sadece harf, rakam, nokta ve alt çizgi içerebilir.';
     }
 
+    if (cleanEmail.isEmpty || !cleanEmail.contains('@') || !cleanEmail.contains('.')) {
+      return 'Lütfen geçerli bir e-posta adresi girin.';
+    }
+
     if (cleanPassword.length < 6) {
       return 'Şifreniz en az 6 karakterden oluşmalıdır.';
+    }
+
+    // 1. Yerel veritabanında benzersizlik denetimi (Kullanıcı adı & E-posta)
+    final localAccounts = await getLocalAccounts();
+    if (localAccounts.containsKey(normalizedUsername)) {
+      return 'Bu kullanıcı adı zaten kullanımda. Lütfen başka bir kullanıcı adı seçin.';
+    }
+    for (var acc in localAccounts.values) {
+      final accEmail = (acc['email'] as String? ?? '').toLowerCase();
+      if (accEmail == cleanEmail) {
+        return 'Bu e-posta adresiyle zaten kayıtlı bir hesap bulunmaktadır.';
+      }
     }
 
     final effectiveCompanyName = (companyName != null && companyName.trim().isNotEmpty)
         ? companyName.trim()
         : '$cleanUsername Holding';
 
+    final isAdminUser = cleanEmail == adminEmail.toLowerCase() ||
+        cleanUsername.toUpperCase() == adminUsername.toUpperCase();
+
     if (!isCloudConnected) {
-      final prefs = await SharedPreferences.getInstance();
-      _username = cleanUsername;
-      _companyName = effectiveCompanyName;
+      // Yerel modda yeni benzersiz oyuncu kimliği oluştur ve kaydet
+      final newUid = 'ply_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(99999)}';
+      await saveLocalAccount({
+        'uid': newUid,
+        'username': cleanUsername,
+        'username_lowercase': normalizedUsername,
+        'email': cleanEmail,
+        'password': cleanPassword,
+        'companyName': effectiveCompanyName,
+        'role': isAdminUser ? 'admin' : 'user',
+        'isBanned': false,
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+
+      // Otomatik giriş YAPILMAZ!
+      _username = null;
+      _companyName = null;
+      _playerId = null;
       _isGuest = false;
-      await prefs.setString(_localUsernameKey, _username!);
-      await prefs.setString(_localCompanyNameKey, _companyName!);
-      await prefs.setBool(_localIsGuestKey, false);
+
       return null;
     }
 
     try {
-      // 1. Kullanıcı adının benzersizliğini kontrol et (Koleksiyon: usernames/{username_lowercase})
+      // 1. Bulutta kullanıcı adının benzersizliğini kontrol et (Koleksiyon: usernames/{username_lowercase})
       final usernameDoc = await _firestore!.collection('usernames').doc(normalizedUsername).get();
       if (usernameDoc.exists) {
         return 'Bu kullanıcı adı zaten kullanımda. Lütfen başka bir kullanıcı adı seçin.';
@@ -423,44 +500,52 @@ class FirebaseService {
         return 'Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.';
       }
 
-      _playerId = user.uid;
-      _username = cleanUsername;
-      _companyName = effectiveCompanyName;
-      _isGuest = false;
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_localPlayerIdKey, _playerId!);
-      await prefs.setString(_localUsernameKey, _username!);
-      await prefs.setString(_localCompanyNameKey, _companyName!);
-      await prefs.setBool(_localIsGuestKey, false);
+      final uid = user.uid;
 
       // 3. Kullanıcı adını rezerve et ve oyuncu profilini Firestore'a kaydet
       final batch = _firestore!.batch();
       batch.set(_firestore!.collection('usernames').doc(normalizedUsername), {
-        'uid': user.uid,
+        'uid': uid,
         'displayUsername': cleanUsername,
         'email': cleanEmail,
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      final isAdminUser = cleanEmail.toLowerCase() == adminEmail.toLowerCase() ||
-          cleanUsername.toUpperCase() == adminUsername.toUpperCase();
-      if (isAdminUser) {
-        _role = 'admin';
-      }
-
-      batch.set(_firestore!.collection('players').doc(user.uid), {
-        'uid': user.uid,
+      batch.set(_firestore!.collection('players').doc(uid), {
+        'uid': uid,
         'username': cleanUsername,
         'username_lowercase': normalizedUsername,
         'email': cleanEmail,
         'companyName': effectiveCompanyName,
         'role': isAdminUser ? 'admin' : 'user',
         'isBanned': false,
+        'cash': 10000.0,
+        'netWorth': 10000.0,
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
       await batch.commit();
+
+      // Yerel hesap havuzuna da ekle
+      await saveLocalAccount({
+        'uid': uid,
+        'username': cleanUsername,
+        'username_lowercase': normalizedUsername,
+        'email': cleanEmail,
+        'password': cleanPassword,
+        'companyName': effectiveCompanyName,
+        'role': isAdminUser ? 'admin' : 'user',
+        'isBanned': false,
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+
+      // KESİNLİKLE OTOMATİK GİRİŞ YAPILMAZ! Firebase Auth otomatik oturum açtığı için çıkış yapıyoruz:
+      await _auth!.signOut();
+      _playerId = null;
+      _username = null;
+      _companyName = null;
+      _isGuest = false;
+
       return null; // Başarılı!
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
@@ -493,13 +578,50 @@ class FirebaseService {
     }
 
     if (!isCloudConnected) {
-      final prefs = await SharedPreferences.getInstance();
-      _username = cleanIdentifier;
-      _companyName = '$_username Holding';
+      final localAccounts = await getLocalAccounts();
+      final norm = cleanIdentifier.toLowerCase();
+      Map<String, dynamic>? matchedAccount;
+
+      if (localAccounts.containsKey(norm)) {
+        matchedAccount = localAccounts[norm];
+      } else {
+        for (var acc in localAccounts.values) {
+          final accEmail = (acc['email'] as String? ?? '').toLowerCase();
+          if (accEmail == norm) {
+            matchedAccount = acc;
+            break;
+          }
+        }
+      }
+
+      if (matchedAccount == null) {
+        return 'Kullanıcı adı veya e-posta adresi bulunamadı.';
+      }
+
+      if (matchedAccount['password'] != cleanPassword) {
+        return 'Şifreniz hatalı. Lütfen kontrol edip tekrar deneyin.';
+      }
+
+      if (matchedAccount['isBanned'] == true) {
+        _isBanned = true;
+        _banReason = matchedAccount['banReason'] as String? ?? 'Oyun kurallarını ihlal';
+        isBannedNotifier.value = true;
+        banReasonNotifier.value = _banReason;
+        return 'HESAP_BANLANDI: $_banReason';
+      }
+
+      _playerId = matchedAccount['uid'] as String?;
+      _username = matchedAccount['username'] as String? ?? cleanIdentifier;
+      _companyName = matchedAccount['companyName'] as String? ?? '$_username Holding';
+      _role = matchedAccount['role'] as String? ?? (isAdmin ? 'admin' : 'user');
       _isGuest = false;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_localPlayerIdKey, _playerId!);
       await prefs.setString(_localUsernameKey, _username!);
       await prefs.setString(_localCompanyNameKey, _companyName!);
       await prefs.setBool(_localIsGuestKey, false);
+
       return null;
     }
 
@@ -564,6 +686,19 @@ class FirebaseService {
             _firestore!.collection('players').doc(user.uid).set({'role': 'admin'}, SetOptions(merge: true));
           }
           _listenToBanStatus(user.uid);
+
+          // Yerel hesap havuzuna da kaydet
+          await saveLocalAccount({
+            'uid': user.uid,
+            'username': _username,
+            'username_lowercase': (_username ?? '').toLowerCase(),
+            'email': targetEmail,
+            'password': cleanPassword,
+            'companyName': _companyName,
+            'role': _role,
+            'isBanned': _isBanned,
+            'createdAt': DateTime.now().toIso8601String(),
+          });
         }
       } catch (e) {
         debugPrint('FirebaseService: Profil çekilemedi: $e');
@@ -594,8 +729,14 @@ class FirebaseService {
   /// Misafir oyuncu olarak oturum açmadan devam etme
   Future<void> continueAsGuest() async {
     _isGuest = true;
+    _username = 'Misafir Oyuncu';
+    _companyName = 'Misafir Holding';
+    _playerId ??= 'ply_guest_${DateTime.now().millisecondsSinceEpoch}';
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_localIsGuestKey, true);
+    await prefs.setString(_localPlayerIdKey, _playerId!);
+    await prefs.setString(_localUsernameKey, _username!);
+    await prefs.setString(_localCompanyNameKey, _companyName!);
   }
 
   /// Çıkış yapma
@@ -614,9 +755,13 @@ class FirebaseService {
     }
     _isGuest = false;
     _username = null;
+    _companyName = null;
+    _playerId = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_localIsGuestKey);
     await prefs.remove(_localUsernameKey);
+    await prefs.remove(_localCompanyNameKey);
+    await prefs.remove(_localPlayerIdKey);
   }
 
   // ==========================================
@@ -656,19 +801,24 @@ class FirebaseService {
   /// Sistemdeki tüm oyuncuları anlık olarak dinler
   Stream<List<Map<String, dynamic>>> streamAllPlayers() {
     if (!isCloudConnected || _firestore == null) {
-      return Stream.value([
-        {
-          'uid': playerId,
-          'username': username ?? 'COSSKUN',
-          'email': email ?? adminEmail,
-          'companyName': companyName,
-          'cash': 100000.0,
-          'netWorth': 250000.0,
-          'level': 5,
-          'isBanned': false,
-          'role': 'admin',
+      return Stream.fromFuture(getLocalAccounts()).map((accounts) {
+        if (accounts.isEmpty) {
+          return [
+            {
+              'uid': playerId,
+              'username': username ?? 'COSSKUN',
+              'email': email ?? adminEmail,
+              'companyName': companyName,
+              'cash': 10000.0,
+              'netWorth': 10000.0,
+              'level': 1,
+              'isBanned': false,
+              'role': isAdmin ? 'admin' : 'user',
+            }
+          ];
         }
-      ]);
+        return accounts.values.toList();
+      });
     }
 
     return _firestore!
@@ -718,10 +868,22 @@ class FirebaseService {
   /// Oyuncu hesabını banlar ve pazardaki açık ilanlarını otomatik iptal eder
   Future<String?> banPlayer({required String targetUid, required String reason}) async {
     if (!isAdmin) return 'Bu işlem için yönetici yetkiniz bulunmamaktadır.';
+    final cleanReason = reason.trim().isEmpty ? 'Oyun kurallarına aykırı hareket ve hile tespiti' : reason.trim();
+
+    // Yerel hesap havuzunda güncelle
+    final localAccounts = await getLocalAccounts();
+    for (var acc in localAccounts.values) {
+      if (acc['uid'] == targetUid) {
+        acc['isBanned'] = true;
+        acc['banReason'] = cleanReason;
+        await saveLocalAccount(acc);
+        break;
+      }
+    }
+
     if (!isCloudConnected || _firestore == null) return null;
 
     try {
-      final cleanReason = reason.trim().isEmpty ? 'Oyun kurallarına aykırı hareket ve hile tespiti' : reason.trim();
       await _firestore!.collection('players').doc(targetUid).set({
         'isBanned': true,
         'banReason': cleanReason,
@@ -768,6 +930,18 @@ class FirebaseService {
   /// Banlı oyuncunun banını kaldırır
   Future<String?> unbanPlayer({required String targetUid}) async {
     if (!isAdmin) return 'Bu işlem için yönetici yetkiniz bulunmamaktadır.';
+
+    // Yerel hesap havuzunda güncelle
+    final localAccounts = await getLocalAccounts();
+    for (var acc in localAccounts.values) {
+      if (acc['uid'] == targetUid) {
+        acc['isBanned'] = false;
+        acc.remove('banReason');
+        await saveLocalAccount(acc);
+        break;
+      }
+    }
+
     if (!isCloudConnected || _firestore == null) return null;
 
     try {

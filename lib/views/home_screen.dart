@@ -341,6 +341,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   cashAfter: widget.controller.cash,
                 );
                 await FirebaseService().signOut();
+                widget.controller.resetToNewGame();
+                AuditLogService().clearInProcess();
                 widget.onLoggedOut?.call();
               },
               icon: const Icon(Icons.logout, size: 18),
