@@ -85,6 +85,9 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
     NotificationService().setAppInForeground(true);
     if (_isAuthenticated) {
       FirebaseService().setPlayerOnlineStatus(isOnline: true);
+      if (widget.skipLoadingForTesting != true) {
+        _isLoadingGame = true;
+      }
     }
   }
 

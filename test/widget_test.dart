@@ -1737,6 +1737,38 @@ void main() {
     controller.dispose();
     freshController.dispose();
   });
+
+  testWidgets('PiyasaApp renders GameLoadingScreen upon app launch when user is already authenticated', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 850);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController(autoLoad: false);
+
+    // Launch app with user already authenticated
+    await tester.pumpWidget(
+      PiyasaApp(
+        controller: controller,
+        skipAuthForTesting: true,
+      ),
+    );
+
+    // Verify loading screen is shown first with its badges and status
+    expect(find.byType(GameLoadingScreen), findsOneWidget);
+    expect(find.text('DÜNYANIZ HAZIRLANIYOR'), findsOneWidget);
+    expect(find.text('Tarlalar'), findsWidgets);
+    expect(find.text('Fabrikalar'), findsWidgets);
+
+    // Pump past minDuration and completion delay
+    await tester.pump(const Duration(milliseconds: 2700));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    // Verify loading screen has finished and HomeScreen is now rendered
+    expect(find.byType(GameLoadingScreen), findsNothing);
+    expect(find.byType(HomeScreen), findsOneWidget);
+
+    controller.dispose();
+  });
 }
 
 
