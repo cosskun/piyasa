@@ -6,6 +6,7 @@ import 'services/firebase_service.dart';
 import 'services/audit_log_service.dart';
 import 'views/home_screen.dart';
 import 'views/auth_screen.dart';
+import 'views/game_loading_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,8 +47,14 @@ void main() async {
 class PiyasaApp extends StatefulWidget {
   final GameController? controller;
   final bool? skipAuthForTesting;
+  final bool? skipLoadingForTesting;
 
-  const PiyasaApp({super.key, this.controller, this.skipAuthForTesting});
+  const PiyasaApp({
+    super.key,
+    this.controller,
+    this.skipAuthForTesting,
+    this.skipLoadingForTesting,
+  });
 
   @override
   State<PiyasaApp> createState() => _PiyasaAppState();
@@ -57,6 +64,7 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
   late final GameController _controller;
   bool _createdInternally = false;
   late bool _isAuthenticated;
+  bool _isLoadingGame = false;
 
   @override
   void initState() {
@@ -147,28 +155,45 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
           ),
-          home: _isAuthenticated
-              ? HomeScreen(
+          home: _isLoadingGame
+              ? GameLoadingScreen(
                   controller: _controller,
-                  onLoggedOut: () {
-                    _controller.resetToNewGame();
-                    AuditLogService().clearInProcess();
+                  onLoaded: () {
                     setState(() {
-                      _isAuthenticated = false;
-                    });
-                  },
-                )
-              : AuthScreen(
-                  controller: _controller,
-                  onAuthenticated: () async {
-                    final pid = FirebaseService().playerId;
-                    await _controller.loadFromStorage(playerId: pid);
-                    await AuditLogService().initializeForPlayer(pid);
-                    setState(() {
+                      _isLoadingGame = false;
                       _isAuthenticated = true;
                     });
                   },
-                ),
+                )
+              : (_isAuthenticated
+                  ? HomeScreen(
+                      controller: _controller,
+                      onLoggedOut: () {
+                        _controller.resetToNewGame();
+                        AuditLogService().clearInProcess();
+                        setState(() {
+                          _isAuthenticated = false;
+                          _isLoadingGame = false;
+                        });
+                      },
+                    )
+                  : AuthScreen(
+                      controller: _controller,
+                      onAuthenticated: () {
+                        if (widget.skipLoadingForTesting == true) {
+                          final pid = FirebaseService().playerId;
+                          _controller.loadFromStorage(playerId: pid);
+                          AuditLogService().initializeForPlayer(pid);
+                          setState(() {
+                            _isAuthenticated = true;
+                          });
+                        } else {
+                          setState(() {
+                            _isLoadingGame = true;
+                          });
+                        }
+                      },
+                    )),
         );
       },
     );

@@ -22,6 +22,7 @@ import 'package:piyasa/views/auth_screen.dart';
 import 'package:piyasa/views/ledger_dialog.dart';
 import 'package:piyasa/views/admin_dashboard_view.dart';
 import 'package:piyasa/views/banned_dialog.dart';
+import 'package:piyasa/views/game_loading_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -1567,6 +1568,41 @@ void main() {
     controllerA.dispose();
     controllerB.dispose();
     controllerAReload.dispose();
+  });
+
+  testWidgets('GameLoadingScreen renders animated sliding cards, pulse logo, dynamic stages, and invokes onLoaded callback', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 850);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    bool loadedInvoked = false;
+    final controller = GameController(autoLoad: false);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameLoadingScreen(
+          controller: controller,
+          minDuration: const Duration(milliseconds: 300),
+          onLoaded: () {
+            loadedInvoked = true;
+          },
+        ),
+      ),
+    );
+
+    // Initial loading screen rendered
+    expect(find.text('PİYASA'), findsOneWidget);
+    expect(find.text('DÜNYANIZ HAZIRLANIYOR'), findsOneWidget);
+    expect(find.text('Tarlalar'), findsWidgets);
+    expect(find.text('Fabrikalar'), findsWidgets);
+    expect(find.text('Marketler'), findsWidgets);
+
+    // Pump past the 300ms minDuration + completion delay
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(loadedInvoked, isTrue);
+    controller.dispose();
   });
 }
 
