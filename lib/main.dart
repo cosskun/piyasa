@@ -9,11 +9,32 @@ import 'views/auth_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await NotificationService().initialize();
-  await FirebaseService().initialize();
-  await AuditLogService().initialize();
+
+  try {
+    await NotificationService().initialize();
+  } catch (e) {
+    debugPrint('NotificationService init hatası: $e');
+  }
+
+  try {
+    await FirebaseService().initialize();
+  } catch (e) {
+    debugPrint('FirebaseService init hatası: $e');
+  }
+
+  try {
+    await AuditLogService().initialize();
+  } catch (e) {
+    debugPrint('AuditLogService init hatası: $e');
+  }
+
   final controller = GameController();
-  await controller.loadFromStorage();
+  try {
+    await controller.loadFromStorage();
+  } catch (e) {
+    debugPrint('GameController loadFromStorage hatası: $e');
+  }
+
   runApp(PiyasaApp(controller: controller));
 }
 

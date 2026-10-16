@@ -106,9 +106,9 @@ class FirebaseService {
     _isGuest = prefs.getBool(_localIsGuestKey) ?? false;
 
     // 2. Firebase Bulut Bağlantısı
-    if (FirebaseConfig.isConfigured) {
+    if (FirebaseConfig.isConfigured && FirebaseConfig.currentPlatform != null) {
       try {
-        await Firebase.initializeApp(options: FirebaseConfig.currentPlatform);
+        await Firebase.initializeApp(options: FirebaseConfig.currentPlatform!);
         _firestore = FirebaseFirestore.instance;
         _auth = FirebaseAuth.instance;
         _initialized = true;
