@@ -2375,6 +2375,41 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('Hybrid persistence preserves purchased facilities on reload and market has zero fake sellers', (WidgetTester tester) async {
+    final controller = GameController(autoLoad: false);
+
+    // 1. Verify community listings contain ZERO fake/simulated sellers (only official reserves)
+    for (var l in controller.communityListings) {
+      expect(l.isOfficialReserve, isTrue);
+      expect(l.sellerId, equals('SYSTEM'));
+      expect(l.id.startsWith('comm_'), isFalse);
+    }
+
+    // 2. Buy a facility (wheat farm)
+    final blueprints = ProductionFacility.getBlueprints();
+    final wheatFarm = blueprints.firstWhere((b) => b.id == 'wheat_farm');
+    controller.cash = 20000.0;
+    controller.buyFacility(wheatFarm);
+    expect(controller.ownedFacilities.length, equals(1));
+
+    // 3. Save state locally
+    await SaveService().save(controller, playerId: 'test_player_persistence');
+
+    // 4. Create a new controller instance simulating app update / restart
+    final reloadedController = GameController(autoLoad: false);
+    expect(reloadedController.ownedFacilities.length, equals(0));
+
+    // 5. Load from storage for that player
+    await reloadedController.loadFromStorage(playerId: 'test_player_persistence');
+
+    // 6. Verify purchased facilities are completely preserved!
+    expect(reloadedController.ownedFacilities.length, equals(1));
+    expect(reloadedController.ownedFacilities.first.name, equals('Buğday Tarlası'));
+
+    controller.dispose();
+    reloadedController.dispose();
+  });
 }
 
 

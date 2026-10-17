@@ -83,20 +83,38 @@ class SaveService {
 
   Future<void> _performSave(GameController controller, String effectivePlayerId) async {
     try {
-      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 2));
+      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 4));
       final data = controller.toSaveJson();
       final jsonStr = jsonEncode(data);
       final key = getSaveKeyForPlayer(effectivePlayerId);
-      await prefs.setString(key, jsonStr).timeout(const Duration(seconds: 2));
+      await prefs.setString(key, jsonStr).timeout(const Duration(seconds: 4));
     } catch (e, stack) {
       debugPrint('SaveService save error: $e\n$stack');
     }
   }
 
+  /// Yerel depolamadaki kayıtlı ham JSON verisini döndürür (hibrit karşılaştırma için)
+  Future<Map<String, dynamic>?> getLocalSaveData({String? playerId}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 4));
+      final effectivePlayerId = (playerId != null && playerId.isNotEmpty)
+          ? playerId
+          : (FirebaseService().playerId.isNotEmpty ? FirebaseService().playerId : 'guest');
+      final key = getSaveKeyForPlayer(effectivePlayerId);
+      final jsonStr = prefs.getString(key);
+      if (jsonStr != null && jsonStr.isNotEmpty) {
+        return jsonDecode(jsonStr) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      debugPrint('SaveService getLocalSaveData error: $e');
+    }
+    return null;
+  }
+
   /// Belirli bir oyuncuya ait kaydedilmiş oyun verisini yerel depolamadan okur ve controller'a yükler
   Future<bool> load(GameController controller, {String? playerId}) async {
     try {
-      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 2));
+      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 4));
       final effectivePlayerId = (playerId != null && playerId.isNotEmpty)
           ? playerId
           : (FirebaseService().playerId.isNotEmpty ? FirebaseService().playerId : 'guest');
@@ -116,7 +134,7 @@ class SaveService {
   /// Oyuncuya ait kayıt olup olmadığını denetler
   Future<bool> hasSaveForPlayer({String? playerId}) async {
     try {
-      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 2));
+      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 4));
       final effectivePlayerId = (playerId != null && playerId.isNotEmpty)
           ? playerId
           : (FirebaseService().playerId.isNotEmpty ? FirebaseService().playerId : 'guest');
@@ -131,7 +149,7 @@ class SaveService {
   /// Belirli bir oyuncunun kaydını temizler
   Future<void> clear({String? playerId}) async {
     try {
-      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 2));
+      final prefs = await SharedPreferences.getInstance().timeout(const Duration(seconds: 4));
       final effectivePlayerId = (playerId != null && playerId.isNotEmpty)
           ? playerId
           : (FirebaseService().playerId.isNotEmpty ? FirebaseService().playerId : 'guest');

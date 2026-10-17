@@ -96,27 +96,6 @@ class GameController extends ChangeNotifier {
     '🏢 Devlet Emtia Rezervi',
   ];
 
-  static const List<String> _simulatedSellers = [
-    'Anadolu Tahıl Ticaret',
-    'Çukurova Pamuk Sanayi',
-    'Ege Çiftlik Mandırası',
-    'Boğaziçi Kahve & Gıda',
-    'Marmara Un Değirmenleri',
-    'Toros Meyvecilik A.Ş.',
-    'Trakyalı Dokuma Ltd.',
-    'Akdeniz Gurme Peynir',
-    'Yeşil Vadi Çiftliği',
-    'Başkent Toptan Gıda',
-    'Adapazarı Patates Birliği',
-    'Pelit Artisan Çikolata',
-    'Karadeniz Orman & Kereste',
-    'İnegöl Masif Mobilya',
-    'Ergani Madencilik A.Ş.',
-    'İskenderun Demir-Çelik',
-    'Tüpraş Rafineri & Polimer',
-    'Aselsan Mikro Elektronik',
-  ];
-
   GameController({bool autoLoad = false}) {
     _initializeMarket();
     _initializeCommunityListings();
@@ -163,32 +142,8 @@ class GameController extends ChangeNotifier {
         ),
       );
     }
-
-    // 2. Simüle edilmiş diğer pazar/kooperatif ilanları
-    for (int i = 0; i < 4; i++) {
-      final item = allItems[_random.nextInt(allItems.length)];
-      final mItem = marketItems[item.id];
-      final base = mItem?.currentPrice ?? item.basePrice;
-      final priceMultiplier = 0.91 + _random.nextDouble() * 0.18;
-      final price = double.parse((base * priceMultiplier).toStringAsFixed(2));
-      final seller = _simulatedSellers[_random.nextInt(_simulatedSellers.length)];
-      final qty = (_random.nextInt(6) + 3) * 10; // 30 - 80 adet
-
-      communityListings.add(
-        MarketListing(
-          id: 'comm_${DateTime.now().millisecondsSinceEpoch}_$i',
-          itemId: item.id,
-          initialQuantity: qty,
-          remainingQuantity: qty,
-          pricePerUnit: price,
-          listedAt: DateTime.now().subtract(Duration(minutes: _random.nextInt(60))),
-          sellerName: seller,
-          sellerId: null,
-          isPlayerListing: false,
-          isOfficialReserve: false,
-        ),
-      );
-    }
+    // NOT: Kesinlikle sahte/simüle edilmiş oyuncu ilanları eklenmez.
+    // Pazardaki oyuncu ilanları YALNIZCA veritabanına kayıtlı gerçek oyuncuların açtığı ilanlardan oluşur.
   }
 
   bool _isGameLoopPaused = false;
@@ -2321,24 +2276,73 @@ class GameController extends ChangeNotifier {
   Future<bool> loadFromStorage({String? playerId}) async {
     final pid = playerId ?? FirebaseService().playerId;
 
-    // 1. Önce buluttan bu oyuncuya ait veri var mı kontrol et
-    final cloudData = await FirebaseService().fetchPlayerAssetsFromCloud(targetPlayerId: pid);
-    if (cloudData != null && cloudData.containsKey('cash')) {
-      loadFromSaveJson(cloudData);
-    } else {
-      final loaded = await SaveService().load(this, playerId: pid);
-      if (!loaded) {
-        // Yeni bir oyuncu profili! Kesinlikle eski veriler yüklenmemeli, sıfırdan başlat:
-        resetToNewGame();
-        await SaveService().save(this, playerId: pid);
-        return true;
-      }
+    // 1. Yerel cihazdaki son kaydı oku
+    final localData = await SaveService().getLocalSaveData(playerId: pid);
+
+    // 2. Buluttaki oyuncu verisini oku
+    Map<String, dynamic>? cloudData;
+    try {
+      cloudData = await FirebaseService().fetchPlayerAssetsFromCloud(targetPlayerId: pid);
+    } catch (e) {
+      debugPrint('Cloud data fetch error: $e');
     }
 
-    // 2. Çevrimdışı pazar satışlarını çek
+    // 3. Akıllı Hibrit Karşılaştırma & Yükleme
+    if (localData != null && cloudData != null) {
+      final localFacilities = (localData['ownedFacilities'] as List?)?.length ?? 0;
+      final cloudFacilities = (cloudData['ownedFacilities'] as List?)?.length ?? 0;
+      final localStores = (localData['ownedStores'] as List?)?.length ?? 0;
+      final cloudStores = (cloudData['ownedStores'] as List?)?.length ?? 0;
+      final localAssets = localFacilities + localStores;
+      final cloudAssets = cloudFacilities + cloudStores;
+
+      final localSavedAt = DateTime.tryParse(localData['savedAt'] as String? ?? '');
+      final cloudSavedAt = DateTime.tryParse(cloudData['savedAt'] as String? ?? '');
+
+      // Eğer yerelde tarlalar/tesisler var ama bulutta 0 tesis varsa (kayıt yeni açılmış veya henüz buluta gitmemişse)
+      // Kesinlikle yerel kaydı koru ve tarlaların sıfırlanmasını önle!
+      if (localAssets > 0 && cloudAssets == 0) {
+        loadFromSaveJson(localData);
+        saveState(targetPlayerId: pid); // Bulutu da yerelle eşitle
+      } else if (cloudAssets > 0 && localAssets == 0) {
+        loadFromSaveJson(cloudData);
+        await SaveService().save(this, playerId: pid);
+      } else if (localSavedAt != null && cloudSavedAt != null) {
+        if (localSavedAt.isAfter(cloudSavedAt) || localSavedAt.isAtSameMomentAs(cloudSavedAt)) {
+          loadFromSaveJson(localData);
+          saveState(targetPlayerId: pid);
+        } else {
+          loadFromSaveJson(cloudData);
+          await SaveService().save(this, playerId: pid);
+        }
+      } else {
+        // Tarih yoksa daha zengin varlığı olan tarafı yükle
+        if (localAssets >= cloudAssets) {
+          loadFromSaveJson(localData);
+          saveState(targetPlayerId: pid);
+        } else {
+          loadFromSaveJson(cloudData);
+          await SaveService().save(this, playerId: pid);
+        }
+      }
+    } else if (localData != null) {
+      loadFromSaveJson(localData);
+      saveState(targetPlayerId: pid); // Buluta da aktar
+    } else if (cloudData != null && (cloudData.containsKey('ownedFacilities') || cloudData.containsKey('warehouse') || cloudData.containsKey('savedAt'))) {
+      loadFromSaveJson(cloudData);
+      await SaveService().save(this, playerId: pid);
+    } else {
+      // Gerçekten sıfır / yeni bir oyuncu profili!
+      resetToNewGame();
+      await SaveService().save(this, playerId: pid);
+      saveState(targetPlayerId: pid);
+      return true;
+    }
+
+    // 4. Çevrimdışı pazar satışlarını çek
     final offlineSales = await FirebaseService().claimOfflineSales();
 
-    // 3. Oyun kapalıyken geçen süre boyunca Tesisleri, Dükkanları ve Bankayı çalıştır!
+    // 5. Oyun kapalıyken geçen süre boyunca Tesisleri, Dükkanları ve Bankayı çalıştır!
     if (lastActiveAt != null) {
       final elapsed = DateTime.now().difference(lastActiveAt!);
       if (elapsed.inSeconds >= 5) {
@@ -2360,15 +2364,15 @@ class GameController extends ChangeNotifier {
         final myId = FirebaseService().playerId;
         final activeCloudOthers = cloudListings.where((l) {
           final isMine = l.isPlayerListing || (l.sellerId != null && l.sellerId == myId);
-          return !isMine && !l.isCompleted;
+          return !isMine && !l.isCompleted && l.sellerId != null && l.sellerId != 'SYSTEM';
         }).toList();
         final cloudOtherIds = activeCloudOthers.map((l) => l.id).toSet();
 
-        // 1. Bulutta tamamlanmış veya kaldırılmış diğer oyuncu ilanlarını temizle
+        // 1. Bulutta tamamlanmış, silinmiş veya eski sahte simüle edilmiş ilanları temizle
         communityListings.removeWhere((l) =>
-            l.sellerId != null && l.sellerId != 'SYSTEM' && !cloudOtherIds.contains(l.id));
+            !l.isOfficialReserve && (l.sellerId == null || l.id.startsWith('comm_') || !cloudOtherIds.contains(l.id)));
 
-        // 2. Yeni ve güncellenen diğer oyuncu ilanlarını listeye entegre et
+        // 2. Yeni ve güncellenen diğer gerçek oyuncu ilanlarını listeye entegre et
         for (var cListing in activeCloudOthers) {
           final idx = communityListings.indexWhere((l) => l.id == cListing.id);
           if (idx >= 0) {
@@ -2509,7 +2513,11 @@ class GameController extends ChangeNotifier {
       communityListings.clear();
       for (var c in data['communityListings'] as List) {
         try {
-          communityListings.add(MarketListing.fromJson(c as Map<String, dynamic>));
+          final listing = MarketListing.fromJson(c as Map<String, dynamic>);
+          // Sadece resmi piyasa rezervleri veya gerçek kayıtlı oyuncuların ilanları alınır
+          if (listing.isOfficialReserve || (listing.sellerId != null && listing.sellerId != 'SYSTEM' && !listing.id.startsWith('comm_'))) {
+            communityListings.add(listing);
+          }
         } catch (e) {
           debugPrint('Error loading communityListing: $e');
         }

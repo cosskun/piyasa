@@ -46,7 +46,7 @@ class FirebaseService {
   String get playerId => _playerId ?? 'player_guest';
   String get companyName => _companyName ?? 'Piyasa Holding';
   String? get username => _username;
-  bool get isLoggedIn => _auth?.currentUser != null || (!isCloudConnected && _username != null && _username!.isNotEmpty);
+  bool get isLoggedIn => _auth?.currentUser != null || (_username != null && _username!.isNotEmpty);
   bool get isGuest => _isGuest;
   bool get isAuthenticated => isLoggedIn || _isGuest;
   String? get email => _auth?.currentUser?.email;
@@ -167,8 +167,28 @@ class FirebaseService {
   // ==========================================
   // OYUNCU MAL VARLIĞI BULUT SENKRONİZASYONU
   // ==========================================
-  Future<void> syncPlayerAssetsToCloud(Map<String, dynamic> assetData, {String? targetPlayerId}) async {
+  Future<void> syncPlayerAssetsToCloud(Map<String, dynamic> fullSaveData, {String? targetPlayerId}) async {
     final targetId = (targetPlayerId != null && targetPlayerId.isNotEmpty) ? targetPlayerId : playerId;
+
+    // Sadece oyuncunun kendi varlıklarını ayrıştırıp buluta senkronize et (genel pazar / borsa geçmişi hariç)
+    final assetData = <String, dynamic>{
+      'cash': fullSaveData['cash'] ?? 10000.0,
+      'bankSavings': fullSaveData['bankSavings'] ?? 0.0,
+      'netWorth': fullSaveData['netWorth'] ?? 10000.0,
+      'highestNetWorth': fullSaveData['highestNetWorth'] ?? 10000.0,
+      'maxWarehouseCapacity': fullSaveData['maxWarehouseCapacity'] ?? 5000.0,
+      'warehouse': fullSaveData['warehouse'] ?? {},
+      'ownedFacilities': fullSaveData['ownedFacilities'] ?? [],
+      'ownedStores': fullSaveData['ownedStores'] ?? [],
+      'activeListings': fullSaveData['activeListings'] ?? [],
+      'currentLoan': fullSaveData['currentLoan'],
+      'savedAt': fullSaveData['savedAt'] ?? DateTime.now().toIso8601String(),
+      'lastActiveAt': fullSaveData['lastActiveAt'] ?? DateTime.now().toIso8601String(),
+      'playerLevel': fullSaveData['playerLevel'] ?? 1,
+      'playerTitle': fullSaveData['playerTitle'] ?? 'Çırak Girişimci',
+      'totalFacilitiesCount': (fullSaveData['ownedFacilities'] as List?)?.length ?? 0,
+      'totalStoresCount': (fullSaveData['ownedStores'] as List?)?.length ?? 0,
+    };
 
     // 1. Yerel hesap havuzunu güncelle (Offline / Local modda da sıralama için anlık yansıtır)
     try {
@@ -201,7 +221,7 @@ class FirebaseService {
       if (_username != null && _username!.isNotEmpty) {
         assetData['username'] = _username;
       }
-      await docRef.set(assetData, SetOptions(merge: true)).timeout(const Duration(seconds: 4));
+      await docRef.set(assetData, SetOptions(merge: true)).timeout(const Duration(seconds: 8));
     } catch (e) {
       debugPrint('FirebaseService: Mal varlığı buluta kaydedilemedi: $e');
     }
@@ -213,7 +233,7 @@ class FirebaseService {
     final targetId = (targetPlayerId != null && targetPlayerId.isNotEmpty) ? targetPlayerId : playerId;
     try {
       final docRef = _firestore!.collection('players').doc(targetId);
-      final snapshot = await docRef.get().timeout(const Duration(seconds: 4));
+      final snapshot = await docRef.get().timeout(const Duration(seconds: 8));
       if (snapshot.exists && snapshot.data() != null) {
         return snapshot.data()!;
       }
