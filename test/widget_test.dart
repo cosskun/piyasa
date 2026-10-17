@@ -125,7 +125,7 @@ void main() {
 
     // Verify the list shows Tesislerim (1) and total capacity
     expect(find.text('Tesislerim (1)'), findsOneWidget);
-    expect(find.textContaining('Toplam Üretim Kapasitesi:'), findsOneWidget);
+    expect(find.textContaining('Toplam Üretim Kapasitesi'), findsOneWidget);
 
     controller.dispose();
   });
@@ -2042,8 +2042,10 @@ void main() {
 
     // 2. Verify Same-Type Grouping and Badges
     // Multiple instances should show cluster headers and #1, #2 badges
-    expect(find.textContaining('Buğday Tarlası Kümesi (2 Tesis)'), findsOneWidget);
-    expect(find.textContaining('Un Değirmeni Kümesi (2 Tesis)'), findsOneWidget);
+    expect(find.text('Buğday Tarlaları'), findsOneWidget);
+    expect(find.text('(2 tarla)'), findsOneWidget);
+    expect(find.text('Un Değirmenleri'), findsOneWidget);
+    expect(find.text('(2 değirmen)'), findsOneWidget);
     expect(find.text('#1'), findsWidgets);
     expect(find.text('#2'), findsWidgets);
 
@@ -2053,7 +2055,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Agriculture tab should show 3 facilities and capacity
-    expect(find.textContaining('Tarım Tesisleri Üretim Kapasitesi:'), findsOneWidget);
+    expect(find.textContaining('Tarım Üretim Kapasitesi'), findsOneWidget);
     expect(find.text('Buğday Tarlası'), findsWidgets);
     expect(find.text('Mandıra Çiftliği'), findsOneWidget);
     // Factories should be hidden
@@ -2065,7 +2067,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Factory tab should show 2 facilities and capacity
-    expect(find.textContaining('Fabrika Tesisleri Üretim Kapasitesi:'), findsOneWidget);
+    expect(find.textContaining('Fabrika Üretim Kapasitesi'), findsOneWidget);
     expect(find.text('Un Değirmeni'), findsWidgets);
     expect(find.text('Buğday Tarlası'), findsNothing);
     expect(find.text('Mandıra Çiftliği'), findsNothing);

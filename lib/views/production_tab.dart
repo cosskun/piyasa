@@ -142,38 +142,136 @@ class _ProductionTabState extends State<ProductionTab> {
               // Toplam Üretim Gücü Özeti
               Container(
                 margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF16233B) : const Color(0xFFE6FFFA),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: isDark ? const Color(0xFF0D9488).withOpacity(0.4) : const Color(0xFF99F6E4),
+                  gradient: LinearGradient(
+                    colors: isDark
+                        ? [const Color(0xFF132238), const Color(0xFF0E1A2B)]
+                        : [const Color(0xFFF0FDFA), const Color(0xFFE6FFFA)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: isDark
+                        ? const Color(0xFF0D9488).withValues(alpha: 0.35)
+                        : const Color(0xFF99F6E4),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0D9488).withValues(alpha: isDark ? 0.1 : 0.05),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.speed, size: 20, color: Color(0xFF0D9488)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _selectedCategoryIndex == 0
-                            ? '⚡ Tesislerinizin Toplam Üretim Kapasitesi:'
-                            : (_selectedCategoryIndex == 1
-                                ? '🌾 Tarım Tesisleri Üretim Kapasitesi:'
-                                : '🏭 Fabrika Tesisleri Üretim Kapasitesi:'),
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? Colors.grey[300] : const Color(0xFF0F766E),
-                        ),
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0D9488).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        _selectedCategoryIndex == 1
+                            ? Icons.agriculture_rounded
+                            : (_selectedCategoryIndex == 2
+                                ? Icons.factory_rounded
+                                : Icons.speed_rounded),
+                        size: 20,
+                        color: isDark ? Colors.tealAccent : const Color(0xFF0D9488),
                       ),
                     ),
-                    Text(
-                      '~${displayedTotalPerMin.toStringAsFixed(0)} adet / dk',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.tealAccent : const Color(0xFF0D9488),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              _selectedCategoryIndex == 0
+                                  ? 'Toplam Üretim Kapasitesi'
+                                  : (_selectedCategoryIndex == 1
+                                      ? 'Tarım Üretim Kapasitesi'
+                                      : 'Fabrika Üretim Kapasitesi'),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.2,
+                                color: isDark ? Colors.white : const Color(0xFF0F766E),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 1.5),
+                          Text(
+                            _selectedCategoryIndex == 0
+                                ? '${filteredFacilities.length} aktif tesis devrede'
+                                : (_selectedCategoryIndex == 1
+                                    ? '${filteredFacilities.length} tarım tesisi devrede'
+                                    : '${filteredFacilities.length} fabrika devrede'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? const Color(0xFF0D9488).withValues(alpha: 0.22)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.tealAccent.withValues(alpha: 0.4)
+                              : const Color(0xFF5EEAD4),
+                          width: 1,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: isDark ? 0.12 : 0.04),
+                            blurRadius: 4,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.bolt_rounded,
+                            size: 14,
+                            color: Color(0xFF0D9488),
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            '~${displayedTotalPerMin.toStringAsFixed(0)}',
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w900,
+                              color: isDark ? Colors.tealAccent : const Color(0xFF0D9488),
+                            ),
+                          ),
+                          Text(
+                            ' adet / dk',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.grey.shade400 : const Color(0xFF0F766E),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -343,6 +441,58 @@ class _ProductionTabState extends State<ProductionTab> {
     );
   }
 
+  String _getFacilityPluralTitle(String name) {
+    if (name.contains('Buğday Tarlası')) return 'Buğday Tarlaları';
+    if (name.contains('Patates Tarlası')) return 'Patates Tarlaları';
+    if (name.contains('Pamuk Tarlası')) return 'Pamuk Tarlaları';
+    if (name.contains('Meyve Bahçesi')) return 'Meyve Bahçeleri';
+    if (name.contains('Mandıra Çiftliği')) return 'Mandıra Çiftlikleri';
+    if (name.contains('Kahve Plantasyonu')) return 'Kahve Plantasyonları';
+    if (name.contains('Kakao Plantasyonu')) return 'Kakao Plantasyonları';
+    if (name.contains('Orman İşletmesi') || name.contains('Kereste')) return 'Kereste Kampları';
+    if (name.contains('Demir Madeni') || name.contains('Maden Ocağı')) return 'Demir Maden Ocakları';
+    if (name.contains('Petrol Sondaj') || name.contains('Sondaj Kulesi')) return 'Petrol Sondaj Kuleleri';
+    if (name.contains('Un Değirmeni')) return 'Un Değirmenleri';
+    if (name.contains('Ekmek Fırını')) return 'Ekmek Fırınları';
+    if (name.contains('Patates İşleme')) return 'Patates İşleme Tesisleri';
+    if (name.contains('Meyve Suyu')) return 'Meyve Suyu Tesisleri';
+    if (name.contains('Kahve Kavurma')) return 'Kahve Kavurma Tesisleri';
+    if (name.contains('Dokuma')) return 'Dokuma & İplik Fabrikaları';
+    if (name.contains('Peynir Mandırası')) return 'Peynir Mandıraları';
+    if (name.contains('Mobilya')) return 'Mobilya İmalathaneleri';
+    if (name.contains('Çikolata Fabrikası')) return 'Çikolata Fabrikaları';
+    if (name.contains('Çelik Döküm')) return 'Çelik Döküm Fabrikaları';
+    if (name.contains('Elektronik')) return 'Elektronik Montaj Tesisleri';
+    if (name.contains('Otomobil Fabrikası')) return 'Otomobil Fabrikaları';
+
+    if (name.endsWith('Tarlası')) return name.replaceAll('Tarlası', 'Tarlaları');
+    if (name.endsWith('Fabrikası')) return name.replaceAll('Fabrikası', 'Fabrikaları');
+    if (name.endsWith('Çiftliği')) return name.replaceAll('Çiftliği', 'Çiftlikleri');
+    if (name.endsWith('Bahçesi')) return name.replaceAll('Bahçesi', 'Bahçeleri');
+    if (name.endsWith('Tesisi')) return name.replaceAll('Tesisi', 'Tesisleri');
+    if (name.endsWith('Değirmeni')) return name.replaceAll('Değirmeni', 'Değirmenleri');
+    if (name.endsWith('Fırını')) return name.replaceAll('Fırını', 'Fırınları');
+    if (name.endsWith('Ocağı')) return name.replaceAll('Ocağı', 'Ocakları');
+    if (name.endsWith('Kulesi')) return name.replaceAll('Kulesi', 'Kuleleri');
+    return '$name Tesisleri';
+  }
+
+  String _getFacilityUnitCountText(String name, int count) {
+    if (name.contains('Tarla') || name.contains('Tarlası')) return '($count tarla)';
+    if (name.contains('Bahçe') || name.contains('Bahçesi')) return '($count bahçe)';
+    if (name.contains('Çiftlik') || name.contains('Çiftliği')) return '($count çiftlik)';
+    if (name.contains('Plantasyon')) return '($count plantasyon)';
+    if (name.contains('Değirmen') || name.contains('Değirmeni')) return '($count değirmen)';
+    if (name.contains('Fırın') || name.contains('Fırını')) return '($count fırın)';
+    if (name.contains('Fabrika') || name.contains('Fabrikası')) return '($count fabrika)';
+    if (name.contains('İmalathane')) return '($count atölye)';
+    if (name.contains('Maden') || name.contains('Ocak')) return '($count ocak)';
+    if (name.contains('Sondaj') || name.contains('Kule')) return '($count kule)';
+    if (name.contains('Orman') || name.contains('Kereste')) return '($count kamp)';
+    if (name.contains('Mandıra')) return '($count mandıra)';
+    return '($count tesis)';
+  }
+
   List<Widget> _buildFacilityListWithGroupHeaders(
     BuildContext context,
     List<ProductionFacility> filteredFacilities,
@@ -365,38 +515,102 @@ class _ProductionTabState extends State<ProductionTab> {
           0.0,
           (sum, f) => sum + f.itemsPerMinute,
         );
+        final pluralTitle = _getFacilityPluralTitle(fac.name);
+        final unitCountText = _getFacilityUnitCountText(fac.name, sameTypeFacilities.length);
 
         widgets.add(
           Container(
             margin: EdgeInsets.only(top: i == 0 ? 0 : 10, bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF16233B) : const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(8),
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [const Color(0xFF16233B), const Color(0xFF0F172A)]
+                    : [const Color(0xFFF8FAFC), const Color(0xFFF1F5F9)],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isDark ? Colors.tealAccent.withOpacity(0.2) : const Color(0xFFCBD5E1),
+                color: isDark ? Colors.tealAccent.withValues(alpha: 0.25) : const Color(0xFFCBD5E1),
+                width: 1.1,
               ),
             ),
             child: Row(
               children: [
-                Text(fac.emoji, style: const TextStyle(fontSize: 16)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '${fac.name} Kümesi (${sameTypeFacilities.length} Tesis)',
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white70 : const Color(0xFF334155),
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black26 : Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
                     ),
                   ),
+                  child: Text(fac.emoji, style: const TextStyle(fontSize: 16)),
                 ),
-                Text(
-                  'Toplam ~${groupTotalPerMin.toStringAsFixed(0)} adet / dk',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.tealAccent : const Color(0xFF0D9488),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        pluralTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF1E293B),
+                        ),
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        unitCountText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.tealAccent.shade100 : const Color(0xFF0D9488),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? const Color(0xFF0D9488).withValues(alpha: 0.2)
+                        : const Color(0xFFCCFBF1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: isDark
+                          ? const Color(0xFF0D9488).withValues(alpha: 0.4)
+                          : const Color(0xFF99F6E4),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.speed_rounded,
+                        size: 12,
+                        color: isDark ? Colors.tealAccent : const Color(0xFF0F766E),
+                      ),
+                      const SizedBox(width: 3),
+                      Text(
+                        'Toplam ~${groupTotalPerMin.toStringAsFixed(0)} adet / dk',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.tealAccent : const Color(0xFF0F766E),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
