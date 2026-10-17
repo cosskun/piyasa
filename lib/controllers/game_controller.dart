@@ -2298,8 +2298,11 @@ class GameController extends ChangeNotifier {
   Future<bool> loadFromStorage({String? playerId}) async {
     final pid = playerId ?? FirebaseService().playerId;
 
-    // 1. Yerel cihazdaki son kaydı oku
+    // 1. Yerel cihazdaki son kaydı oku ve anında belleğe yükle (0 ms gecikme)
     final localData = await SaveService().getLocalSaveData(playerId: pid);
+    if (localData != null) {
+      loadFromSaveJson(localData);
+    }
 
     // 2. Buluttaki oyuncu verisini oku
     Map<String, dynamic>? cloudData;

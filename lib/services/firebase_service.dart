@@ -233,7 +233,7 @@ class FirebaseService {
     final targetId = (targetPlayerId != null && targetPlayerId.isNotEmpty) ? targetPlayerId : playerId;
     try {
       final docRef = _firestore!.collection('players').doc(targetId);
-      final snapshot = await docRef.get().timeout(const Duration(seconds: 8));
+      final snapshot = await docRef.get().timeout(const Duration(seconds: 4));
       if (snapshot.exists && snapshot.data() != null) {
         return snapshot.data()!;
       }
@@ -1447,7 +1447,9 @@ class FirebaseService {
     // 2. Cloud Firestore'daki bilinmeyen / geçersiz kayıtları temizle
     if (isCloudConnected && _firestore != null) {
       try {
-        final snapshot = await _firestore!.collection('players').get();
+        final snapshot = await _firestore!.collection('players').get().timeout(const Duration(seconds: 4));
+        final batch = _firestore!.batch();
+        int pendingBatchCount = 0;
         for (final doc in snapshot.docs) {
           final data = doc.data();
           final uname = data['username']?.toString().trim();
@@ -1460,9 +1462,13 @@ class FirebaseService {
               isNpc ||
               uid.startsWith('ply_guest_') ||
               uid.startsWith('npc_')) {
-            await doc.reference.delete();
+            batch.delete(doc.reference);
+            pendingBatchCount++;
             deletedCount++;
           }
+        }
+        if (pendingBatchCount > 0) {
+          await batch.commit().timeout(const Duration(seconds: 4));
         }
       } catch (e) {
         debugPrint('FirebaseService: Bulut bilinmeyen oyuncuları temizleme hatası: $e');
