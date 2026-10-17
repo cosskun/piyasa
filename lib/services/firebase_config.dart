@@ -11,10 +11,15 @@ class FirebaseConfig {
     storageBucket: "coskun-apps.firebasestorage.app",
   );
 
-  /// iOS için Firebase yapılandırması
-  /// NOT: Firebase Console'da iOS uygulaması eklendiğinde üretilen iOS App ID buraya yazılır.
-  /// Geçerli bir iOS App ID olmadan Firebase iOS SDK native NSException fırlatıp uygulamanın çökmesine yol açar.
-  static const FirebaseOptions? ios = null;
+  /// iOS için Firebase yapılandırması (GoogleService-Info.plist'ten alınmıştır)
+  static const FirebaseOptions ios = FirebaseOptions(
+    apiKey: "AIzaSyBJy8ya78M_ZArSwo35helvfUDa410oKqE",
+    appId: "1:842382725401:ios:1448a8c03e5b1fd3f33588",
+    messagingSenderId: "842382725401",
+    projectId: "coskun-apps",
+    storageBucket: "coskun-apps.firebasestorage.app",
+    iosBundleId: "com.piyasa.piyasa",
+  );
 
   /// Aktif platforma uygun FirebaseOptions seçimi
   static FirebaseOptions? get currentPlatform {
