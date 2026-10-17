@@ -23,46 +23,55 @@ class LeaderboardService {
     return fb.streamAllPlayers().map((rawPlayers) {
       final Map<String, LeaderboardEntry> entryMap = {};
 
-      // 1. Gerçek oyuncuları işle
+      // 1. Gerçek oyuncuları işle ve bilinmeyen/misafir/bot kayıtları temizle
       for (final raw in rawPlayers) {
         final entry = LeaderboardEntry.fromMap(raw, currentUid: currentUid);
-        if (entry.uid.isNotEmpty) {
+        final uname = entry.username.trim();
+        final isInvalid = uname.isEmpty ||
+            uname == 'Bilinmeyen Oyuncu' ||
+            uname == 'Misafir Oyuncu' ||
+            entry.isNpc ||
+            entry.uid.startsWith('npc_') ||
+            entry.uid.startsWith('ply_guest_');
+
+        if (entry.uid.isNotEmpty && !isInvalid) {
           entryMap[entry.uid] = entry;
         }
       }
 
-      // 2. Aktif oturumdaki oyuncunun anlık güncel verisini controller'dan ez (canlı gerçek zamanlı yansıma)
-      final liveCurrentUserEntry = LeaderboardEntry(
-        uid: currentUid,
-        username: currentUsername,
-        companyName: currentCompany,
-        netWorth: controller.netWorth,
-        highestNetWorth: controller.highestNetWorth,
-        cash: controller.cash,
-        bankSavings: controller.bankSavings,
-        level: controller.playerLevel,
-        levelTitle: controller.playerTitle,
-        levelIcon: controller.playerLevelInfo.icon,
-        facilitiesCount: controller.ownedFacilities.length,
-        storesCount: controller.ownedStores.length,
-        isOnline: true,
-        lastActiveAt: DateTime.now(),
-        isBanned: fb.isBanned,
-        isCurrentUser: true,
-        isNpc: false,
-      );
-      entryMap[currentUid] = liveCurrentUserEntry;
+      // 2. Aktif oturumdaki oyuncunun anlık güncel verisini controller'dan yansıt (geçerli kayıtlı kullanıcı ise)
+      final cleanCurrentUsername = currentUsername.trim();
+      final isCurrentGuest = fb.isGuest ||
+          cleanCurrentUsername.isEmpty ||
+          cleanCurrentUsername == 'Bilinmeyen Oyuncu' ||
+          cleanCurrentUsername == 'Misafir Oyuncu' ||
+          currentUid.startsWith('ply_guest_');
 
-      // 3. Eğer oyuncu sayısı azsa (örneğin offline yerel mod veya başlangıç sunucusu),
-      // oyuncuya rekabet hedefi sunmak adına kıyaslama şirketlerini (benchmark rivals) ekle
-      final List<LeaderboardEntry> list = entryMap.values.toList();
-      if (list.length < 6) {
-        for (final rival in LeaderboardEntry.getBenchmarkRivals()) {
-          if (!entryMap.containsKey(rival.uid)) {
-            list.add(rival);
-          }
-        }
+      if (!isCurrentGuest) {
+        final liveCurrentUserEntry = LeaderboardEntry(
+          uid: currentUid,
+          username: cleanCurrentUsername,
+          companyName: currentCompany,
+          netWorth: controller.netWorth,
+          highestNetWorth: controller.highestNetWorth,
+          cash: controller.cash,
+          bankSavings: controller.bankSavings,
+          level: controller.playerLevel,
+          levelTitle: controller.playerTitle,
+          levelIcon: controller.playerLevelInfo.icon,
+          facilitiesCount: controller.ownedFacilities.length,
+          storesCount: controller.ownedStores.length,
+          isOnline: true,
+          lastActiveAt: DateTime.now(),
+          isBanned: fb.isBanned,
+          isCurrentUser: true,
+          isNpc: false,
+        );
+        entryMap[currentUid] = liveCurrentUserEntry;
       }
+
+      // 3. Kesinlikle bot/benchmark rakipleri eklenmez. Yalnızca veritabanındaki gerçek kayıtlı kullanıcılar.
+      final List<LeaderboardEntry> list = entryMap.values.toList();
 
       // 4. Kriter bazında azalan sıralama (En yüksek değer en üstte)
       list.sort((a, b) {

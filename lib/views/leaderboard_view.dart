@@ -627,7 +627,7 @@ class _LeaderboardViewState extends State<LeaderboardView> {
               children: [
                 // Sıra Rozeti (#1, #2, #3 için madalya veya şık numara kutusu)
                 Container(
-                  width: 34,
+                  width: 44,
                   alignment: Alignment.center,
                   child: _buildRankBadge(entry.rank),
                 ),
@@ -818,13 +818,16 @@ class _LeaderboardViewState extends State<LeaderboardView> {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
       decoration: BoxDecoration(
         color: const Color(0xFF334155).withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
         '#$rank',
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.visible,
         style: const TextStyle(
           fontSize: 12,
           fontWeight: FontWeight.bold,

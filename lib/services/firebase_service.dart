@@ -159,6 +159,9 @@ class FirebaseService {
       debugPrint('FirebaseService: Yapılandırma anahtarları henüz girilmedi, yerel + simüle mod devrede.');
       _initialized = false;
     }
+
+    // Bilinmeyen / geçersiz kullanıcıları arka planda otomatik temizle
+    unawaited(cleanupUnknownPlayers());
   }
 
   // ==========================================
@@ -1326,5 +1329,126 @@ class FirebaseService {
     } catch (e) {
       return 'Ban kaldırma hatası: $e';
     }
+  }
+
+  /// Oyuncuyu hem yerelden hem buluttan kalıcı olarak siler
+  Future<String?> deletePlayer({required String targetUid}) async {
+    try {
+      // 1. Yerel hesap havuzundan sil
+      final localAccounts = await getLocalAccounts();
+      String? keyToRemove;
+      for (final entry in localAccounts.entries) {
+        if (entry.value['uid'] == targetUid) {
+          keyToRemove = entry.key;
+          break;
+        }
+      }
+      if (keyToRemove != null) {
+        localAccounts.remove(keyToRemove);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_localAccountsKey, jsonEncode(localAccounts));
+      }
+
+      // 2. Cloud Firestore'dan sil
+      if (isCloudConnected && _firestore != null) {
+        // İlgili oyuncunun açık pazar ilanlarını sil
+        final openListings = await _firestore!
+            .collection('market_listings')
+            .where('sellerId', isEqualTo: targetUid)
+            .get();
+        if (openListings.docs.isNotEmpty) {
+          final batch = _firestore!.batch();
+          for (final doc in openListings.docs) {
+            batch.delete(doc.reference);
+          }
+          await batch.commit();
+        }
+
+        // Oyuncu dokümanını sil
+        await _firestore!.collection('players').doc(targetUid).delete();
+
+        // Denetim loguna yaz
+        await writeAuditLog(AuditLog(
+          id: 'del_${DateTime.now().millisecondsSinceEpoch}',
+          timestamp: DateTime.now(),
+          playerId: targetUid,
+          username: 'Admin ($username)',
+          category: LogCategory.auth,
+          action: 'ADMIN_DELETE_PLAYER',
+          title: 'Oyuncu Hesabı Silindi',
+          description: 'Oyuncu hesabı veritabanından kalıcı olarak silindi.',
+          amountChange: 0,
+          cashAfter: 0,
+          details: {'targetUid': targetUid},
+        ));
+      }
+
+      return null;
+    } catch (e) {
+      return 'Oyuncu silme hatası: $e';
+    }
+  }
+
+  /// Bilinmeyen, misafir veya bot oyuncu kayıtlarını yerelden ve bulut veritabanından temizler
+  Future<int> cleanupUnknownPlayers() async {
+    int deletedCount = 0;
+
+    // 1. Yerel hesap havuzunu temizle
+    try {
+      final localAccounts = await getLocalAccounts();
+      final keysToRemove = <String>[];
+      for (final entry in localAccounts.entries) {
+        final acc = entry.value;
+        final uname = acc['username']?.toString().trim();
+        final uid = acc['uid']?.toString() ?? '';
+        final isNpc = acc['isNpc'] == true;
+        if (uname == null ||
+            uname.isEmpty ||
+            uname == 'Bilinmeyen Oyuncu' ||
+            uname == 'Misafir Oyuncu' ||
+            isNpc ||
+            uid.startsWith('ply_guest_') ||
+            uid.startsWith('npc_')) {
+          keysToRemove.add(entry.key);
+        }
+      }
+      if (keysToRemove.isNotEmpty) {
+        for (final k in keysToRemove) {
+          localAccounts.remove(k);
+          deletedCount++;
+        }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_localAccountsKey, jsonEncode(localAccounts));
+      }
+    } catch (e) {
+      debugPrint('FirebaseService: Yerel bilinmeyen oyuncuları temizleme hatası: $e');
+    }
+
+    // 2. Cloud Firestore'daki bilinmeyen / geçersiz kayıtları temizle
+    if (isCloudConnected && _firestore != null) {
+      try {
+        final snapshot = await _firestore!.collection('players').get();
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final uname = data['username']?.toString().trim();
+          final isNpc = data['isNpc'] == true;
+          final uid = doc.id;
+          if (uname == null ||
+              uname.isEmpty ||
+              uname == 'Bilinmeyen Oyuncu' ||
+              uname == 'Misafir Oyuncu' ||
+              isNpc ||
+              uid.startsWith('ply_guest_') ||
+              uid.startsWith('npc_')) {
+            await doc.reference.delete();
+            deletedCount++;
+          }
+        }
+      } catch (e) {
+        debugPrint('FirebaseService: Bulut bilinmeyen oyuncuları temizleme hatası: $e');
+      }
+    }
+
+    return deletedCount;
   }
 }

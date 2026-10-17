@@ -91,6 +91,8 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
             onOpenLedger: _openPlayerLedgerSheet,
             onPromptBan: _promptBanPlayer,
             onPromptUnban: _confirmUnbanPlayer,
+            onPromptDelete: _confirmDeletePlayer,
+            onCleanupUnknown: _runCleanupUnknownPlayers,
           ),
           const _GlobalLogsTabView(),
           _AntiCheatTabView(
@@ -243,6 +245,70 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
         );
       },
     );
+  }
+
+  void _confirmDeletePlayer(String targetUid, String username) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E293B),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '$username Silinsin mi?',
+                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            'Bu işlem $username adlı oyuncuyu ve pazardaki tüm açık ilanlarını veritabanından kalıcı olarak silecektir. Bu işlem geri alınamaz!',
+            style: TextStyle(color: Colors.grey.shade300, fontSize: 13, height: 1.4),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Vazgeç', style: TextStyle(color: Colors.grey)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                final err = await FirebaseService().deletePlayer(targetUid: targetUid);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(err ?? '$username başarıyla veritabanından silindi!'),
+                      backgroundColor: err != null ? Colors.red : Colors.green.shade700,
+                    ),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent.shade700),
+              child: const Text('Evet, Kalıcı Olarak Sil', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _runCleanupUnknownPlayers() async {
+    final deleted = await FirebaseService().cleanupUnknownPlayers();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(deleted > 0
+              ? '$deleted adet geçersiz/bilinmeyen kayıt veritabanından başarıyla temizlendi!'
+              : 'Veritabanında silinecek bilinmeyen kayıt bulunamadı.'),
+          backgroundColor: Colors.blueAccent.shade700,
+        ),
+      );
+    }
   }
 }
 
@@ -442,11 +508,15 @@ class _PlayersTabView extends StatefulWidget {
   final void Function(String uid, String username) onOpenLedger;
   final void Function(String uid, String username) onPromptBan;
   final void Function(String uid, String username) onPromptUnban;
+  final void Function(String uid, String username)? onPromptDelete;
+  final VoidCallback? onCleanupUnknown;
 
   const _PlayersTabView({
     required this.onOpenLedger,
     required this.onPromptBan,
     required this.onPromptUnban,
+    this.onPromptDelete,
+    this.onCleanupUnknown,
   });
 
   @override
@@ -692,6 +762,39 @@ class _PlayersTabViewState extends State<_PlayersTabView> with AutomaticKeepAliv
               icon: Icons.block_rounded,
               activeColor: Colors.redAccent,
             ),
+            if (widget.onCleanupUnknown != null) ...[
+              const SizedBox(width: 8),
+              InkWell(
+                onTap: widget.onCleanupUnknown,
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.redAccent.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.redAccent.withValues(alpha: 0.4),
+                      width: 1.0,
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.auto_delete_rounded, size: 13, color: Colors.redAccent),
+                      SizedBox(width: 4),
+                      Text(
+                        'Bilinmeyenleri Temizle',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1046,7 +1149,7 @@ class _PlayersTabViewState extends State<_PlayersTabView> with AutomaticKeepAliv
               ),
               const SizedBox(width: 8),
 
-              if (!isTargetAdmin)
+              if (!isTargetAdmin) ...[
                 isBanned
                     ? ElevatedButton.icon(
                         onPressed: () => widget.onPromptUnban(uid, username),
@@ -1070,6 +1173,20 @@ class _PlayersTabViewState extends State<_PlayersTabView> with AutomaticKeepAliv
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                       ),
+                if (widget.onPromptDelete != null) ...[
+                  const SizedBox(width: 6),
+                  IconButton(
+                    onPressed: () => widget.onPromptDelete!(uid, username),
+                    icon: const Icon(Icons.delete_forever_rounded, color: Colors.redAccent, size: 20),
+                    tooltip: 'Oyuncuyu Sil',
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.redAccent.withValues(alpha: 0.15),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.all(8),
+                    ),
+                  ),
+                ],
+              ],
             ],
           ),
         ],

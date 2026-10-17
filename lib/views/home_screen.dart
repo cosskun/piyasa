@@ -18,6 +18,7 @@ import '../models/audit_log.dart';
 import 'admin_dashboard_view.dart';
 import 'banned_dialog.dart';
 import 'leaderboard_view.dart';
+import 'home_dashboard_tab.dart';
 
 class HomeScreen extends StatefulWidget {
   final GameController controller;
@@ -75,7 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _handlePhoneNotificationTap(String payload) {
     if (!mounted) return;
     setState(() {
-      _currentTabIndex = 2; // Borsa & Pazar sekmesine geç (çünkü Depo 1. sekme oldu)
+      _currentTabIndex = 3; // Borsa & Pazar sekmesine geç (Ana Sayfa: 0, Tesisler: 1, Depo: 2, Borsa: 3)
     });
     if (payload == 'offer_incoming') {
       _marketTabKey.currentState?.switchToOffers(subTab: 0);
@@ -111,7 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
         void navigateFromToast() {
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           setState(() {
-            _currentTabIndex = 2; // Borsa & Pazar ana sekmesine geç
+            _currentTabIndex = 3; // Borsa & Pazar ana sekmesine geç
           });
           if (isIncomingOffer) {
             _marketTabKey.currentState?.switchToOffers(subTab: 0); // Gelen Teklifler
@@ -476,7 +477,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             children: [
                             // Depo Butonu
                             InkWell(
-                              onTap: () => setState(() => _currentTabIndex = 1),
+                              onTap: () => setState(() => _currentTabIndex = 2),
                               borderRadius: BorderRadius.circular(8),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
@@ -885,6 +886,28 @@ class _HomeScreenState extends State<HomeScreen> {
               child: IndexedStack(
                 index: _currentTabIndex,
                 children: [
+                  HomeDashboardTab(
+                    controller: c,
+                    onNavigateToTab: (index) => setState(() => _currentTabIndex = index),
+                    onOpenBorsa: () {
+                      setState(() => _currentTabIndex = 3);
+                      _marketTabKey.currentState?.switchToBorsa();
+                    },
+                    onOpenPazar: () {
+                      setState(() => _currentTabIndex = 3);
+                      _marketTabKey.currentState?.switchToCommunityListings();
+                    },
+                    onOpenLeaderboard: () => LeaderboardView.show(context, controller: c),
+                    onOpenBank: () => showDialog(
+                      context: context,
+                      barrierDismissible: true,
+                      builder: (_) => BankDialog(controller: c),
+                    ),
+                    onOpenLedger: () => LedgerDialog.show(context),
+                    onOpenAdmin: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const AdminDashboardView()),
+                    ),
+                  ),
                   ProductionTab(controller: c),
                   WarehouseTab(controller: c),
                   MarketTab(key: _marketTabKey, controller: c),
@@ -922,12 +945,17 @@ class _HomeScreenState extends State<HomeScreen> {
             type: BottomNavigationBarType.fixed,
             selectedItemColor: isDark ? Colors.amberAccent : const Color(0xFF0F766E),
             unselectedItemColor: isDark ? Colors.grey : const Color(0xFF64748B),
-            selectedFontSize: 13,
-            unselectedFontSize: 12,
+            selectedFontSize: 12,
+            unselectedFontSize: 11,
             selectedLabelStyle: const TextStyle(fontWeight: FontWeight.bold),
             unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
             elevation: 0,
             items: [
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.home_outlined),
+                activeIcon: Icon(Icons.home),
+                label: 'Ana Sayfa',
+              ),
               const BottomNavigationBarItem(
                 icon: Icon(Icons.agriculture_outlined),
                 activeIcon: Icon(Icons.agriculture),

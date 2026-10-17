@@ -57,6 +57,14 @@ class MarketTabState extends State<MarketTab> {
     });
   }
 
+  void switchToBorsa() {
+    if (!mounted) return;
+    setState(() {
+      _mainTab = 0; // Borsa
+      _borsaSubTab = 0; // Canlı Fiyatlar
+    });
+  }
+
   @override
   void dispose() {
     _categoryScrollController.dispose();

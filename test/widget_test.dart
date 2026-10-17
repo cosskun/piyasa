@@ -930,22 +930,27 @@ void main() {
       await tester.pumpAndSettle();
 
       // Check for zero RenderFlex overflows
-      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 0');
+      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 0 (Ana Sayfa)');
 
-      // Switch to Depo (Tab 1)
-      await tester.tap(find.text('Depo'));
+      // Switch to Tesislerim (Tab 1)
+      await tester.tap(find.descendant(of: find.byType(BottomNavigationBar), matching: find.text('Tesislerim')));
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 1');
+      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 1 (Tesislerim)');
 
-      // Switch to Borsa & Pazar (Tab 2)
-      await tester.tap(find.text('Borsa & Pazar'));
+      // Switch to Depo (Tab 2)
+      await tester.tap(find.descendant(of: find.byType(BottomNavigationBar), matching: find.text('Depo')));
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 2');
+      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 2 (Depo)');
 
-      // Switch to Dükkanlarım (Tab 3)
-      await tester.tap(find.text('Dükkanlarım'));
+      // Switch to Borsa & Pazar (Tab 3)
+      await tester.tap(find.descendant(of: find.byType(BottomNavigationBar), matching: find.text('Borsa & Pazar')));
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 3');
+      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 3 (Borsa & Pazar)');
+
+      // Switch to Dükkanlarım (Tab 4)
+      await tester.tap(find.descendant(of: find.byType(BottomNavigationBar), matching: find.text('Dükkanlarım')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 4 (Dükkanlarım)');
 
       // Open BankDialog
       await tester.tap(find.text('Banka'));
@@ -1922,6 +1927,24 @@ void main() {
 
     final controller = GameController();
     controller.cash = 3000000.0;
+
+    final fb = FirebaseService();
+    await fb.saveLocalAccount({
+      'uid': 'ply_test_rival_1',
+      'username': 'ahmet_holding',
+      'companyName': 'Ahmet Holding A.Ş.',
+      'netWorth': 5000000.0,
+      'cash': 1500000.0,
+      'isOnline': true,
+    });
+    await fb.saveLocalAccount({
+      'uid': 'ply_test_rival_2',
+      'username': 'mehmet_sanayi',
+      'companyName': 'Mehmet Sanayi Ltd.',
+      'netWorth': 2000000.0,
+      'cash': 500000.0,
+      'isOnline': false,
+    });
 
     await tester.pumpWidget(
       MaterialApp(
