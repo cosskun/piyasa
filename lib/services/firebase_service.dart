@@ -574,6 +574,59 @@ class FirebaseService {
 
       return null; // Başarılı!
     } on FirebaseAuthException catch (e) {
+      final isConfigError = e.code == 'operation-not-allowed' ||
+          e.code == 'configuration-not-found' ||
+          (e.message != null && e.message!.contains('CONFIGURATION_NOT_FOUND'));
+
+      if (isConfigError && _firestore != null) {
+        // Firebase Auth henüz Console'da açılmamışsa doğrudan Firestore Bulut hesabı oluşturuyoruz
+        try {
+          final newUid = 'ply_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(99999)}';
+          final batch = _firestore!.batch();
+          batch.set(_firestore!.collection('usernames').doc(normalizedUsername), {
+            'uid': newUid,
+            'displayUsername': cleanUsername,
+            'email': cleanEmail,
+            'password': cleanPassword,
+            'authProvider': 'firestore_cloud',
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+          batch.set(_firestore!.collection('players').doc(newUid), {
+            'uid': newUid,
+            'username': cleanUsername,
+            'username_lowercase': normalizedUsername,
+            'email': cleanEmail,
+            'password': cleanPassword,
+            'companyName': effectiveCompanyName,
+            'role': isAdminUser ? 'admin' : 'user',
+            'isBanned': false,
+            'cash': 10000.0,
+            'netWorth': 10000.0,
+            'authProvider': 'firestore_cloud',
+            'createdAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+          await batch.commit();
+
+          await saveLocalAccount({
+            'uid': newUid,
+            'username': cleanUsername,
+            'username_lowercase': normalizedUsername,
+            'email': cleanEmail,
+            'password': cleanPassword,
+            'companyName': effectiveCompanyName,
+            'role': isAdminUser ? 'admin' : 'user',
+            'isBanned': false,
+            'authProvider': 'firestore_cloud',
+            'createdAt': DateTime.now().toIso8601String(),
+          });
+
+          return null; // Başarıyla Firestore bulutuna kaydedildi!
+        } catch (cloudErr) {
+          debugPrint('Firestore bulut hesabı oluşturma hatası: $cloudErr');
+          return 'Firebase Authentication ayarlarında E-posta/Şifre sağlayıcısı henüz etkinleştirilmemiş (CONFIGURATION_NOT_FOUND). Lütfen Firebase Console -> Authentication -> Sign-in method üzerinden etkinleştirin.';
+        }
+      }
+
       switch (e.code) {
         case 'email-already-in-use':
           return 'Bu e-posta adresiyle zaten kayıtlı bir hesap bulunmaktadır.';
@@ -584,6 +637,9 @@ class FirebaseService {
         case 'operation-not-allowed':
           return 'Firebase Authentication ayarlarında E-posta/Şifre sağlayıcısı henüz etkinleştirilmemiş.';
         default:
+          if (e.message != null && e.message!.contains('CONFIGURATION_NOT_FOUND')) {
+            return 'Firebase Authentication ayarlarında E-posta/Şifre sağlayıcısı henüz etkinleştirilmemiş (CONFIGURATION_NOT_FOUND). Lütfen Firebase Console -> Authentication -> Sign-in method üzerinden etkinleştirin.';
+          }
           return e.message ?? 'Kayıt işlemi başarısız oldu (${e.code}).';
       }
     } catch (e) {
@@ -660,8 +716,92 @@ class FirebaseService {
         final normalized = cleanIdentifier.toLowerCase();
         final usernameDoc = await _firestore!.collection('usernames').doc(normalized).get();
         if (!usernameDoc.exists) {
+          // Yerel hesap havuzunda varsa yerelden buluta aktararak giriş yap
+          final localAccounts = await getLocalAccounts();
+          if (localAccounts.containsKey(normalized)) {
+            final locAcc = localAccounts[normalized]!;
+            if (locAcc['password'] == cleanPassword) {
+              _playerId = locAcc['uid'] as String?;
+              _username = locAcc['username'] as String? ?? cleanIdentifier;
+              _companyName = locAcc['companyName'] as String? ?? '$_username Holding';
+              _role = locAcc['role'] as String? ?? (isAdmin ? 'admin' : 'user');
+              _isGuest = false;
+
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString(_localPlayerIdKey, _playerId!);
+              await prefs.setString(_localUsernameKey, _username!);
+              await prefs.setString(_localCompanyNameKey, _companyName!);
+              await prefs.setBool(_localIsGuestKey, false);
+
+              // Bu yerel hesabı buluta da senkronize et
+              try {
+                final batch = _firestore!.batch();
+                batch.set(_firestore!.collection('usernames').doc(normalized), {
+                  'uid': _playerId,
+                  'displayUsername': _username,
+                  'email': locAcc['email'] ?? '',
+                  'password': cleanPassword,
+                  'authProvider': 'firestore_cloud',
+                  'createdAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+                batch.set(_firestore!.collection('players').doc(_playerId), {
+                  'uid': _playerId,
+                  'username': _username,
+                  'username_lowercase': normalized,
+                  'email': locAcc['email'] ?? '',
+                  'password': cleanPassword,
+                  'companyName': _companyName,
+                  'role': _role,
+                  'isBanned': false,
+                  'authProvider': 'firestore_cloud',
+                  'createdAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+                await batch.commit();
+              } catch (_) {}
+
+              await setPlayerOnlineStatus(isOnline: true);
+              return null;
+            } else {
+              return 'Şifreniz hatalı. Lütfen kontrol edip tekrar deneyin.';
+            }
+          }
           return 'Bu kullanıcı adına ait bir hesap bulunamadı.';
         }
+
+        // Firestore bulut hesabı kontrolü (Auth servisi kapalıyken oluşturulmuşsa)
+        final uData = usernameDoc.data();
+        if (uData != null && uData['password'] != null) {
+          if (uData['password'] == cleanPassword) {
+            final uid = uData['uid'] as String;
+            _playerId = uid;
+            _username = uData['displayUsername'] as String? ?? cleanIdentifier;
+            _companyName = '$_username Holding';
+            _role = isAdmin ? 'admin' : 'user';
+            _isGuest = false;
+
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(_localPlayerIdKey, _playerId!);
+            await prefs.setString(_localUsernameKey, _username!);
+            await prefs.setString(_localCompanyNameKey, _companyName!);
+            await prefs.setBool(_localIsGuestKey, false);
+
+            try {
+              final pDoc = await _firestore!.collection('players').doc(uid).get();
+              if (pDoc.exists && pDoc.data() != null) {
+                final pData = pDoc.data()!;
+                _companyName = pData['companyName'] as String? ?? _companyName;
+                _role = pData['role'] as String? ?? _role;
+                await prefs.setString(_localCompanyNameKey, _companyName!);
+              }
+            } catch (_) {}
+
+            await setPlayerOnlineStatus(isOnline: true);
+            return null; // Başarıyla giriş yapıldı!
+          } else {
+            return 'Şifreniz hatalı. Lütfen kontrol edip tekrar deneyin.';
+          }
+        }
+
         final emailFromDoc = usernameDoc.get('email') as String?;
         if (emailFromDoc == null || emailFromDoc.isEmpty) {
           return 'Kullanıcı hesabı doğrulanamadı.';
@@ -734,6 +874,14 @@ class FirebaseService {
       await setPlayerOnlineStatus(isOnline: true);
       return null; // Başarılı!
     } on FirebaseAuthException catch (e) {
+      final isConfigError = e.code == 'operation-not-allowed' ||
+          e.code == 'configuration-not-found' ||
+          (e.message != null && e.message!.contains('CONFIGURATION_NOT_FOUND'));
+
+      if (isConfigError) {
+        return 'Firebase Authentication ayarlarında E-posta/Şifre sağlayıcısı henüz etkinleştirilmemiş (CONFIGURATION_NOT_FOUND). Lütfen Firebase Console -> Authentication -> Sign-in method üzerinden etkinleştirin.';
+      }
+
       switch (e.code) {
         case 'user-not-found':
           return 'Bu e-posta adresine ait bir hesap bulunamadı.';
@@ -746,6 +894,8 @@ class FirebaseService {
           return 'Bu hesap devre dışı bırakılmıştır.';
         case 'too-many-requests':
           return 'Çok fazla başarısız deneme yapıldı. Lütfen biraz bekleyin.';
+        case 'operation-not-allowed':
+          return 'Firebase Authentication ayarlarında E-posta/Şifre sağlayıcısı henüz etkinleştirilmemiş. Lütfen Firebase Console üzerinden etkinleştirin.';
         default:
           return e.message ?? 'Giriş yapılamadı (${e.code}).';
       }
