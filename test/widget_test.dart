@@ -27,7 +27,6 @@ import 'package:piyasa/views/game_loading_screen.dart';
 import 'package:piyasa/views/leaderboard_view.dart';
 import 'package:piyasa/services/leaderboard_service.dart';
 import 'package:piyasa/models/leaderboard_entry.dart';
-import 'package:piyasa/models/limit_order.dart';
 import 'package:piyasa/models/market_listing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -2134,6 +2133,48 @@ void main() {
     expect(find.text('Geçmiş Emirler (2)'), findsOneWidget);
     expect(find.text('10 Adet Buğday'), findsOneWidget);
     expect(find.text('5 Adet Buğday'), findsOneWidget);
+
+    controller.dispose();
+  });
+
+  testWidgets('WarehouseTab Hizli Sat dialog shows unit selling price, market price, and updates cash calculation', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController(autoLoad: false);
+    controller.warehouse['wheat'] = 20;
+
+    final mItem = controller.marketItems['wheat']!;
+    final quickPrice = mItem.quickSellPrice;
+    final marketPrice = mItem.currentPrice;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: WarehouseTab(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Open Hızlı Sat dialog
+    await tester.ensureVisible(find.widgetWithText(OutlinedButton, 'Hızlı Sat'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Hızlı Sat'));
+    await tester.pumpAndSettle();
+
+    // Verify dialog title and unit prices are shown
+    expect(find.text('Buğday Hızlı Sat'), findsOneWidget);
+    expect(find.text('Birim Satış Fiyatı:'), findsOneWidget);
+    expect(find.text('${quickPrice.toStringAsFixed(2)} ₺'), findsOneWidget);
+    expect(find.text('Anlık Borsa Değeri:'), findsOneWidget);
+    expect(find.text('${marketPrice.toStringAsFixed(2)} ₺'), findsOneWidget);
+    expect(find.text('Birim Fiyat:'), findsOneWidget);
+    expect(find.text('${quickPrice.toStringAsFixed(2)} ₺ / adet'), findsOneWidget);
+
+    // Verify total cash calculation for 20 units
+    final expectedTotal = (20 * quickPrice).toStringAsFixed(2);
+    expect(find.text('+$expectedTotal ₺'), findsOneWidget);
 
     controller.dispose();
   });

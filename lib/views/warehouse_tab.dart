@@ -907,6 +907,8 @@ class _WarehouseTabState extends State<WarehouseTab> {
     bool isDark,
   ) {
     int sellQty = maxStock;
+    final mItem = widget.controller.marketItems[item.id];
+    final marketPrice = mItem?.currentPrice ?? item.basePrice;
 
     showDialog(
       context: context,
@@ -942,6 +944,57 @@ class _WarehouseTabState extends State<WarehouseTab> {
                     'Beklemeden, toptan borsa fiyatından anında kasaya nakit geçirin.',
                     style: TextStyle(fontSize: 12, color: isDark ? Colors.grey[300] : const Color(0xFF475569)),
                   ),
+                  const SizedBox(height: 12),
+                  // Fiyat Bilgi Şeridi (Birim Satış ve Anlık Piyasa Değeri)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1E283E) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Birim Satış Fiyatı:',
+                              style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${quickPrice.toStringAsFixed(2)} ₺',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.orangeAccent,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              'Anlık Borsa Değeri:',
+                              style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${marketPrice.toStringAsFixed(2)} ₺',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 14),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -962,23 +1015,66 @@ class _WarehouseTabState extends State<WarehouseTab> {
                       });
                     },
                   ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      ActionChip(
+                        label: const Text('1 Adet', style: TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          setDialogState(() => sellQty = 1);
+                        },
+                      ),
+                      if (maxStock >= 4) ...[
+                        const SizedBox(width: 4),
+                        ActionChip(
+                          label: const Text('%50', style: TextStyle(fontSize: 11)),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: () {
+                            setDialogState(() => sellQty = (maxStock ~/ 2).clamp(1, maxStock));
+                          },
+                        ),
+                      ],
+                      const SizedBox(width: 4),
+                      ActionChip(
+                        label: const Text('Tümü', style: TextStyle(fontSize: 11)),
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () {
+                          setDialogState(() => sellQty = maxStock);
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
                       color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    child: Column(
                       children: [
-                        const Text('Kasanıza Geçecek Nakit:', style: TextStyle(fontSize: 11.5)),
-                        Text(
-                          '+${totalEarn.toStringAsFixed(2)} ₺',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.greenAccent : const Color(0xFF059669),
-                          ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text('Birim Fiyat:', style: TextStyle(fontSize: 11.5, color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
+                            Text('${quickPrice.toStringAsFixed(2)} ₺ / adet', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Kasanıza Geçecek Nakit:', style: TextStyle(fontSize: 11.5)),
+                            Text(
+                              '+${totalEarn.toStringAsFixed(2)} ₺',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.greenAccent : const Color(0xFF059669),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),

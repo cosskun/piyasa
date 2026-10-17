@@ -3568,6 +3568,20 @@ class MarketTabState extends State<MarketTab> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
+                      Text(
+                        isBuy ? 'Birim Alış Fiyatı:' : 'Birim Satış Fiyatı:',
+                        style: TextStyle(fontSize: 12, color: isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+                      ),
+                      Text(
+                        '${unitPrice.toStringAsFixed(2)} ₺ / adet',
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
                       Text('Toplam Tutar:', style: TextStyle(color: isDark ? Colors.white70 : const Color(0xFF64748B))),
                       Text(
                         '${total.toStringAsFixed(2)} ₺',
