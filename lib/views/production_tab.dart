@@ -73,6 +73,8 @@ class _ProductionTabState extends State<ProductionTab> {
         return Scaffold(
           backgroundColor: Colors.transparent,
           body: ListView(
+            physics: const BouncingScrollPhysics(),
+            cacheExtent: 600,
             padding: const EdgeInsets.all(16),
             children: [
               Wrap(

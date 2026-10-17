@@ -78,65 +78,70 @@ class MarketTabState extends State<MarketTab> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final c = widget.controller;
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final c = widget.controller;
 
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Column(
-        children: [
-          // === 1. ÜST ANA SEKMELER (BORSA / OYUNCU PAZARI / TEKLİFLER) ===
-          Container(
-            margin: const EdgeInsets.fromLTRB(12, 8, 12, 6),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF131C2E) : const Color(0xFFE2E8F0),
-              borderRadius: BorderRadius.circular(13),
-              border: Border.all(
-                color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFCBD5E1).withOpacity(0.8),
-                width: 1,
+        return Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Column(
+            children: [
+              // === 1. ÜST ANA SEKMELER (BORSA / OYUNCU PAZARI / TEKLİFLER) ===
+              Container(
+                margin: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF131C2E) : const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(
+                    color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFCBD5E1).withOpacity(0.8),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    _buildTopTabItem(
+                      index: 0,
+                      label: 'Borsa',
+                      icon: Icons.candlestick_chart_outlined,
+                      badgeCount: c.pendingOrdersCount,
+                      isDark: isDark,
+                      flex: 26,
+                      isAlert: c.pendingOrdersCount > 0,
+                    ),
+                    const SizedBox(width: 6),
+                    _buildTopTabItem(
+                      index: 1,
+                      label: 'Oyuncu Pazarı',
+                      icon: Icons.storefront_outlined,
+                      badgeCount: c.communityListings.length,
+                      isDark: isDark,
+                      flex: 40,
+                    ),
+                    const SizedBox(width: 6),
+                    _buildTopTabItem(
+                      index: 2,
+                      label: 'Teklifler',
+                      icon: Icons.local_offer_outlined,
+                      badgeCount: c.totalActiveOffersBadge,
+                      isDark: isDark,
+                      flex: 34,
+                      isAlert: c.totalActiveOffersBadge > 0,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            child: Row(
-              children: [
-                _buildTopTabItem(
-                  index: 0,
-                  label: 'Borsa',
-                  icon: Icons.candlestick_chart_outlined,
-                  badgeCount: c.pendingOrdersCount,
-                  isDark: isDark,
-                  flex: 26,
-                  isAlert: c.pendingOrdersCount > 0,
-                ),
-                const SizedBox(width: 6),
-                _buildTopTabItem(
-                  index: 1,
-                  label: 'Oyuncu Pazarı',
-                  icon: Icons.storefront_outlined,
-                  badgeCount: c.communityListings.length,
-                  isDark: isDark,
-                  flex: 40,
-                ),
-                const SizedBox(width: 6),
-                _buildTopTabItem(
-                  index: 2,
-                  label: 'Teklifler',
-                  icon: Icons.local_offer_outlined,
-                  badgeCount: c.totalActiveOffersBadge,
-                  isDark: isDark,
-                  flex: 34,
-                  isAlert: c.totalActiveOffersBadge > 0,
-                ),
-              ],
-            ),
-          ),
 
-          // === 2. SEÇİLEN SEKMEYE GÖRE İÇERİK ===
-          Expanded(
-            child: _buildCurrentTabView(isDark),
+              // === 2. SEÇİLEN SEKMEYE GÖRE İÇERİK ===
+              Expanded(
+                child: _buildCurrentTabView(isDark),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -401,6 +406,8 @@ class MarketTabState extends State<MarketTab> {
           child: items.isEmpty
               ? _buildEmptyFilterView(isDark)
               : ListView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  cacheExtent: 600,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   itemCount: items.length,
                   itemBuilder: (ctx, i) {
@@ -1252,6 +1259,8 @@ class MarketTabState extends State<MarketTab> {
                   ),
                 )
               : ListView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  cacheExtent: 600,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                   itemCount: filtered.length,
                   itemBuilder: (ctx, i) {
@@ -1620,6 +1629,8 @@ class MarketTabState extends State<MarketTab> {
     }
 
     return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      cacheExtent: 600,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       itemCount: activeListings.length,
       itemBuilder: (ctx, i) {
@@ -1924,6 +1935,8 @@ class MarketTabState extends State<MarketTab> {
     }
 
     return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      cacheExtent: 600,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       itemCount: incomingOffers.length,
       itemBuilder: (ctx, i) {
@@ -2184,6 +2197,8 @@ class MarketTabState extends State<MarketTab> {
     }
 
     return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      cacheExtent: 600,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       itemCount: outgoingOffers.length,
       itemBuilder: (ctx, i) {
@@ -4241,6 +4256,8 @@ class MarketTabState extends State<MarketTab> {
     final totalReserved = pendingOrders.fold<double>(0.0, (acc, o) => acc + o.totalReservedCost);
 
     return ListView(
+      physics: const BouncingScrollPhysics(),
+      cacheExtent: 600,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       children: [
         // 1. Bilgi & Özet Bannerı

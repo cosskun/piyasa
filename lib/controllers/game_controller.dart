@@ -71,9 +71,11 @@ class GameController extends ChangeNotifier {
 
   // Tema (Varsayılan Açık Tema, Butonla Değiştirilebilir)
   bool isDarkMode = false;
+  late final ValueNotifier<bool> themeModeNotifier = ValueNotifier<bool>(isDarkMode);
 
   void toggleTheme() {
     isDarkMode = !isDarkMode;
+    themeModeNotifier.value = isDarkMode;
     notifyListeners();
     saveState();
   }
@@ -88,6 +90,7 @@ class GameController extends ChangeNotifier {
   double _communityRefreshTimer = 0.0;
   double _incomingOfferTimer = 0.0;
   double _autoSaveTickTimer = 0.0;
+  double _uiTickTimer = 0.0;
 
   static const List<String> _officialReserveSellers = [
     '🏛️ Piyasa Merkez Rezervi',
@@ -182,6 +185,8 @@ class GameController extends ChangeNotifier {
   void _tick(double dt) {
     if (_isGameLoopPaused) return;
 
+    bool stateChanged = false;
+
     // 1. Tarlalar ve Fabrikalar
     for (var fac in ownedFacilities) {
       if (!fac.isProducing) {
@@ -224,6 +229,7 @@ class GameController extends ChangeNotifier {
         } else {
           fac.statusMessage = 'Depo Dolu! Ürün Bekliyor';
         }
+        stateChanged = true;
       }
     }
 
@@ -296,6 +302,7 @@ class GameController extends ChangeNotifier {
         } else {
           store.statusMessage = '$itemsSoldThisBatch ürün satıldı! (+${revenueThisBatch.toStringAsFixed(0)} ₺)';
         }
+        stateChanged = true;
       }
     }
 
@@ -331,6 +338,7 @@ class GameController extends ChangeNotifier {
         double earn = batch * listing.pricePerUnit;
         cash += earn;
         listing.totalEarned += earn;
+        stateChanged = true;
 
         // Teklif gelmiş olsa dahi ürünler rezerve ayrılmadan açık pazarda normal fiyattan satılır.
         // İlandaki kalan stok teklif miktarının altına düşerse teklif otomatik düşer.
@@ -452,6 +460,7 @@ class GameController extends ChangeNotifier {
     if (_communityRefreshTimer >= 12.0) {
       _communityRefreshTimer = 0.0;
       _replenishSystemMarketStock();
+      stateChanged = true;
     }
 
     // 7. Borsa Fiyat Dalgalanması (Her 15 saniyede bir)
@@ -462,6 +471,7 @@ class GameController extends ChangeNotifier {
         item.updatePrice(rnd: _random);
       }
       _checkLimitBuyOrders();
+      stateChanged = true;
     }
 
     // 8. Banka Faiz & Kredi Taksit Döngüsü
@@ -470,9 +480,11 @@ class GameController extends ChangeNotifier {
       _bankTickTimer = 0.0;
       if (bankSavings > 0) {
         bankSavings += bankSavings * 0.005; // %0.5 mevduat getirisi
+        stateChanged = true;
       }
       if (_legacyActiveLoan > 0) {
         _legacyActiveLoan += _legacyActiveLoan * 0.012;
+        stateChanged = true;
       }
     }
 
@@ -549,12 +561,20 @@ class GameController extends ChangeNotifier {
     }
 
     _autoSaveTickTimer += dt;
-    if (_autoSaveTickTimer >= 3.0) {
+    if (_autoSaveTickTimer >= 45.0) {
       _autoSaveTickTimer = 0.0;
       saveState();
     }
 
-    notifyListeners();
+    final hasActiveProgress = ownedFacilities.any((f) => f.isProducing) ||
+        ownedStores.any((s) => s.isSelling) ||
+        activeListings.isNotEmpty;
+
+    _uiTickTimer += dt;
+    if (stateChanged || (hasActiveProgress && _uiTickTimer >= 0.25)) {
+      _uiTickTimer = 0.0;
+      notifyListeners();
+    }
   }
 
   // === DEPONUN AĞIRLIĞI VE HESAPLAR ===
@@ -2268,6 +2288,8 @@ class GameController extends ChangeNotifier {
     activeListings.clear();
     offers.clear();
     limitBuyOrders.clear();
+    isDarkMode = false;
+    themeModeNotifier.value = false;
     _initializeMarket();
     _initializeCommunityListings();
     notifyListeners();
@@ -2444,6 +2466,7 @@ class GameController extends ChangeNotifier {
     }
     if (data.containsKey('isDarkMode')) {
       isDarkMode = data['isDarkMode'] as bool? ?? isDarkMode;
+      themeModeNotifier.value = isDarkMode;
     }
 
     if (data['currentLoan'] != null) {
@@ -2558,6 +2581,7 @@ class GameController extends ChangeNotifier {
     saveState();
     _gameLoopTimer?.cancel();
     _cloudMarketSub?.cancel();
+    themeModeNotifier.dispose();
     super.dispose();
   }
 }

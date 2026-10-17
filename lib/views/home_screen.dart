@@ -394,9 +394,16 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           children: [
             // === ÜST BİLGİ VE FİNANS ÇUBUĞU (HUD) ===
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
+            ListenableBuilder(
+              listenable: widget.controller,
+              builder: (context, _) {
+                final c = widget.controller;
+                final isDark = Theme.of(context).brightness == Brightness.dark;
+                final currencyFmt = NumberFormat("#,##0", "tr_TR");
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF161C2C) : Colors.white,
                 border: Border(
                   bottom: BorderSide(
@@ -877,9 +884,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              );
+            },
+          ),
 
             // === SEÇİLEN SAYFA ===
             Expanded(

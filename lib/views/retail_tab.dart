@@ -66,6 +66,8 @@ class RetailTab extends StatelessWidget {
               ),
             )
           : ListView(
+              physics: const BouncingScrollPhysics(),
+              cacheExtent: 600,
               padding: const EdgeInsets.all(16),
               children: [
                 Wrap(

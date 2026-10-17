@@ -29,31 +29,34 @@ class HomeDashboardTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final currencyFmt = NumberFormat('#,##0', 'tr_TR');
-    final fb = FirebaseService();
-    final username = fb.username ?? (fb.isGuest ? 'Misafir Oyuncu' : 'COSSKUN');
-    final companyName = fb.companyName;
-    final isAdmin = fb.isAdmin || username.trim().toUpperCase() == FirebaseService.adminUsername.toUpperCase();
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final currencyFmt = NumberFormat('#,##0', 'tr_TR');
+        final fb = FirebaseService();
+        final username = fb.username ?? (fb.isGuest ? 'Misafir Oyuncu' : 'COSSKUN');
+        final companyName = fb.companyName;
+        final isAdmin = fb.isAdmin || username.trim().toUpperCase() == FirebaseService.adminUsername.toUpperCase();
 
-    final warehouseWeight = controller.currentWarehouseWeight;
-    final warehouseCap = controller.maxWarehouseCapacity;
-    final warehouseRatio = warehouseCap > 0 ? (warehouseWeight / warehouseCap).clamp(0.0, 1.0) : 0.0;
-    final warehousePercent = (warehouseRatio * 100).toInt();
-    final warehouseFreeSpace = (warehouseCap - warehouseWeight).clamp(0.0, double.infinity);
+        final warehouseWeight = controller.currentWarehouseWeight;
+        final warehouseCap = controller.maxWarehouseCapacity;
+        final warehouseRatio = warehouseCap > 0 ? (warehouseWeight / warehouseCap).clamp(0.0, 1.0) : 0.0;
+        final warehousePercent = (warehouseRatio * 100).toInt();
+        final warehouseFreeSpace = (warehouseCap - warehouseWeight).clamp(0.0, double.infinity);
 
-    Color warehouseBarColor;
-    if (warehouseRatio >= 0.85) {
-      warehouseBarColor = Colors.redAccent;
-    } else if (warehouseRatio >= 0.65) {
-      warehouseBarColor = Colors.amber;
-    } else {
-      warehouseBarColor = const Color(0xFF10B981);
-    }
+        Color warehouseBarColor;
+        if (warehouseRatio >= 0.85) {
+          warehouseBarColor = Colors.redAccent;
+        } else if (warehouseRatio >= 0.65) {
+          warehouseBarColor = Colors.amber;
+        } else {
+          warehouseBarColor = const Color(0xFF10B981);
+        }
 
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -893,6 +896,8 @@ class HomeDashboardTab extends StatelessWidget {
           const SizedBox(height: 20),
         ],
       ),
+    );
+      },
     );
   }
 

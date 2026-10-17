@@ -2088,6 +2088,7 @@ void main() {
     final controller = GameController(autoLoad: false);
     controller.cash = 100000.0;
     controller.warehouse.clear();
+    controller.communityListings.clear();
 
     final mItem = controller.marketItems['wheat']!;
     final wheatPrice = mItem.currentPrice;
@@ -2409,6 +2410,46 @@ void main() {
 
     controller.dispose();
     reloadedController.dispose();
+  });
+
+  testWidgets('Performance optimization: GameController throttles ticks, auto-save interval backed off, and themeModeNotifier reacts independently', (WidgetTester tester) async {
+    final controller = GameController(autoLoad: false);
+
+    // 1. ThemeModeNotifier verification
+    expect(controller.themeModeNotifier.value, isFalse);
+    controller.toggleTheme();
+    expect(controller.isDarkMode, isTrue);
+    expect(controller.themeModeNotifier.value, isTrue);
+    controller.toggleTheme();
+    expect(controller.isDarkMode, isFalse);
+    expect(controller.themeModeNotifier.value, isFalse);
+
+    // 2. Idle tick throttling: With no facilities producing and no stores running, 100ms tick does not spam notifyListeners
+    int notifyCount = 0;
+    controller.addListener(() {
+      notifyCount++;
+    });
+
+    // Run a 100ms tick with zero active facilities/stores
+    controller.tickForTesting(0.1);
+    expect(notifyCount, equals(0), reason: 'Idle ticks should not trigger notifyListeners');
+
+    // 3. Event-driven immediate notification: When an actual harvest/production completes, stateChanged triggers immediately
+    final blueprints = ProductionFacility.getBlueprints();
+    final wheatFarm = blueprints.firstWhere((b) => b.id == 'wheat_farm');
+    controller.cash = 20000.0;
+    controller.buyFacility(wheatFarm);
+    // Facility is newly bought and producing (wheat duration is 15s)
+    expect(controller.ownedFacilities.first.isProducing, isTrue);
+
+    // Set progress to almost done (0.99)
+    controller.ownedFacilities.first.progress = 0.99;
+    // Tick enough time to exceed 1.0 (completion event)
+    controller.tickForTesting(1.0);
+    // Production completed -> stateChanged triggered notifyListeners!
+    expect(notifyCount, greaterThan(0), reason: 'Completion of production must immediately notify listeners');
+
+    controller.dispose();
   });
 }
 

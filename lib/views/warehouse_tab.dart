@@ -20,13 +20,16 @@ class _WarehouseTabState extends State<WarehouseTab> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final c = widget.controller;
-    final currencyFmt = NumberFormat("#,##0", "tr_TR");
+    return ListenableBuilder(
+      listenable: widget.controller,
+      builder: (context, _) {
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final c = widget.controller;
+        final currencyFmt = NumberFormat("#,##0", "tr_TR");
 
-    final usedWeight = c.currentWarehouseWeight;
-    final maxWeight = c.maxWarehouseCapacity;
-    final ratio = (usedWeight / maxWeight).clamp(0.0, 1.0);
+        final usedWeight = c.currentWarehouseWeight;
+        final maxWeight = c.maxWarehouseCapacity;
+        final ratio = (usedWeight / maxWeight).clamp(0.0, 1.0);
 
     // Tüm hammaddeler ve ürünler listesi
     final allRawMaterials = ItemRegistry.items.values
@@ -257,6 +260,8 @@ class _WarehouseTabState extends State<WarehouseTab> {
         ],
       ),
     );
+      },
+    );
   }
 
   Widget _buildSubTabButton({
@@ -361,6 +366,8 @@ class _WarehouseTabState extends State<WarehouseTab> {
     final outOfStockItems = sortedItems.where((i) => (c.warehouse[i.id] ?? 0) == 0).toList();
 
     return ListView(
+      physics: const BouncingScrollPhysics(),
+      cacheExtent: 600,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       children: [
         // BÖLÜM 1: DEPODAKİ MEVCUT STOKLAR

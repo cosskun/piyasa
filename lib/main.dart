@@ -121,13 +121,13 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: _controller,
-      builder: (context, _) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: _controller.themeModeNotifier,
+      builder: (context, isDarkTheme, _) {
         return MaterialApp(
           title: 'Piyasa - Ticaret & Borsa',
           debugShowCheckedModeBanner: false,
-          themeMode: _controller.isDarkMode ? ThemeMode.dark : ThemeMode.light,
+          themeMode: isDarkTheme ? ThemeMode.dark : ThemeMode.light,
           // === AÇIK RENK TEMA (Modern, Temiz, Şık) ===
           theme: ThemeData(
             brightness: Brightness.light,
