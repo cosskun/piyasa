@@ -38,7 +38,16 @@ void main() async {
       debugPrint('GameController loadFromStorage hatası: $e');
     }
   } else {
-    controller.resetToNewGame();
+    try {
+      final hasLocal = await SaveService().hasAnyLocalSave();
+      if (hasLocal) {
+        await controller.loadFromStorage();
+      } else {
+        controller.resetToNewGame();
+      }
+    } catch (e) {
+      controller.resetToNewGame();
+    }
   }
 
   runApp(PiyasaApp(controller: controller));
@@ -78,7 +87,13 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
       if (FirebaseService().isAuthenticated) {
         _controller.loadFromStorage(playerId: FirebaseService().playerId);
       } else {
-        _controller.resetToNewGame();
+        SaveService().hasAnyLocalSave().then((hasLocal) {
+          if (hasLocal) {
+            _controller.loadFromStorage();
+          } else {
+            _controller.resetToNewGame();
+          }
+        });
       }
     }
     _isAuthenticated = widget.skipAuthForTesting ?? FirebaseService().isAuthenticated;

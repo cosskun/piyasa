@@ -2254,8 +2254,9 @@ class GameController extends ChangeNotifier {
   void saveState({String? targetPlayerId}) {
     lastActiveAt = DateTime.now();
     final pid = targetPlayerId ?? FirebaseService().playerId;
-    SaveService().save(this, playerId: pid);
-    FirebaseService().syncPlayerAssetsToCloud(toSaveJson(), targetPlayerId: pid);
+    final saveData = toSaveJson();
+    SaveService().saveDirectData(saveData, playerId: pid);
+    FirebaseService().syncPlayerAssetsToCloud(saveData, targetPlayerId: pid);
   }
 
   Future<void> onAppResumed() async {
@@ -2324,30 +2325,31 @@ class GameController extends ChangeNotifier {
       final localSavedAt = DateTime.tryParse(localData['savedAt'] as String? ?? '');
       final cloudSavedAt = DateTime.tryParse(cloudData['savedAt'] as String? ?? '');
 
-      // Eğer yerelde tarlalar/tesisler var ama bulutta 0 tesis varsa (kayıt yeni açılmış veya henüz buluta gitmemişse)
-      // Kesinlikle yerel kaydı koru ve tarlaların sıfırlanmasını önle!
-      if (localAssets > 0 && cloudAssets == 0) {
+      // KURAL 1: Yerelde tesisler/tarlalar var ve buluttakinden fazlaysa, ASLA yereli ezme!
+      if (localAssets > cloudAssets) {
         loadFromSaveJson(localData);
         saveState(targetPlayerId: pid); // Bulutu da yerelle eşitle
-      } else if (cloudAssets > 0 && localAssets == 0) {
+      } else if (cloudAssets > localAssets) {
         loadFromSaveJson(cloudData);
-        await SaveService().save(this, playerId: pid);
+        await SaveService().saveDirectData(cloudData, playerId: pid);
       } else if (localSavedAt != null && cloudSavedAt != null) {
         if (localSavedAt.isAfter(cloudSavedAt) || localSavedAt.isAtSameMomentAs(cloudSavedAt)) {
           loadFromSaveJson(localData);
           saveState(targetPlayerId: pid);
         } else {
           loadFromSaveJson(cloudData);
-          await SaveService().save(this, playerId: pid);
+          await SaveService().saveDirectData(cloudData, playerId: pid);
         }
       } else {
-        // Tarih yoksa daha zengin varlığı olan tarafı yükle
-        if (localAssets >= cloudAssets) {
+        // Tarih yoksa servet ve nakdi daha yüksek olan tarafı yükle
+        final localNet = (localData['netWorth'] as num?)?.toDouble() ?? 0.0;
+        final cloudNet = (cloudData['netWorth'] as num?)?.toDouble() ?? 0.0;
+        if (localNet >= cloudNet) {
           loadFromSaveJson(localData);
           saveState(targetPlayerId: pid);
         } else {
           loadFromSaveJson(cloudData);
-          await SaveService().save(this, playerId: pid);
+          await SaveService().saveDirectData(cloudData, playerId: pid);
         }
       }
     } else if (localData != null) {
@@ -2355,11 +2357,21 @@ class GameController extends ChangeNotifier {
       saveState(targetPlayerId: pid); // Buluta da aktar
     } else if (cloudData != null && (cloudData.containsKey('ownedFacilities') || cloudData.containsKey('warehouse') || cloudData.containsKey('savedAt'))) {
       loadFromSaveJson(cloudData);
-      await SaveService().save(this, playerId: pid);
+      await SaveService().saveDirectData(cloudData, playerId: pid);
     } else {
+      // Yerel veya bulutta veri bulunamadıysa cihazdaki genel son aktif yedeği ara
+      final fallbackData = await SaveService().getLastFallbackSaveData(forPlayerId: pid);
+      if (fallbackData != null) {
+        loadFromSaveJson(fallbackData);
+        await SaveService().saveDirectData(fallbackData, playerId: pid);
+        saveState(targetPlayerId: pid);
+        return true;
+      }
+
       // Gerçekten sıfır / yeni bir oyuncu profili!
       resetToNewGame();
-      await SaveService().save(this, playerId: pid);
+      final freshData = toSaveJson();
+      await SaveService().saveDirectData(freshData, playerId: pid);
       saveState(targetPlayerId: pid);
       return true;
     }
@@ -2448,18 +2460,18 @@ class GameController extends ChangeNotifier {
 
   void loadFromSaveJson(Map<String, dynamic> data) {
     if (data.containsKey('lastActiveAt') && data['lastActiveAt'] != null) {
-      lastActiveAt = DateTime.tryParse(data['lastActiveAt'] as String) ?? lastActiveAt;
+      lastActiveAt = DateTime.tryParse(data['lastActiveAt'].toString()) ?? lastActiveAt;
     }
-    if (data.containsKey('highestNetWorth')) {
+    if (data.containsKey('highestNetWorth') && data['highestNetWorth'] != null) {
       highestNetWorth = (data['highestNetWorth'] as num).toDouble();
     }
-    if (data.containsKey('cash')) {
+    if (data.containsKey('cash') && data['cash'] != null) {
       cash = (data['cash'] as num).toDouble();
     }
-    if (data.containsKey('bankSavings')) {
+    if (data.containsKey('bankSavings') && data['bankSavings'] != null) {
       bankSavings = (data['bankSavings'] as num).toDouble();
     }
-    if (data.containsKey('maxWarehouseCapacity')) {
+    if (data.containsKey('maxWarehouseCapacity') && data['maxWarehouseCapacity'] != null) {
       maxWarehouseCapacity = (data['maxWarehouseCapacity'] as num).toDouble();
       if (maxWarehouseCapacity < 5000.0) {
         maxWarehouseCapacity = 5000.0;
@@ -2472,103 +2484,149 @@ class GameController extends ChangeNotifier {
       themeModeNotifier.value = isDarkMode;
     }
 
-    if (data['currentLoan'] != null) {
+    if (data['currentLoan'] != null && data['currentLoan'] is Map) {
       try {
-        currentLoan = BankLoan.fromJson(data['currentLoan'] as Map<String, dynamic>);
+        currentLoan = BankLoan.fromJson(Map<String, dynamic>.from(data['currentLoan'] as Map));
       } catch (e) {
         debugPrint('Error loading currentLoan: $e');
       }
-    } else {
+    } else if (data.containsKey('currentLoan') && data['currentLoan'] == null) {
       currentLoan = null;
     }
 
-    if (data['warehouse'] != null) {
+    if (data['warehouse'] != null && data['warehouse'] is Map) {
       warehouse.clear();
-      final wh = data['warehouse'] as Map<String, dynamic>;
+      final wh = Map<String, dynamic>.from(data['warehouse'] as Map);
       wh.forEach((k, v) {
-        int cnt = (v as num).toInt();
+        final cnt = (v as num?)?.toInt() ?? 0;
         if (cnt > 0) warehouse[k] = cnt;
       });
     }
 
-    if (data['marketItems'] != null) {
-      final mItems = data['marketItems'] as Map<String, dynamic>;
+    if (data['marketItems'] != null && data['marketItems'] is Map) {
+      final mItems = Map<String, dynamic>.from(data['marketItems'] as Map);
       mItems.forEach((k, v) {
-        if (v is Map<String, dynamic> && marketItems.containsKey(k)) {
-          marketItems[k] = MarketItem.fromJson(v);
+        if (v is Map && marketItems.containsKey(k)) {
+          try {
+            marketItems[k] = MarketItem.fromJson(Map<String, dynamic>.from(v as Map));
+          } catch (_) {}
         }
       });
     }
 
-    if (data['ownedFacilities'] != null) {
-      ownedFacilities.clear();
-      for (var f in data['ownedFacilities'] as List) {
+    if (data['ownedFacilities'] != null && data['ownedFacilities'] is List) {
+      final rawList = data['ownedFacilities'] as List;
+      final loaded = <ProductionFacility>[];
+      for (var f in rawList) {
         try {
-          final fac = ProductionFacility.fromJson(f as Map<String, dynamic>);
-          if (fac != null) ownedFacilities.add(fac);
+          if (f is Map) {
+            final facMap = Map<String, dynamic>.from(f);
+            final fac = ProductionFacility.fromJson(facMap);
+            if (fac != null) loaded.add(fac);
+          }
         } catch (e) {
           debugPrint('Error loading facility: $e');
         }
       }
+      if (loaded.isNotEmpty || rawList.isEmpty) {
+        ownedFacilities.clear();
+        ownedFacilities.addAll(loaded);
+      }
     }
 
-    if (data['ownedStores'] != null) {
-      ownedStores.clear();
-      for (var s in data['ownedStores'] as List) {
+    if (data['ownedStores'] != null && data['ownedStores'] is List) {
+      final rawList = data['ownedStores'] as List;
+      final loaded = <RetailStore>[];
+      for (var s in rawList) {
         try {
-          final store = RetailStore.fromJson(s as Map<String, dynamic>);
-          if (store != null) ownedStores.add(store);
+          if (s is Map) {
+            final storeMap = Map<String, dynamic>.from(s);
+            final store = RetailStore.fromJson(storeMap);
+            if (store != null) loaded.add(store);
+          }
         } catch (e) {
           debugPrint('Error loading store: $e');
         }
       }
+      if (loaded.isNotEmpty || rawList.isEmpty) {
+        ownedStores.clear();
+        ownedStores.addAll(loaded);
+      }
     }
 
-    if (data['activeListings'] != null) {
-      activeListings.clear();
-      for (var l in data['activeListings'] as List) {
+    if (data['activeListings'] != null && data['activeListings'] is List) {
+      final rawList = data['activeListings'] as List;
+      final loaded = <MarketListing>[];
+      for (var l in rawList) {
         try {
-          activeListings.add(MarketListing.fromJson(l as Map<String, dynamic>));
+          if (l is Map) {
+            loaded.add(MarketListing.fromJson(Map<String, dynamic>.from(l)));
+          }
         } catch (e) {
           debugPrint('Error loading activeListing: $e');
         }
       }
+      if (loaded.isNotEmpty || rawList.isEmpty) {
+        activeListings.clear();
+        activeListings.addAll(loaded);
+      }
     }
 
-    if (data['communityListings'] != null && (data['communityListings'] as List).isNotEmpty) {
-      communityListings.clear();
-      for (var c in data['communityListings'] as List) {
+    if (data['communityListings'] != null && data['communityListings'] is List) {
+      final rawList = data['communityListings'] as List;
+      final loaded = <MarketListing>[];
+      for (var c in rawList) {
         try {
-          final listing = MarketListing.fromJson(c as Map<String, dynamic>);
-          // Sadece resmi piyasa rezervleri veya gerçek kayıtlı oyuncuların ilanları alınır
-          if (listing.isOfficialReserve || (listing.sellerId != null && listing.sellerId != 'SYSTEM' && !listing.id.startsWith('comm_'))) {
-            communityListings.add(listing);
+          if (c is Map) {
+            final listing = MarketListing.fromJson(Map<String, dynamic>.from(c));
+            // Sadece resmi piyasa rezervleri veya gerçek kayıtlı oyuncuların ilanları alınır
+            if (listing.isOfficialReserve || (listing.sellerId != null && listing.sellerId != 'SYSTEM' && !listing.id.startsWith('comm_'))) {
+              loaded.add(listing);
+            }
           }
         } catch (e) {
           debugPrint('Error loading communityListing: $e');
         }
       }
+      if (loaded.isNotEmpty) {
+        communityListings.clear();
+        communityListings.addAll(loaded);
+      }
     }
 
-    if (data['offers'] != null) {
-      offers.clear();
-      for (var o in data['offers'] as List) {
+    if (data['offers'] != null && data['offers'] is List) {
+      final rawList = data['offers'] as List;
+      final loaded = <MarketOffer>[];
+      for (var o in rawList) {
         try {
-          offers.add(MarketOffer.fromJson(o as Map<String, dynamic>));
+          if (o is Map) {
+            loaded.add(MarketOffer.fromJson(Map<String, dynamic>.from(o)));
+          }
         } catch (e) {
           debugPrint('Error loading offer: $e');
         }
       }
+      if (loaded.isNotEmpty || rawList.isEmpty) {
+        offers.clear();
+        offers.addAll(loaded);
+      }
     }
 
-    if (data['limitBuyOrders'] != null) {
-      limitBuyOrders.clear();
-      for (var ord in data['limitBuyOrders'] as List) {
+    if (data['limitBuyOrders'] != null && data['limitBuyOrders'] is List) {
+      final rawList = data['limitBuyOrders'] as List;
+      final loaded = <LimitBuyOrder>[];
+      for (var ord in rawList) {
         try {
-          limitBuyOrders.add(LimitBuyOrder.fromJson(ord as Map<String, dynamic>));
+          if (ord is Map) {
+            loaded.add(LimitBuyOrder.fromJson(Map<String, dynamic>.from(ord)));
+          }
         } catch (e) {
           debugPrint('Error loading limitBuyOrder: $e');
         }
+      }
+      if (loaded.isNotEmpty || rawList.isEmpty) {
+        limitBuyOrders.clear();
+        limitBuyOrders.addAll(loaded);
       }
     }
 

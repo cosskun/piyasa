@@ -93,7 +93,12 @@ class FirebaseService {
 
     _playerId = prefs.getString(_localPlayerIdKey);
     if (_playerId == null || _playerId!.isEmpty) {
-      _playerId = 'ply_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(9999)}';
+      final lastActiveId = prefs.getString('piyasa_last_active_player_id');
+      if (lastActiveId != null && lastActiveId.isNotEmpty) {
+        _playerId = lastActiveId;
+      } else {
+        _playerId = 'ply_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(9999)}';
+      }
       await prefs.setString(_localPlayerIdKey, _playerId!);
     }
 
@@ -116,19 +121,24 @@ class FirebaseService {
 
         // Kullanıcı önceden oturum açmış mı kontrol et
         if (_auth!.currentUser != null) {
-          _playerId = _auth!.currentUser!.uid;
-          await prefs.setString(_localPlayerIdKey, _playerId!);
+          final authUid = _auth!.currentUser!.uid;
+          if (_playerId == null || _playerId!.isEmpty || _playerId!.startsWith('ply_guest_') || (_auth!.currentUser!.email != null && _auth!.currentUser!.email!.isNotEmpty)) {
+            _playerId = authUid;
+            await prefs.setString(_localPlayerIdKey, _playerId!);
+          }
+        }
 
-          // Kullanıcı profilini Firestore'dan çek
+        // Aktif oyuncu profilini Firestore'dan çek (Auth veya Firestore bulut hesabı)
+        if (_playerId != null && _playerId!.isNotEmpty && !_isGuest) {
           try {
             final playerDoc = await _firestore!.collection('players').doc(_playerId).get().timeout(const Duration(seconds: 4));
             if (playerDoc.exists && playerDoc.data() != null) {
               final data = playerDoc.data()!;
-              if (data['username'] != null) {
+              if (data['username'] != null && (data['username'] as String).isNotEmpty) {
                 _username = data['username'] as String;
                 await prefs.setString(_localUsernameKey, _username!);
               }
-              if (data['companyName'] != null) {
+              if (data['companyName'] != null && (data['companyName'] as String).isNotEmpty) {
                 _companyName = data['companyName'] as String;
                 await prefs.setString(_localCompanyNameKey, _companyName!);
               }
@@ -142,7 +152,7 @@ class FirebaseService {
 
               if (isAdmin && _role != 'admin') {
                 _role = 'admin';
-                _firestore!.collection('players').doc(_playerId).set({'role': 'admin'}, SetOptions(merge: true));
+                unawaited(_firestore!.collection('players').doc(_playerId).set({'role': 'admin'}, SetOptions(merge: true)));
               }
               _listenToBanStatus(_playerId!);
             }
@@ -1412,6 +1422,8 @@ class FirebaseService {
   /// Bilinmeyen, misafir veya bot oyuncu kayıtlarını yerelden ve bulut veritabanından temizler
   Future<int> cleanupUnknownPlayers() async {
     int deletedCount = 0;
+    final activeId = _playerId;
+    final activeUsernameLower = _username?.trim().toLowerCase();
 
     // 1. Yerel hesap havuzunu temizle
     try {
@@ -1422,12 +1434,15 @@ class FirebaseService {
         final uname = acc['username']?.toString().trim();
         final uid = acc['uid']?.toString() ?? '';
         final isNpc = acc['isNpc'] == true;
+
+        // Aktif oyuncuyu kesinlikle silme!
+        if (activeId != null && activeId.isNotEmpty && uid == activeId) continue;
+        if (activeUsernameLower != null && activeUsernameLower.isNotEmpty && (entry.key == activeUsernameLower || uname?.toLowerCase() == activeUsernameLower)) continue;
+
         if (uname == null ||
             uname.isEmpty ||
             uname == 'Bilinmeyen Oyuncu' ||
-            uname == 'Misafir Oyuncu' ||
             isNpc ||
-            uid.startsWith('ply_guest_') ||
             uid.startsWith('npc_')) {
           keysToRemove.add(entry.key);
         }
@@ -1455,12 +1470,15 @@ class FirebaseService {
           final uname = data['username']?.toString().trim();
           final isNpc = data['isNpc'] == true;
           final uid = doc.id;
+
+          // Aktif oyuncuyu bulutta da kesinlikle silme!
+          if (activeId != null && activeId.isNotEmpty && uid == activeId) continue;
+          if (activeUsernameLower != null && activeUsernameLower.isNotEmpty && uname?.toLowerCase() == activeUsernameLower) continue;
+
           if (uname == null ||
               uname.isEmpty ||
               uname == 'Bilinmeyen Oyuncu' ||
-              uname == 'Misafir Oyuncu' ||
               isNpc ||
-              uid.startsWith('ply_guest_') ||
               uid.startsWith('npc_')) {
             batch.delete(doc.reference);
             pendingBatchCount++;

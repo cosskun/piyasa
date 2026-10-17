@@ -2451,6 +2451,78 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('Profile & asset persistence: survives app restart, Firestore dynamic nested maps, and preserves facilities', (WidgetTester tester) async {
+    SaveService().resetForTesting();
+    SharedPreferences.setMockInitialValues({});
+
+    final wheatFarm = ProductionFacility.getBlueprints().firstWhere((b) => b.id == 'wheat_farm');
+    final potatoField = ProductionFacility.getBlueprints().firstWhere((b) => b.id == 'potato_field');
+
+    // 1. Oyuncu oturum açar, tarlalar alır ve oyunu kaydeder
+    final controller = GameController(autoLoad: false);
+    controller.cash = 50000.0;
+    controller.buyFacility(wheatFarm, quantity: 2);
+    controller.buyFacility(potatoField, quantity: 1);
+    controller.warehouse['wheat'] = 250;
+    controller.warehouse['potato'] = 150;
+    controller.highestNetWorth = 75000.0;
+
+    expect(controller.ownedFacilities.length, 3);
+    expect(controller.warehouse['wheat'], 250);
+
+    const testPid = 'ply_test_cosskun_123';
+    final savedData = controller.toSaveJson();
+    await SaveService().saveDirectData(savedData, playerId: testPid);
+
+    // 2. Uygulama tamamen kapatıldı ve yeni controller ile açıldı (Cold Boot)
+    final freshController = GameController(autoLoad: false);
+    expect(freshController.ownedFacilities.isEmpty, isTrue);
+
+    // loadFromStorage çağrılır
+    await freshController.loadFromStorage(playerId: testPid);
+
+    expect(freshController.ownedFacilities.length, 3, reason: 'Tüm tarlalar restart sonrası korunmalıdır');
+    expect(freshController.warehouse['wheat'], 250);
+    expect(freshController.warehouse['potato'], 150);
+    expect(freshController.cash, 50000.0 - (wheatFarm.purchaseCost * 2 + potatoField.purchaseCost));
+
+    // 3. Firestore'dan gelen dynamic Object? tipindeki haritalar ile test (Crash & wipe engeli)
+    // Cloud Firestore nested map'leri Map<dynamic, dynamic> olarak döner
+    final firestoreRawData = <String, dynamic>{
+      'cash': 85000.0,
+      'highestNetWorth': 95000.0,
+      'netWorth': 95000.0,
+      'warehouse': <dynamic, dynamic>{'wheat': 500, 'flour': 100},
+      'ownedFacilities': <dynamic>[
+        <dynamic, dynamic>{
+          'id': 'wheat_farm_100',
+          'blueprintId': 'wheat_farm',
+          'level': 2,
+          'progress': 0.5,
+          'isProducing': true,
+        },
+      ],
+      'savedAt': DateTime.now().toIso8601String(),
+    };
+
+    // loadFromSaveJson bu haritayı sıfırlamadan veya çökmeden güvenle parse etmelidir
+    freshController.loadFromSaveJson(firestoreRawData);
+    expect(freshController.ownedFacilities.length, 1);
+    expect(freshController.ownedFacilities.first.level, 2);
+    expect(freshController.warehouse['wheat'], 500);
+
+    // 4. Fallback save mekanizması: Eğer playerId bulunamazsa cihazdaki son aktif yedekten kurtarır
+    final fallbackController = GameController(autoLoad: false);
+    final fallbackData = await SaveService().getLastFallbackSaveData();
+    expect(fallbackData, isNotNull, reason: 'Son aktif yedek diskte bulunmalıdır');
+    fallbackController.loadFromSaveJson(fallbackData!);
+    expect(fallbackController.ownedFacilities.isNotEmpty, isTrue);
+
+    controller.dispose();
+    freshController.dispose();
+    fallbackController.dispose();
+  });
 }
 
 
