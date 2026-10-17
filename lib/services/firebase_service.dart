@@ -39,14 +39,19 @@ class FirebaseService {
   static const String _localCompanyNameKey = 'piyasa_player_company_name';
   static const String _localUsernameKey = 'piyasa_player_username';
   static const String _localIsGuestKey = 'piyasa_is_guest';
+  static const String _localIsLoggedInKey = 'piyasa_is_logged_in';
   static const String _localOfflineSalesKey = 'piyasa_unclaimed_market_sales';
   static const String _localAccountsKey = 'piyasa_registered_accounts_v2';
+  bool _isLoggedInExplicit = false;
 
   bool get isCloudConnected => _initialized && FirebaseConfig.isConfigured && _firestore != null;
   String get playerId => _playerId ?? 'player_guest';
   String get companyName => _companyName ?? 'Piyasa Holding';
   String? get username => _username;
-  bool get isLoggedIn => _auth?.currentUser != null || (_username != null && _username!.isNotEmpty);
+  bool get isLoggedIn =>
+      _isLoggedInExplicit ||
+      _auth?.currentUser != null ||
+      (_username != null && _username!.isNotEmpty);
   bool get isGuest => _isGuest;
   bool get isAuthenticated => isLoggedIn || _isGuest;
   String? get email => _auth?.currentUser?.email;
@@ -110,6 +115,7 @@ class FirebaseService {
 
     _username = prefs.getString(_localUsernameKey);
     _isGuest = prefs.getBool(_localIsGuestKey) ?? false;
+    _isLoggedInExplicit = prefs.getBool(_localIsLoggedInKey) ?? false;
 
     // 2. Firebase Bulut Bağlantısı
     if (FirebaseConfig.isConfigured && FirebaseConfig.currentPlatform != null) {
@@ -125,6 +131,10 @@ class FirebaseService {
           if (_playerId == null || _playerId!.isEmpty || _playerId!.startsWith('ply_guest_') || (_auth!.currentUser!.email != null && _auth!.currentUser!.email!.isNotEmpty)) {
             _playerId = authUid;
             await prefs.setString(_localPlayerIdKey, _playerId!);
+          }
+          if (_username == null || _username!.isEmpty) {
+            _username = _auth!.currentUser!.displayName ?? (_auth!.currentUser!.email?.split('@').first ?? 'Oyuncu');
+            await prefs.setString(_localUsernameKey, _username!);
           }
         }
 
@@ -757,12 +767,14 @@ class FirebaseService {
       _companyName = matchedAccount['companyName'] as String? ?? '$_username Holding';
       _role = matchedAccount['role'] as String? ?? (isAdmin ? 'admin' : 'user');
       _isGuest = false;
+      _isLoggedInExplicit = true;
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_localPlayerIdKey, _playerId!);
       await prefs.setString(_localUsernameKey, _username!);
       await prefs.setString(_localCompanyNameKey, _companyName!);
       await prefs.setBool(_localIsGuestKey, false);
+      await prefs.setBool(_localIsLoggedInKey, true);
 
       await setPlayerOnlineStatus(isOnline: true);
       return null;
@@ -796,12 +808,14 @@ class FirebaseService {
               _companyName = locAcc['companyName'] as String? ?? '$_username Holding';
               _role = locAcc['role'] as String? ?? (isAdmin ? 'admin' : 'user');
               _isGuest = false;
+              _isLoggedInExplicit = true;
 
               final prefs = await SharedPreferences.getInstance();
               await prefs.setString(_localPlayerIdKey, _playerId!);
               await prefs.setString(_localUsernameKey, _username!);
               await prefs.setString(_localCompanyNameKey, _companyName!);
               await prefs.setBool(_localIsGuestKey, false);
+              await prefs.setBool(_localIsLoggedInKey, true);
 
               // Bu yerel hesabı buluta da senkronize et (arkaplanda)
               try {
@@ -851,12 +865,14 @@ class FirebaseService {
             _companyName = '$_username Holding';
             _role = isAdmin ? 'admin' : 'user';
             _isGuest = false;
+            _isLoggedInExplicit = true;
 
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString(_localPlayerIdKey, _playerId!);
             await prefs.setString(_localUsernameKey, _username!);
             await prefs.setString(_localCompanyNameKey, _companyName!);
             await prefs.setBool(_localIsGuestKey, false);
+            await prefs.setBool(_localIsLoggedInKey, true);
 
             try {
               final pDoc = await _firestore!.collection('players').doc(uid).get().timeout(const Duration(seconds: 4));
@@ -894,18 +910,24 @@ class FirebaseService {
 
       _playerId = user.uid;
       _isGuest = false;
+      _isLoggedInExplicit = true;
+      _username = cleanIdentifier.contains('@') ? cleanIdentifier.split('@').first : cleanIdentifier;
+      _companyName = '$_username Holding';
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_localPlayerIdKey, _playerId!);
+      await prefs.setString(_localUsernameKey, _username!);
+      await prefs.setString(_localCompanyNameKey, _companyName!);
       await prefs.setBool(_localIsGuestKey, false);
+      await prefs.setBool(_localIsLoggedInKey, true);
 
-      // Profil bilgilerini Firestore'dan çek
+      // Profil bilgilerini Firestore'dan çek ve varsa zenginleştir
       try {
         final playerDoc = await _firestore!.collection('players').doc(user.uid).get().timeout(const Duration(seconds: 4));
         if (playerDoc.exists && playerDoc.data() != null) {
           final data = playerDoc.data()!;
-          _username = data['username'] as String? ?? cleanIdentifier;
-          _companyName = data['companyName'] as String? ?? '$_username Holding';
+          _username = data['username'] as String? ?? _username;
+          _companyName = data['companyName'] as String? ?? _companyName;
           await prefs.setString(_localUsernameKey, _username!);
           await prefs.setString(_localCompanyNameKey, _companyName!);
 
@@ -1031,11 +1053,13 @@ class FirebaseService {
       debugPrint('FirebaseService: signOut hatası: $e');
     }
     _isGuest = false;
+    _isLoggedInExplicit = false;
     _username = null;
     _companyName = null;
     _playerId = null;
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_localIsGuestKey);
+    await prefs.remove(_localIsLoggedInKey);
     await prefs.remove(_localUsernameKey);
     await prefs.remove(_localCompanyNameKey);
     await prefs.remove(_localPlayerIdKey);

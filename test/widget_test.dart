@@ -2523,6 +2523,48 @@ void main() {
     freshController.dispose();
     fallbackController.dispose();
   });
+
+  testWidgets('Session persistence: closing app and relaunching keeps user authenticated and avoids AuthScreen', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final fb = FirebaseService();
+
+    // 1. Oyuncu giriş yapar
+    await fb.registerWithEmail(
+      email: 'cosskun@piyasa.com',
+      password: 'password123',
+      username: 'COSSKUN',
+      companyName: 'COSSKUN Holding',
+    );
+    final loginError = await fb.loginWithEmailOrUsername(identifier: 'COSSKUN', password: 'password123');
+    expect(loginError, isNull);
+    expect(fb.isAuthenticated, isTrue);
+    expect(fb.username, 'COSSKUN');
+
+    // 2. Uygulama tamamen kapatıldı ve telefon ana ekranından yeniden başlatıldı
+    // initialize() SharedPreferences'tan oturumu okur
+    await fb.initialize();
+
+    // Oturumun ve profilin açık kaldığı doğrulanır
+    expect(fb.isAuthenticated, isTrue, reason: 'Uygulama kapatılıp açıldığında oturum açık kalmalıdır');
+    expect(fb.isLoggedIn, isTrue);
+    expect(fb.username, 'COSSKUN');
+    expect(fb.companyName, 'COSSKUN Holding');
+
+    // 3. Widget ağacında doğrudan oyun yükleme/ana ekrana geçildiği, AuthScreen'in çıkmadığı test edilir
+    final controller = GameController(autoLoad: false);
+    await tester.pumpWidget(PiyasaApp(
+      controller: controller,
+      skipLoadingForTesting: true,
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // Giriş yap / Kayıt ol ekranı görünmemeli, doğrudan ana ekran (HomeScreen) açılmalıdır
+    expect(find.byType(AuthScreen), findsNothing, reason: 'Kullanıcı oturumu açıkken asla AuthScreen açılmamalıdır');
+    expect(find.byType(HomeScreen), findsOneWidget, reason: 'Oturumu açık kullanıcı doğrudan HomeScreen görmelidir');
+
+    controller.dispose();
+  });
 }
 
 

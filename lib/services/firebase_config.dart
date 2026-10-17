@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 
@@ -36,6 +37,8 @@ class FirebaseConfig {
 
   /// Aktif platform için geçerli yapılandırmanın olup olmadığını denetler
   static bool get isConfigured {
+    if (kIsWeb) return false;
+    if (!kIsWeb && Platform.environment.containsKey('FLUTTER_TEST')) return false;
     final opts = currentPlatform;
     if (opts == null) return false;
     return opts.apiKey.isNotEmpty &&
