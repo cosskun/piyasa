@@ -68,42 +68,58 @@ class _AuthScreenState extends State<AuthScreen> {
       _errorMessage = null;
     });
 
-    final error = await FirebaseService().loginWithEmailOrUsername(
-      identifier: identifier,
-      password: password,
-    );
+    try {
+      final error = await FirebaseService().loginWithEmailOrUsername(
+        identifier: identifier,
+        password: password,
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (error != null) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = error.startsWith('HESAP_BANLANDI:') ? 'Hesabınız askıya alınmıştır.' : error;
-      });
-      if (error.startsWith('HESAP_BANLANDI:')) {
-        final reason = error.replaceFirst('HESAP_BANLANDI:', '').trim();
-        BannedDialog.show(context, reason: reason);
+      if (error != null) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = error.startsWith('HESAP_BANLANDI:') ? 'Hesabınız askıya alınmıştır.' : error;
+        });
+        if (error.startsWith('HESAP_BANLANDI:')) {
+          final reason = error.replaceFirst('HESAP_BANLANDI:', '').trim();
+          BannedDialog.show(context, reason: reason);
+        }
+      } else {
+        final pid = FirebaseService().playerId;
+        try {
+          if (widget.controller != null) {
+            await widget.controller!.loadFromStorage(playerId: pid);
+          }
+        } catch (e) {
+          debugPrint('AuthScreen: loadFromStorage hatası: $e');
+        }
+        try {
+          await AuditLogService().initializeForPlayer(pid);
+        } catch (e) {
+          debugPrint('AuthScreen: AuditLogService initialize hatası: $e');
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+        });
+        AuditLogService().log(
+          category: LogCategory.auth,
+          action: 'AUTH_LOGIN',
+          title: 'Oturum Açıldı',
+          description: '$identifier başarıyla giriş yaptı.',
+          cashAfter: widget.controller?.cash ?? 10000.0,
+          details: {'identifier': identifier},
+        );
+        widget.onAuthenticated();
       }
-    } else {
-      final pid = FirebaseService().playerId;
-      if (widget.controller != null) {
-        await widget.controller!.loadFromStorage(playerId: pid);
-      }
-      await AuditLogService().initializeForPlayer(pid);
-
+    } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
+        _errorMessage = 'Giriş sırasında beklenmeyen bir hata oluştu: $e';
       });
-      AuditLogService().log(
-        category: LogCategory.auth,
-        action: 'AUTH_LOGIN',
-        title: 'Oturum Açıldı',
-        description: '$identifier başarıyla giriş yaptı.',
-        cashAfter: widget.controller?.cash ?? 10000.0,
-        details: {'identifier': identifier},
-      );
-      widget.onAuthenticated();
     }
   }
 
@@ -128,54 +144,62 @@ class _AuthScreenState extends State<AuthScreen> {
       _errorMessage = null;
     });
 
-    final error = await FirebaseService().registerWithEmail(
-      email: email,
-      password: password,
-      username: username,
-      companyName: companyName.isNotEmpty ? companyName : null,
-    );
-
-    if (!mounted) return;
-
-    if (error != null) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = error;
-      });
-    } else {
-      // Kayıt başarılı: Otomatik giriş YAPILMAZ!
-      // Bilgiler giriş formuna aktarılır ve kullanıcı şifresiyle giriş yapmaya yönlendirilir.
-      _loginIdentifierController.text = username;
-      _loginPasswordController.text = '';
-      _regPasswordController.text = '';
-      _regConfirmPasswordController.text = '';
-
-      setState(() {
-        _isLoading = false;
-        _isLogin = true;
-        _errorMessage = null;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(
-            children: [
-              Icon(Icons.check_circle_rounded, color: Colors.white),
-              SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Kayıt başarılı! Lütfen belirlediğiniz şifrenizle giriş yapınız.',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: const Color(0xFF059669),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(seconds: 4),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
+    try {
+      final error = await FirebaseService().registerWithEmail(
+        email: email,
+        password: password,
+        username: username,
+        companyName: companyName.isNotEmpty ? companyName : null,
       );
+
+      if (!mounted) return;
+
+      if (error != null) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = error;
+        });
+      } else {
+        // Kayıt başarılı: Otomatik giriş YAPILMAZ!
+        // Bilgiler giriş formuna aktarılır ve kullanıcı şifresiyle giriş yapmaya yönlendirilir.
+        _loginIdentifierController.text = username;
+        _loginPasswordController.text = '';
+        _regPasswordController.text = '';
+        _regConfirmPasswordController.text = '';
+
+        setState(() {
+          _isLoading = false;
+          _isLogin = true;
+          _errorMessage = null;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Colors.white),
+                SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Kayıt başarılı! Lütfen belirlediğiniz şifrenizle giriş yapınız.',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: const Color(0xFF059669),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Kayıt sırasında beklenmeyen bir hata oluştu: $e';
+      });
     }
   }
 

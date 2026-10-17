@@ -109,7 +109,7 @@ class FirebaseService {
     // 2. Firebase Bulut Bağlantısı
     if (FirebaseConfig.isConfigured && FirebaseConfig.currentPlatform != null) {
       try {
-        await Firebase.initializeApp(options: FirebaseConfig.currentPlatform!);
+        await Firebase.initializeApp(options: FirebaseConfig.currentPlatform!).timeout(const Duration(seconds: 5));
         _firestore = FirebaseFirestore.instance;
         _auth = FirebaseAuth.instance;
         _initialized = true;
@@ -121,7 +121,7 @@ class FirebaseService {
 
           // Kullanıcı profilini Firestore'dan çek
           try {
-            final playerDoc = await _firestore!.collection('players').doc(_playerId).get();
+            final playerDoc = await _firestore!.collection('players').doc(_playerId).get().timeout(const Duration(seconds: 4));
             if (playerDoc.exists && playerDoc.data() != null) {
               final data = playerDoc.data()!;
               if (data['username'] != null) {
@@ -198,7 +198,7 @@ class FirebaseService {
       if (_username != null && _username!.isNotEmpty) {
         assetData['username'] = _username;
       }
-      await docRef.set(assetData, SetOptions(merge: true));
+      await docRef.set(assetData, SetOptions(merge: true)).timeout(const Duration(seconds: 4));
     } catch (e) {
       debugPrint('FirebaseService: Mal varlığı buluta kaydedilemedi: $e');
     }
@@ -210,7 +210,7 @@ class FirebaseService {
     final targetId = (targetPlayerId != null && targetPlayerId.isNotEmpty) ? targetPlayerId : playerId;
     try {
       final docRef = _firestore!.collection('players').doc(targetId);
-      final snapshot = await docRef.get();
+      final snapshot = await docRef.get().timeout(const Duration(seconds: 4));
       if (snapshot.exists && snapshot.data() != null) {
         return snapshot.data()!;
       }
@@ -337,7 +337,7 @@ class FirebaseService {
           .collection('offline_sales')
           .where('isClaimed', isEqualTo: false);
 
-      final snapshot = await salesRef.get();
+      final snapshot = await salesRef.get().timeout(const Duration(seconds: 4));
       final sales = <Map<String, dynamic>>[];
 
       final batch = _firestore!.batch();
@@ -345,7 +345,7 @@ class FirebaseService {
         sales.add(doc.data());
         batch.update(doc.reference, {'isClaimed': true});
       }
-      await batch.commit();
+      await batch.commit().timeout(const Duration(seconds: 4));
 
       return sales;
     } catch (e) {
@@ -427,7 +427,7 @@ class FirebaseService {
     if (!isCloudConnected) return true;
 
     try {
-      final doc = await _firestore!.collection('usernames').doc(clean).get();
+      final doc = await _firestore!.collection('usernames').doc(clean).get().timeout(const Duration(seconds: 4));
       return !doc.exists;
     } catch (e) {
       debugPrint('FirebaseService: Kullanıcı adı kontrol hatası: $e');
@@ -510,16 +510,22 @@ class FirebaseService {
 
     try {
       // 1. Bulutta kullanıcı adının benzersizliğini kontrol et (Koleksiyon: usernames/{username_lowercase})
-      final usernameDoc = await _firestore!.collection('usernames').doc(normalizedUsername).get();
+      final usernameDoc = await _firestore!
+          .collection('usernames')
+          .doc(normalizedUsername)
+          .get()
+          .timeout(const Duration(seconds: 7));
       if (usernameDoc.exists) {
         return 'Bu kullanıcı adı zaten kullanımda. Lütfen başka bir kullanıcı adı seçin.';
       }
 
       // 2. Firebase Auth ile kayıt oluştur (E-posta benzersizliği Firebase tarafından otomatik denetlenir)
-      final userCredential = await _auth!.createUserWithEmailAndPassword(
-        email: cleanEmail,
-        password: cleanPassword,
-      );
+      final userCredential = await _auth!
+          .createUserWithEmailAndPassword(
+            email: cleanEmail,
+            password: cleanPassword,
+          )
+          .timeout(const Duration(seconds: 8));
 
       final user = userCredential.user;
       if (user == null) {
@@ -550,7 +556,7 @@ class FirebaseService {
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      await batch.commit();
+      await batch.commit().timeout(const Duration(seconds: 6));
 
       // Yerel hesap havuzuna da ekle
       await saveLocalAccount({
@@ -566,13 +572,34 @@ class FirebaseService {
       });
 
       // KESİNLİKLE OTOMATİK GİRİŞ YAPILMAZ! Firebase Auth otomatik oturum açtığı için çıkış yapıyoruz:
-      await _auth!.signOut();
+      try {
+        await _auth!.signOut().timeout(const Duration(seconds: 4));
+      } catch (_) {}
       _playerId = null;
       _username = null;
       _companyName = null;
       _isGuest = false;
 
       return null; // Başarılı!
+    } on TimeoutException {
+      // Buluta bağlanamadı (zaman aşımı), güvenli yerel hesap olarak kaydet ve kullanıcının giriş yapmasını sağla
+      final newUid = 'ply_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(99999)}';
+      await saveLocalAccount({
+        'uid': newUid,
+        'username': cleanUsername,
+        'username_lowercase': normalizedUsername,
+        'email': cleanEmail,
+        'password': cleanPassword,
+        'companyName': effectiveCompanyName,
+        'role': isAdminUser ? 'admin' : 'user',
+        'isBanned': false,
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+      _playerId = null;
+      _username = null;
+      _companyName = null;
+      _isGuest = false;
+      return null;
     } on FirebaseAuthException catch (e) {
       final isConfigError = e.code == 'operation-not-allowed' ||
           e.code == 'configuration-not-found' ||
@@ -605,7 +632,7 @@ class FirebaseService {
             'authProvider': 'firestore_cloud',
             'createdAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
-          await batch.commit();
+          await batch.commit().timeout(const Duration(seconds: 6));
 
           await saveLocalAccount({
             'uid': newUid,
@@ -714,8 +741,18 @@ class FirebaseService {
       // Kullanıcı adı ile giriş yapılıyorsa önce e-postasını sorgula
       if (!cleanIdentifier.contains('@')) {
         final normalized = cleanIdentifier.toLowerCase();
-        final usernameDoc = await _firestore!.collection('usernames').doc(normalized).get();
-        if (!usernameDoc.exists) {
+        DocumentSnapshot<Map<String, dynamic>>? usernameDoc;
+        try {
+          usernameDoc = await _firestore!
+              .collection('usernames')
+              .doc(normalized)
+              .get()
+              .timeout(const Duration(seconds: 6));
+        } catch (e) {
+          debugPrint('FirebaseService: Firestore username çekilemedi (zaman aşımı veya ağ hatası): $e');
+        }
+
+        if (usernameDoc == null || !usernameDoc.exists) {
           // Yerel hesap havuzunda varsa yerelden buluta aktararak giriş yap
           final localAccounts = await getLocalAccounts();
           if (localAccounts.containsKey(normalized)) {
@@ -733,7 +770,7 @@ class FirebaseService {
               await prefs.setString(_localCompanyNameKey, _companyName!);
               await prefs.setBool(_localIsGuestKey, false);
 
-              // Bu yerel hesabı buluta da senkronize et
+              // Bu yerel hesabı buluta da senkronize et (arkaplanda)
               try {
                 final batch = _firestore!.batch();
                 batch.set(_firestore!.collection('usernames').doc(normalized), {
@@ -756,7 +793,7 @@ class FirebaseService {
                   'authProvider': 'firestore_cloud',
                   'createdAt': FieldValue.serverTimestamp(),
                 }, SetOptions(merge: true));
-                await batch.commit();
+                await batch.commit().timeout(const Duration(seconds: 4));
               } catch (_) {}
 
               await setPlayerOnlineStatus(isOnline: true);
@@ -764,6 +801,9 @@ class FirebaseService {
             } else {
               return 'Şifreniz hatalı. Lütfen kontrol edip tekrar deneyin.';
             }
+          }
+          if (usernameDoc == null) {
+            return 'Sunucuya bağlanılamadı. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.';
           }
           return 'Bu kullanıcı adına ait bir hesap bulunamadı.';
         }
@@ -786,7 +826,7 @@ class FirebaseService {
             await prefs.setBool(_localIsGuestKey, false);
 
             try {
-              final pDoc = await _firestore!.collection('players').doc(uid).get();
+              final pDoc = await _firestore!.collection('players').doc(uid).get().timeout(const Duration(seconds: 4));
               if (pDoc.exists && pDoc.data() != null) {
                 final pData = pDoc.data()!;
                 _companyName = pData['companyName'] as String? ?? _companyName;
@@ -812,7 +852,7 @@ class FirebaseService {
       final userCredential = await _auth!.signInWithEmailAndPassword(
         email: targetEmail,
         password: cleanPassword,
-      );
+      ).timeout(const Duration(seconds: 8));
 
       final user = userCredential.user;
       if (user == null) {
@@ -828,7 +868,7 @@ class FirebaseService {
 
       // Profil bilgilerini Firestore'dan çek
       try {
-        final playerDoc = await _firestore!.collection('players').doc(user.uid).get();
+        final playerDoc = await _firestore!.collection('players').doc(user.uid).get().timeout(const Duration(seconds: 4));
         if (playerDoc.exists && playerDoc.data() != null) {
           final data = playerDoc.data()!;
           _username = data['username'] as String? ?? cleanIdentifier;
@@ -841,7 +881,7 @@ class FirebaseService {
             _banReason = data['banReason'] as String? ?? 'Oyun kurallarını ihlal';
             isBannedNotifier.value = true;
             banReasonNotifier.value = _banReason;
-            await _auth!.signOut();
+            await _auth!.signOut().timeout(const Duration(seconds: 4));
             return 'HESAP_BANLANDI: $_banReason';
           }
 
@@ -873,6 +913,30 @@ class FirebaseService {
 
       await setPlayerOnlineStatus(isOnline: true);
       return null; // Başarılı!
+    } on TimeoutException {
+      // Zaman aşımında yerel hesap havuzunu kontrol et
+      final normalized = cleanIdentifier.toLowerCase();
+      final localAccounts = await getLocalAccounts();
+      if (localAccounts.containsKey(normalized)) {
+        final locAcc = localAccounts[normalized]!;
+        if (locAcc['password'] == cleanPassword) {
+          _playerId = locAcc['uid'] as String?;
+          _username = locAcc['username'] as String? ?? cleanIdentifier;
+          _companyName = locAcc['companyName'] as String? ?? '$_username Holding';
+          _role = locAcc['role'] as String? ?? (isAdmin ? 'admin' : 'user');
+          _isGuest = false;
+
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_localPlayerIdKey, _playerId!);
+          await prefs.setString(_localUsernameKey, _username!);
+          await prefs.setString(_localCompanyNameKey, _companyName!);
+          await prefs.setBool(_localIsGuestKey, false);
+          return null;
+        } else {
+          return 'Şifreniz hatalı. Lütfen kontrol edip tekrar deneyin.';
+        }
+      }
+      return 'Sunucuya bağlanılamadı (Zaman aşımı). Lütfen internet bağlantınızı kontrol ediniz.';
     } on FirebaseAuthException catch (e) {
       final isConfigError = e.code == 'operation-not-allowed' ||
           e.code == 'configuration-not-found' ||

@@ -2178,6 +2178,49 @@ void main() {
 
     controller.dispose();
   });
+
+  test('FirebaseService local fallback handles registration, login, and credential validation properly', () async {
+    final fb = FirebaseService();
+    await fb.signOut();
+
+    // 1. Register rumeysa with password 294511
+    final regError = await fb.registerWithEmail(
+      email: 'rumeysa@test.com',
+      password: 'password294511',
+      username: 'rumeysa',
+      companyName: 'Rumeysa Holding',
+    );
+    expect(regError, isNull);
+
+    // 2. Cannot re-register same username (case-insensitive)
+    final dupError = await fb.registerWithEmail(
+      email: 'rumeysa2@test.com',
+      password: 'password294511',
+      username: 'RUMEYSA',
+    );
+    expect(dupError, isNotNull);
+    expect(dupError, contains('zaten kullanımda'));
+
+    // 3. Login with wrong password fails
+    final wrongPassError = await fb.loginWithEmailOrUsername(
+      identifier: 'rumeysa',
+      password: 'wrongpassword',
+    );
+    expect(wrongPassError, isNotNull);
+    expect(wrongPassError, contains('hatalı'));
+
+    // 4. Login with correct password succeeds
+    final loginSuccess = await fb.loginWithEmailOrUsername(
+      identifier: 'rumeysa',
+      password: 'password294511',
+    );
+    expect(loginSuccess, isNull);
+    expect(fb.username, 'rumeysa');
+    expect(fb.companyName, 'Rumeysa Holding');
+    expect(fb.isLoggedIn, isTrue);
+
+    await fb.signOut();
+  });
 }
 
 
