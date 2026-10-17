@@ -572,56 +572,24 @@ class RetailTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Ürün ikonu, Adı, Fiyat Butonu, Raf Kaldırma
+          // Üst Satır: Ürün ikonu, Adı ve Eylem Butonları
           Row(
             children: [
               Text(item?.emoji ?? '📦', style: const TextStyle(fontSize: 22)),
               const SizedBox(width: 8),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item?.name ?? slot.itemId,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Wrap(
-                      spacing: 5,
-                      runSpacing: 2,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          'Piyasa: ${refPrice.toStringAsFixed(0)} ₺',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: badgeBg,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            demandLabel,
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                              color: badgeText,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                child: Text(
+                  item?.name ?? slot.itemId,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
                 ),
               ),
+              const SizedBox(width: 6),
               // Fiyat Değiştirme Butonu
               InkWell(
                 onTap: () => _showSetSlotPriceDialog(context, store, slot, isDark),
@@ -718,7 +686,44 @@ class RetailTab extends StatelessWidget {
               ],
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 5),
+
+          // Piyasa Fiyatı ve Talep Oranı (Tek Satır, Asla Kırılmaz ve Bölünmez)
+          Padding(
+            padding: const EdgeInsets.only(left: 30),
+            child: Row(
+              children: [
+                Text(
+                  'Piyasa: ${refPrice.toStringAsFixed(0)} ₺',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                    decoration: BoxDecoration(
+                      color: badgeBg,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      demandLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        color: badgeText,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 7),
 
           // Raf Stoğu & Depo Miktarı
           Row(
