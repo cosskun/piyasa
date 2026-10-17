@@ -34,12 +34,22 @@ class HomeDashboardTab extends StatelessWidget {
     final fb = FirebaseService();
     final username = fb.username ?? (fb.isGuest ? 'Misafir Oyuncu' : 'COSSKUN');
     final companyName = fb.companyName;
-    final isAdmin = fb.isAdmin;
+    final isAdmin = fb.isAdmin || username.trim().toUpperCase() == FirebaseService.adminUsername.toUpperCase();
 
     final warehouseWeight = controller.currentWarehouseWeight;
     final warehouseCap = controller.maxWarehouseCapacity;
     final warehouseRatio = warehouseCap > 0 ? (warehouseWeight / warehouseCap).clamp(0.0, 1.0) : 0.0;
     final warehousePercent = (warehouseRatio * 100).toInt();
+    final warehouseFreeSpace = (warehouseCap - warehouseWeight).clamp(0.0, double.infinity);
+
+    Color warehouseBarColor;
+    if (warehouseRatio >= 0.85) {
+      warehouseBarColor = Colors.redAccent;
+    } else if (warehouseRatio >= 0.65) {
+      warehouseBarColor = Colors.amber;
+    } else {
+      warehouseBarColor = const Color(0xFF10B981);
+    }
 
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -48,7 +58,7 @@ class HomeDashboardTab extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // ==========================================
-          // 1. ŞİRKET MERKEZİ & KARŞILAMA HERO KARTI
+          // 1. LOGOMUZ & ŞİRKET BİLGİ MERKEZİ (HERO BANNER)
           // ==========================================
           Container(
             padding: const EdgeInsets.all(16),
@@ -75,61 +85,84 @@ class HomeDashboardTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Logo, Piyasa Başlığı ve Canlı Göstergesi
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundColor: Colors.amber.withValues(alpha: 0.2),
-                      child: Text(
-                        companyName.isNotEmpty ? companyName[0].toUpperCase() : 'P',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.amberAccent,
-                        ),
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.withValues(alpha: 0.25),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.amber.withValues(alpha: 0.5)),
                       ),
+                      child: const Text('💰', style: TextStyle(fontSize: 24)),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  companyName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Row(
+                              children: [
+                                Text(
+                                  'PİYASA',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: 1.2,
+                                    color: isDark ? Colors.amberAccent : Colors.white,
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 6),
-                              if (isAdmin)
+                                const SizedBox(width: 6),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                   decoration: BoxDecoration(
-                                    color: Colors.redAccent.withValues(alpha: 0.8),
-                                    borderRadius: BorderRadius.circular(4),
+                                    color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                                    borderRadius: BorderRadius.circular(5),
                                   ),
-                                  child: const Text(
-                                    'YÖNETİCİ',
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.white,
-                                    ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.circle, size: 6, color: Color(0xFF10B981)),
+                                      SizedBox(width: 3),
+                                      Text(
+                                        'CANLI',
+                                        style: TextStyle(
+                                          color: Color(0xFF10B981),
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                            ],
+                                if (isAdmin) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent.withValues(alpha: 0.85),
+                                      borderRadius: BorderRadius.circular(5),
+                                    ),
+                                    child: const Text(
+                                      'YÖNETİCİ',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '$username • ${controller.playerTitle}',
+                            '$companyName • $username',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
@@ -161,7 +194,7 @@ class HomeDashboardTab extends StatelessWidget {
                       onTap: onOpenLeaderboard,
                       borderRadius: BorderRadius.circular(12),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                         decoration: BoxDecoration(
                           color: isDark
                               ? const Color(0xFF0B132B).withValues(alpha: 0.8)
@@ -181,18 +214,21 @@ class HomeDashboardTab extends StatelessWidget {
                                 myRank != null
                                     ? 'Liderlik Tablosunda Sıranız: #$myRank'
                                     : 'Liderlik Sıralamanızı Görün',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                   color: Colors.amberAccent,
-                                  fontSize: 12.5,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
+                            const SizedBox(width: 4),
                             const Text(
                               'Tabloyu Aç ›',
                               style: TextStyle(
                                 color: Colors.white,
-                                fontSize: 11.5,
+                                fontSize: 11,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -206,10 +242,367 @@ class HomeDashboardTab extends StatelessWidget {
             ),
           ),
 
+          const SizedBox(height: 14),
+
+          // ==========================================
+          // 2. KASADAKİ NAKİT & NET SERVET KARTLARI
+          // ==========================================
+          Row(
+            children: [
+              // Kasadaki Nakit Kartı
+              Expanded(
+                child: InkWell(
+                  onTap: onOpenLedger,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF0D1829) : const Color(0xFFECFDF5),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.greenAccent.withValues(alpha: 0.4)
+                            : const Color(0xFF10B981).withValues(alpha: 0.5),
+                        width: 1.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.green.withValues(alpha: isDark ? 0.08 : 0.05),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.account_balance_wallet_rounded,
+                              size: 15,
+                              color: isDark ? Colors.greenAccent : const Color(0xFF059669),
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Text(
+                                'Kasadaki Nakit',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.grey.shade400 : const Color(0xFF047857),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '${currencyFmt.format(controller.cash)} ₺',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                              color: isDark ? Colors.greenAccent : const Color(0xFF065F46),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+
+              // Net Servet Kartı
+              Expanded(
+                child: InkWell(
+                  onTap: onOpenLeaderboard,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1F1B12) : const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark
+                            ? Colors.amber.withValues(alpha: 0.5)
+                            : const Color(0xFFF59E0B).withValues(alpha: 0.5),
+                        width: 1.2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.amber.withValues(alpha: isDark ? 0.08 : 0.05),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.trending_up_rounded,
+                              size: 15,
+                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Text(
+                                'Net Servet',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.grey.shade400 : const Color(0xFFB45309),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '${currencyFmt.format(controller.netWorth)} ₺',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w900,
+                              color: isDark ? Colors.amberAccent : const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          // ==========================================
+          // 3. SİLO & DEPO DOLULUK MİKTARI KARTI (ÖZEL)
+          // ==========================================
+          InkWell(
+            onTap: () => onNavigateToTab(2),
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isDark
+                      ? [const Color(0xFF1E293B), const Color(0xFF131D2D)]
+                      : [Colors.white, const Color(0xFFF8FAFC)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: warehouseBarColor.withValues(alpha: isDark ? 0.4 : 0.5),
+                  width: 1.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: warehouseBarColor.withValues(alpha: isDark ? 0.08 : 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: warehouseBarColor.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text('🌾', style: TextStyle(fontSize: 16)),
+                            ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Merkezi Silo & Depo Doluluğu',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                    ),
+                                  ),
+                                  Text(
+                                    '${warehouseFreeSpace.toInt()} kg boş alan kaldı',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                        decoration: BoxDecoration(
+                          color: warehouseBarColor.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: warehouseBarColor.withValues(alpha: 0.5)),
+                        ),
+                        child: Text(
+                          '%$warehousePercent Dolu',
+                          style: TextStyle(
+                            color: warehouseBarColor,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Doluluk İlerleme Çubuğu (Progress Bar)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: warehouseRatio,
+                      minHeight: 8,
+                      backgroundColor: isDark ? Colors.black45 : const Color(0xFFE2E8F0),
+                      valueColor: AlwaysStoppedAnimation<Color>(warehouseBarColor),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '${warehouseWeight.toInt()} / ${warehouseCap.toInt()} kg',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white70 : const Color(0xFF334155),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Depoya Git',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.amberAccent : const Color(0xFF0F766E),
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 10,
+                            color: isDark ? Colors.amberAccent : const Color(0xFF0F766E),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // ==========================================
+          // 4. BANKA BUTONU & COSSKUN ADMIN BUTONU
+          // ==========================================
+          Row(
+            children: [
+              // Banka Butonu
+              Expanded(
+                flex: isAdmin ? 5 : 1,
+                child: ElevatedButton.icon(
+                  onPressed: onOpenBank,
+                  icon: const Icon(Icons.account_balance_rounded, size: 17),
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Banka & Kredi (${currencyFmt.format(controller.bankSavings)} ₺)',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2563EB),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    elevation: 2,
+                  ),
+                ),
+              ),
+
+              // Cosskun Hesabı İçin Yönetici Paneli Butonu
+              if (isAdmin) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 3,
+                  child: ElevatedButton.icon(
+                    onPressed: onOpenAdmin,
+                    icon: const Icon(Icons.security_rounded, size: 16),
+                    label: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        'Admin Paneli',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFDC2626),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      elevation: 2,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+
           const SizedBox(height: 18),
 
           // ==========================================
-          // 2. ANA İŞLEM MERKEZLERİ (HIZLI ERİŞİM)
+          // 5. ANA İŞLEM MERKEZLERİ (HIZLI ERİŞİM HUB GRID)
           // ==========================================
           Row(
             children: [
@@ -377,7 +770,7 @@ class HomeDashboardTab extends StatelessWidget {
           const SizedBox(height: 20),
 
           // ==========================================
-          // 3. CANLI FİNANSAL & OPERASYONEL ÖZET
+          // 6. CANLI ŞİRKET İSTATİSTİKLERİ
           // ==========================================
           Container(
             padding: const EdgeInsets.all(14),
@@ -653,14 +1046,16 @@ class HomeDashboardTab extends StatelessWidget {
                     color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
                   ),
                 ),
-                Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: isDark ? Colors.white : const Color(0xFF1E293B),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.white : const Color(0xFF1E293B),
+                    ),
                   ),
                 ),
               ],
