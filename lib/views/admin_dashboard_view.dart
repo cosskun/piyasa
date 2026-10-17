@@ -436,6 +436,8 @@ class _PlayerLedgerBottomSheetState extends State<_PlayerLedgerBottomSheet> {
 // ==========================================
 // TAB 1: OYUNCULAR (PLAYERS TAB VIEW)
 // ==========================================
+enum _PlayerFilterTab { all, online, offline, banned }
+
 class _PlayersTabView extends StatefulWidget {
   final void Function(String uid, String username) onOpenLedger;
   final void Function(String uid, String username) onPromptBan;
@@ -456,6 +458,7 @@ class _PlayersTabViewState extends State<_PlayersTabView> with AutomaticKeepAliv
   final TextEditingController _searchController = TextEditingController();
   final NumberFormat _currencyFormat = NumberFormat('#,##0', 'tr_TR');
   String _searchQuery = '';
+  _PlayerFilterTab _activeFilterTab = _PlayerFilterTab.all;
 
   @override
   bool get wantKeepAlive => true;
@@ -478,110 +481,335 @@ class _PlayersTabViewState extends State<_PlayersTabView> with AutomaticKeepAliv
     });
   }
 
+  bool _isPlayerOnline(Map<String, dynamic> player) {
+    final bool rawIsOnline = player['isOnline'] == true;
+    if (!rawIsOnline) return false;
+
+    DateTime? lastActive;
+    final dynamic rawVal = player['lastActiveAt'];
+    if (rawVal != null) {
+      if (rawVal is String) {
+        lastActive = DateTime.tryParse(rawVal);
+      } else if (rawVal is int) {
+        lastActive = DateTime.fromMillisecondsSinceEpoch(rawVal);
+      } else {
+        try {
+          lastActive = (rawVal as dynamic).toDate();
+        } catch (_) {}
+      }
+    }
+
+    if (lastActive == null) return true;
+    return DateTime.now().difference(lastActive).inMinutes <= 3;
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
 
-    return Column(
-      children: [
-        // Arama Kutusu
-        Container(
-          padding: const EdgeInsets.all(12),
-          color: const Color(0xFF1E293B).withValues(alpha: 0.6),
-          child: TextField(
-            controller: _searchController,
-            style: const TextStyle(color: Colors.white, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Oyuncu adı, e-posta, şirket veya UID ara...',
-              hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-              prefixIcon: const Icon(Icons.search_rounded, color: Colors.amber, size: 20),
-              suffixIcon: _searchQuery.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear_rounded, color: Colors.grey, size: 18),
-                      onPressed: () {
-                        setState(() {
-                          _searchController.clear();
-                          _searchQuery = '';
-                        });
-                      },
-                    )
-                  : null,
-              filled: true,
-              fillColor: const Color(0xFF0F172A),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: _playersStream,
+      builder: (context, snapshot) {
+        final players = snapshot.data ?? [];
+
+        // Sayımları hesapla
+        int onlineCount = 0;
+        int offlineCount = 0;
+        int bannedCount = 0;
+        for (final p in players) {
+          if (p['isBanned'] == true) {
+            bannedCount++;
+          } else if (_isPlayerOnline(p)) {
+            onlineCount++;
+          } else {
+            offlineCount++;
+          }
+        }
+
+        // Tab filtresine göre filtrele
+        final tabFiltered = players.where((p) {
+          final isBanned = p['isBanned'] == true;
+          final isOnline = _isPlayerOnline(p);
+          switch (_activeFilterTab) {
+            case _PlayerFilterTab.all:
+              return true;
+            case _PlayerFilterTab.online:
+              return isOnline && !isBanned;
+            case _PlayerFilterTab.offline:
+              return !isOnline && !isBanned;
+            case _PlayerFilterTab.banned:
+              return isBanned;
+          }
+        }).toList();
+
+        // Arama sorgusuna göre filtrele
+        final filtered = tabFiltered.where((p) {
+          if (_searchQuery.isEmpty) return true;
+          final uname = (p['username'] ?? '').toString().toLowerCase();
+          final email = (p['email'] ?? '').toString().toLowerCase();
+          final company = (p['companyName'] ?? '').toString().toLowerCase();
+          final uid = (p['uid'] ?? '').toString().toLowerCase();
+          return uname.contains(_searchQuery) ||
+              email.contains(_searchQuery) ||
+              company.contains(_searchQuery) ||
+              uid.contains(_searchQuery);
+        }).toList();
+
+        return Column(
+          children: [
+            // Arama Kutusu
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+              color: const Color(0xFF1E293B).withValues(alpha: 0.6),
+              child: TextField(
+                controller: _searchController,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: 'Oyuncu adı, e-posta, şirket veya UID ara...',
+                  hintStyle: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                  prefixIcon: const Icon(Icons.search_rounded, color: Colors.amber, size: 20),
+                  suffixIcon: _searchQuery.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear_rounded, color: Colors.grey, size: 18),
+                          onPressed: () {
+                            setState(() {
+                              _searchController.clear();
+                              _searchQuery = '';
+                            });
+                          },
+                        )
+                      : null,
+                  filled: true,
+                  fillColor: const Color(0xFF0F172A),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onChanged: (val) {
+                  setState(() {
+                    _searchQuery = val.trim().toLowerCase();
+                  });
+                },
               ),
             ),
-            onChanged: (val) {
-              setState(() {
-                _searchQuery = val.trim().toLowerCase();
-              });
-            },
+
+            // Tablı Filtre Çubuğu (Tümü, Çevrimiçi, Çevrimdışı, Yasaklı)
+            _buildFilterTabs(
+              allCount: players.length,
+              onlineCount: onlineCount,
+              offlineCount: offlineCount,
+              bannedCount: bannedCount,
+            ),
+
+            // Oyuncu Listesi Stream
+            Expanded(
+              child: RefreshIndicator(
+                color: Colors.amber,
+                backgroundColor: const Color(0xFF1E293B),
+                onRefresh: _refresh,
+                child: snapshot.connectionState == ConnectionState.waiting && players.isEmpty
+                    ? const Center(child: CircularProgressIndicator(color: Colors.amber))
+                    : (filtered.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: [
+                              SizedBox(height: MediaQuery.of(context).size.height * 0.18),
+                              Center(
+                                child: _buildEmptyState(),
+                              ),
+                            ],
+                          )
+                        : ListView.builder(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(12),
+                            itemCount: filtered.length,
+                            itemBuilder: (context, index) {
+                              final player = filtered[index];
+                              return _buildPlayerCard(player);
+                            },
+                          )),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterTabs({
+    required int allCount,
+    required int onlineCount,
+    required int offlineCount,
+    required int bannedCount,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E293B).withValues(alpha: 0.8),
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.white.withValues(alpha: 0.08),
+            width: 1,
           ),
         ),
-
-        // Oyuncu Listesi Stream
-        Expanded(
-          child: RefreshIndicator(
-            color: Colors.amber,
-            backgroundColor: const Color(0xFF1E293B),
-            onRefresh: _refresh,
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: _playersStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator(color: Colors.amber));
-                }
-
-                final players = snapshot.data ?? [];
-                final filtered = players.where((p) {
-                  if (_searchQuery.isEmpty) return true;
-                  final uname = (p['username'] ?? '').toString().toLowerCase();
-                  final email = (p['email'] ?? '').toString().toLowerCase();
-                  final company = (p['companyName'] ?? '').toString().toLowerCase();
-                  final uid = (p['uid'] ?? '').toString().toLowerCase();
-                  return uname.contains(_searchQuery) ||
-                      email.contains(_searchQuery) ||
-                      company.contains(_searchQuery) ||
-                      uid.contains(_searchQuery);
-                }).toList();
-
-                if (filtered.isEmpty) {
-                  return ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    children: [
-                      SizedBox(height: MediaQuery.of(context).size.height * 0.25),
-                      Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.person_search_rounded, size: 56, color: Colors.grey.shade600),
-                            const SizedBox(height: 12),
-                            Text(
-                              _searchQuery.isEmpty ? 'Kayıtlı oyuncu bulunamadı.' : 'Aramaya uygun oyuncu bulunamadı.',
-                              style: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  );
-                }
-
-                return ListView.builder(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(12),
-                  itemCount: filtered.length,
-                  itemBuilder: (context, index) {
-                    final player = filtered[index];
-                    return _buildPlayerCard(player);
-                  },
-                );
-              },
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          children: [
+            _buildFilterTabItem(
+              tab: _PlayerFilterTab.all,
+              title: 'Tümü',
+              count: allCount,
+              icon: Icons.people_alt_rounded,
+              activeColor: Colors.amber,
             ),
+            const SizedBox(width: 6),
+            _buildFilterTabItem(
+              tab: _PlayerFilterTab.online,
+              title: 'Çevrimiçi',
+              count: onlineCount,
+              icon: Icons.fiber_manual_record_rounded,
+              activeColor: const Color(0xFF10B981),
+            ),
+            const SizedBox(width: 6),
+            _buildFilterTabItem(
+              tab: _PlayerFilterTab.offline,
+              title: 'Çevrimdışı',
+              count: offlineCount,
+              icon: Icons.cloud_off_rounded,
+              activeColor: Colors.grey.shade400,
+            ),
+            const SizedBox(width: 6),
+            _buildFilterTabItem(
+              tab: _PlayerFilterTab.banned,
+              title: 'Yasaklı',
+              count: bannedCount,
+              icon: Icons.block_rounded,
+              activeColor: Colors.redAccent,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterTabItem({
+    required _PlayerFilterTab tab,
+    required String title,
+    required int count,
+    required IconData icon,
+    required Color activeColor,
+  }) {
+    final isSelected = _activeFilterTab == tab;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _activeFilterTab = tab;
+        });
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? activeColor.withValues(alpha: 0.16)
+              : const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? activeColor : Colors.white.withValues(alpha: 0.08),
+            width: isSelected ? 1.5 : 1.0,
           ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 13,
+              color: isSelected ? activeColor : Colors.grey.shade400,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                color: isSelected ? activeColor : Colors.grey.shade400,
+              ),
+            ),
+            const SizedBox(width: 5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? activeColor.withValues(alpha: 0.25)
+                    : Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? activeColor : Colors.grey.shade400,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    IconData icon;
+    String message;
+    Color iconColor;
+
+    if (_searchQuery.isNotEmpty) {
+      icon = Icons.search_off_rounded;
+      message = 'Aramanıza uygun oyuncu bulunamadı.';
+      iconColor = Colors.grey.shade500;
+    } else {
+      switch (_activeFilterTab) {
+        case _PlayerFilterTab.online:
+          icon = Icons.wifi_off_rounded;
+          message = 'Şu an aktif çevrimiçi oyuncu bulunmuyor.';
+          iconColor = Colors.teal.shade300;
+          break;
+        case _PlayerFilterTab.offline:
+          icon = Icons.cloud_off_rounded;
+          message = 'Çevrimdışı oyuncu bulunmuyor.';
+          iconColor = Colors.grey.shade400;
+          break;
+        case _PlayerFilterTab.banned:
+          icon = Icons.verified_user_rounded;
+          message = 'Harika! Sistemde yasaklı (banlı) oyuncu bulunmuyor.';
+          iconColor = const Color(0xFF10B981);
+          break;
+        case _PlayerFilterTab.all:
+          icon = Icons.person_off_rounded;
+          message = 'Sistemde kayıtlı oyuncu bulunamadı.';
+          iconColor = Colors.grey.shade500;
+          break;
+      }
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 56, color: iconColor),
+        const SizedBox(height: 12),
+        Text(
+          message,
+          style: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+          textAlign: TextAlign.center,
         ),
       ],
     );
@@ -600,18 +828,20 @@ class _PlayersTabViewState extends State<_PlayersTabView> with AutomaticKeepAliv
     final role = player['role']?.toString() ?? 'user';
     final isTargetAdmin = role == 'admin' || email.toLowerCase() == FirebaseService.adminEmail.toLowerCase();
 
-    final bool rawIsOnline = player['isOnline'] == true;
+    final bool isReallyOnline = _isPlayerOnline(player);
     DateTime? lastActive;
-    if (player['lastActiveAt'] != null) {
-      if (player['lastActiveAt'] is String) {
-        lastActive = DateTime.tryParse(player['lastActiveAt'] as String);
-      } else if (player['lastActiveAt'] is int) {
-        lastActive = DateTime.fromMillisecondsSinceEpoch(player['lastActiveAt'] as int);
+    final dynamic rawVal = player['lastActiveAt'];
+    if (rawVal != null) {
+      if (rawVal is String) {
+        lastActive = DateTime.tryParse(rawVal);
+      } else if (rawVal is int) {
+        lastActive = DateTime.fromMillisecondsSinceEpoch(rawVal);
+      } else {
+        try {
+          lastActive = (rawVal as dynamic).toDate();
+        } catch (_) {}
       }
     }
-    final bool isRecentlyActive = lastActive != null &&
-        DateTime.now().difference(lastActive).inMinutes <= 3;
-    final bool isReallyOnline = rawIsOnline && isRecentlyActive;
 
     String lastSeenText = '';
     if (lastActive != null && !isReallyOnline) {

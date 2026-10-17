@@ -2221,6 +2221,83 @@ void main() {
 
     await fb.signOut();
   });
+
+  testWidgets('AdminDashboardView players tab renders status tabs (Tümü, Çevrimiçi, Çevrimdışı, Yasaklı) and filters players', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(500, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final fb = FirebaseService();
+    await fb.signOut();
+
+    // Create local test accounts
+    await fb.saveLocalAccount({
+      'uid': 'test_player_online',
+      'username': 'OnlinePlayer',
+      'username_lowercase': 'onlineplayer',
+      'email': 'online@test.com',
+      'companyName': 'Online Corp',
+      'isOnline': true,
+      'isBanned': false,
+      'lastActiveAt': DateTime.now().toIso8601String(),
+    });
+
+    await fb.saveLocalAccount({
+      'uid': 'test_player_banned',
+      'username': 'BannedPlayer',
+      'username_lowercase': 'bannedplayer',
+      'email': 'banned@test.com',
+      'companyName': 'Banned Corp',
+      'isOnline': false,
+      'isBanned': true,
+      'banReason': 'Hile kullanımı',
+      'lastActiveAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+    });
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: AdminDashboardView(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verify all 4 tabs are present
+    expect(find.text('Tümü'), findsOneWidget);
+    expect(find.text('Çevrimiçi'), findsOneWidget);
+    expect(find.text('Çevrimdışı'), findsOneWidget);
+    expect(find.text('Yasaklı'), findsOneWidget);
+
+    // 2. In "Tümü", both players are visible
+    expect(find.text('OnlinePlayer'), findsOneWidget);
+    expect(find.text('BannedPlayer'), findsOneWidget);
+
+    // 3. Switch to "Çevrimiçi" tab
+    await tester.ensureVisible(find.text('Çevrimiçi'));
+    await tester.tap(find.text('Çevrimiçi'));
+    await tester.pumpAndSettle();
+    expect(find.text('OnlinePlayer'), findsOneWidget);
+    expect(find.text('BannedPlayer'), findsNothing);
+
+    // 4. Switch to "Yasaklı" tab
+    await tester.ensureVisible(find.text('Yasaklı'));
+    await tester.tap(find.text('Yasaklı'));
+    await tester.pumpAndSettle();
+    expect(find.text('OnlinePlayer'), findsNothing);
+    expect(find.text('BannedPlayer'), findsOneWidget);
+
+    // 5. Switch to "Çevrimdışı" tab
+    await tester.ensureVisible(find.text('Çevrimdışı'));
+    await tester.tap(find.text('Çevrimdışı'));
+    await tester.pumpAndSettle();
+    expect(find.text('OnlinePlayer'), findsNothing);
+
+    // Switch back to "Tümü"
+    await tester.ensureVisible(find.text('Tümü'));
+    await tester.tap(find.text('Tümü'));
+    await tester.pumpAndSettle();
+    expect(find.text('OnlinePlayer'), findsOneWidget);
+    expect(find.text('BannedPlayer'), findsOneWidget);
+  });
 }
 
 
