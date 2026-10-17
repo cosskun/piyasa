@@ -2323,6 +2323,58 @@ void main() {
     expect(find.text('OnlinePlayer'), findsOneWidget);
     expect(find.text('BannedPlayer'), findsOneWidget);
   });
+
+  testWidgets('MarketTab community listings categorization, search, sort, and official reserve test', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(500, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController(autoLoad: false);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MarketTab(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Switch to Oyuncu Pazarı
+    await tester.tap(find.text('Oyuncu Pazarı'));
+    await tester.pumpAndSettle();
+
+    // 2. Verify search bar and category chips are rendered
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('Tümü'), findsWidgets);
+    expect(find.text('🌾 Hammadde'), findsOneWidget);
+    expect(find.text('🏭 Ara Mamul'), findsOneWidget);
+    expect(find.text('🥖 Nihai Ürün'), findsOneWidget);
+    expect(find.text('🏛️ Piyasa Rezervi'), findsOneWidget);
+    expect(find.text('👤 Oyuncular'), findsOneWidget);
+
+    // 3. Verify official reserve listings have official badges
+    expect(find.text('RESMİ PİYASA REZERVİ'), findsWidgets);
+    expect(find.text('Hemen Satın Al'), findsWidgets);
+
+    // 4. Test search functionality
+    await tester.enterText(find.byType(TextField), 'Buğday');
+    await tester.pumpAndSettle();
+    expect(find.text('Buğday'), findsWidgets);
+
+    // 5. Test clear search
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.text('RESMİ PİYASA REZERVİ'), findsWidgets);
+
+    // 6. Test category filter tap (🏛️ Piyasa Rezervi)
+    await tester.ensureVisible(find.text('🏛️ Piyasa Rezervi'));
+    await tester.tap(find.text('🏛️ Piyasa Rezervi'));
+    await tester.pumpAndSettle();
+    expect(find.text('RESMİ PİYASA REZERVİ'), findsWidgets);
+
+    controller.dispose();
+  });
 }
 
 

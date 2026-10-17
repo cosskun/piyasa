@@ -89,6 +89,13 @@ class GameController extends ChangeNotifier {
   double _incomingOfferTimer = 0.0;
   double _autoSaveTickTimer = 0.0;
 
+  static const List<String> _officialReserveSellers = [
+    '🏛️ Piyasa Merkez Rezervi',
+    '🌾 Toprak Mahsulleri Ofisi (TMO)',
+    '🏭 Sanayi & İkmal Deposu',
+    '🏢 Devlet Emtia Rezervi',
+  ];
+
   static const List<String> _simulatedSellers = [
     'Anadolu Tahıl Ticaret',
     'Çukurova Pamuk Sanayi',
@@ -130,15 +137,42 @@ class GameController extends ChangeNotifier {
 
   void _initializeCommunityListings() {
     final allItems = ItemRegistry.getAll();
-    for (int i = 0; i < 7; i++) {
+    // 1. Resmi Piyasa Rezervi İlanları (Tüm oyuncular ve yeni başlayanlar için garantili piyasa stokları)
+    for (int i = 0; i < 8; i++) {
+      final item = allItems[i % allItems.length];
+      final mItem = marketItems[item.id];
+      final base = mItem?.currentPrice ?? item.basePrice;
+      // Piyasa fiyatı civarında adil fiyat (%98 - %103)
+      final priceMultiplier = 0.98 + _random.nextDouble() * 0.05;
+      final price = double.parse((base * priceMultiplier).toStringAsFixed(2));
+      final seller = _officialReserveSellers[i % _officialReserveSellers.length];
+      final qty = (_random.nextInt(6) + 4) * 25; // 100 - 225 adet bol stok
+
+      communityListings.add(
+        MarketListing(
+          id: 'res_${DateTime.now().millisecondsSinceEpoch}_$i',
+          itemId: item.id,
+          initialQuantity: qty,
+          remainingQuantity: qty,
+          pricePerUnit: price,
+          listedAt: DateTime.now().subtract(Duration(minutes: _random.nextInt(30))),
+          sellerName: seller,
+          sellerId: 'SYSTEM',
+          isPlayerListing: false,
+          isOfficialReserve: true,
+        ),
+      );
+    }
+
+    // 2. Simüle edilmiş diğer pazar/kooperatif ilanları
+    for (int i = 0; i < 4; i++) {
       final item = allItems[_random.nextInt(allItems.length)];
       final mItem = marketItems[item.id];
       final base = mItem?.currentPrice ?? item.basePrice;
-      // %90 ile %114 arası fiyat
-      final priceMultiplier = 0.90 + _random.nextDouble() * 0.24;
+      final priceMultiplier = 0.91 + _random.nextDouble() * 0.18;
       final price = double.parse((base * priceMultiplier).toStringAsFixed(2));
       final seller = _simulatedSellers[_random.nextInt(_simulatedSellers.length)];
-      final qty = (_random.nextInt(6) + 3) * 5; // 15 - 40 adet
+      final qty = (_random.nextInt(6) + 3) * 10; // 30 - 80 adet
 
       communityListings.add(
         MarketListing(
@@ -149,7 +183,9 @@ class GameController extends ChangeNotifier {
           pricePerUnit: price,
           listedAt: DateTime.now().subtract(Duration(minutes: _random.nextInt(60))),
           sellerName: seller,
+          sellerId: null,
           isPlayerListing: false,
+          isOfficialReserve: false,
         ),
       );
     }
@@ -451,33 +487,16 @@ class GameController extends ChangeNotifier {
       }
     }
 
-    // 6. Topluluk Pazarının Canlılığı (İlan Yenileme)
-    _communityRefreshTimer += dt;
-    if (_communityRefreshTimer >= 18.0) {
-      _communityRefreshTimer = 0.0;
-      if (communityListings.length < 10) {
-        final allItems = ItemRegistry.getAll();
-        final item = allItems[_random.nextInt(allItems.length)];
-        final mItem = marketItems[item.id];
-        final base = mItem?.currentPrice ?? item.basePrice;
-        final priceMultiplier = 0.90 + _random.nextDouble() * 0.22;
-        final price = double.parse((base * priceMultiplier).toStringAsFixed(2));
-        final seller = _simulatedSellers[_random.nextInt(_simulatedSellers.length)];
-        final qty = (_random.nextInt(5) + 2) * 5;
+    // Bulut pazar senkronizasyonunun canlı kalmasını sağla
+    if (_cloudMarketSub == null && FirebaseService().isCloudConnected) {
+      _setupCloudMarketSync();
+    }
 
-        communityListings.add(
-          MarketListing(
-            id: 'comm_${DateTime.now().millisecondsSinceEpoch}_${_random.nextInt(99)}',
-            itemId: item.id,
-            initialQuantity: qty,
-            remainingQuantity: qty,
-            pricePerUnit: price,
-            listedAt: DateTime.now(),
-            sellerName: seller,
-            isPlayerListing: false,
-          ),
-        );
-      }
+    // 6. Topluluk ve Resmi Piyasa Rezervinin Düzenli Stok Yenilemesi (Her 12 saniyede bir)
+    _communityRefreshTimer += dt;
+    if (_communityRefreshTimer >= 12.0) {
+      _communityRefreshTimer = 0.0;
+      _replenishSystemMarketStock();
     }
 
     // 7. Borsa Fiyat Dalgalanması (Her 15 saniyede bir)
@@ -845,6 +864,50 @@ class GameController extends ChangeNotifier {
     notifyListeners();
     saveState();
     return null;
+  }
+
+  void _replenishSystemMarketStock() {
+    // 0 kalan veya tükenmiş ilanları temizle
+    communityListings.removeWhere((l) => l.remainingQuantity <= 0);
+
+    final activeReserveCount = communityListings.where((l) => l.isOfficialReserve).length;
+
+    // Eğer resmi rezerv ilanları 12'nin altına düşmüşse piyasaya yeni taze stok enjekte et
+    if (activeReserveCount < 12) {
+      final allItems = ItemRegistry.getAll();
+      final existingReserveItemIds =
+          communityListings.where((l) => l.isOfficialReserve).map((l) => l.itemId).toSet();
+      final missingItems =
+          allItems.where((it) => !existingReserveItemIds.contains(it.id)).toList();
+
+      final itemToStock = missingItems.isNotEmpty
+          ? missingItems[_random.nextInt(missingItems.length)]
+          : allItems[_random.nextInt(allItems.length)];
+
+      final mItem = marketItems[itemToStock.id];
+      final base = mItem?.currentPrice ?? itemToStock.basePrice;
+      // Piyasa fiyatı civarlarında dengeli fiyat (%98 - %104)
+      final priceMultiplier = 0.98 + _random.nextDouble() * 0.06;
+      final price = double.parse((base * priceMultiplier).toStringAsFixed(2));
+      final seller = _officialReserveSellers[_random.nextInt(_officialReserveSellers.length)];
+      final qty = (_random.nextInt(6) + 4) * 25; // 100 - 225 adet bol stok
+
+      communityListings.add(
+        MarketListing(
+          id: 'res_${DateTime.now().millisecondsSinceEpoch}_${_random.nextInt(999)}',
+          itemId: itemToStock.id,
+          initialQuantity: qty,
+          remainingQuantity: qty,
+          pricePerUnit: price,
+          listedAt: DateTime.now(),
+          sellerName: seller,
+          sellerId: 'SYSTEM',
+          isPlayerListing: false,
+          isOfficialReserve: true,
+        ),
+      );
+      notifyListeners();
+    }
   }
 
   void _checkLimitBuyOrders() {
@@ -2294,18 +2357,28 @@ class GameController extends ChangeNotifier {
     if (FirebaseService().isCloudConnected) {
       _cloudMarketSub?.cancel();
       _cloudMarketSub = FirebaseService().streamPublicMarketListings().listen((cloudListings) {
-        final others = cloudListings.where((l) => !l.isPlayerListing).toList();
-        if (others.isNotEmpty) {
-          for (var cListing in others) {
-            final idx = communityListings.indexWhere((l) => l.id == cListing.id);
-            if (idx >= 0) {
-              communityListings[idx] = cListing;
-            } else {
-              communityListings.insert(0, cListing);
-            }
+        final myId = FirebaseService().playerId;
+        final activeCloudOthers = cloudListings.where((l) {
+          final isMine = l.isPlayerListing || (l.sellerId != null && l.sellerId == myId);
+          return !isMine && !l.isCompleted;
+        }).toList();
+        final cloudOtherIds = activeCloudOthers.map((l) => l.id).toSet();
+
+        // 1. Bulutta tamamlanmış veya kaldırılmış diğer oyuncu ilanlarını temizle
+        communityListings.removeWhere((l) =>
+            l.sellerId != null && l.sellerId != 'SYSTEM' && !cloudOtherIds.contains(l.id));
+
+        // 2. Yeni ve güncellenen diğer oyuncu ilanlarını listeye entegre et
+        for (var cListing in activeCloudOthers) {
+          final idx = communityListings.indexWhere((l) => l.id == cListing.id);
+          if (idx >= 0) {
+            communityListings[idx] = cListing;
+          } else {
+            // Gerçek oyuncu ilanlarını listenin en başına yerleştir
+            communityListings.insert(0, cListing);
           }
-          notifyListeners();
         }
+        notifyListeners();
       });
     }
   }

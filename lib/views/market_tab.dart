@@ -32,6 +32,10 @@ class MarketTabState extends State<MarketTab> {
   MarketFilter _currentFilter = MarketFilter.all; // Varsayılan olarak Tüm Borsa
 
   final ScrollController _categoryScrollController = ScrollController();
+  final TextEditingController _communitySearchController = TextEditingController();
+  String _communitySearchQuery = '';
+  int _communityCategoryFilter = 0; // 0: Tümü, 1: Hammadde, 2: Ara Mamul, 3: Nihai Ürün, 4: Resmi Rezerv, 5: Oyuncular
+  int _communitySortMode = 0; // 0: En Uygun Fiyat, 1: En Çok Stok, 2: En Yeni, 3: Fırsatlar
 
   void switchToOffers({int subTab = 0}) {
     if (!mounted) return;
@@ -68,6 +72,7 @@ class MarketTabState extends State<MarketTab> {
   @override
   void dispose() {
     _categoryScrollController.dispose();
+    _communitySearchController.dispose();
     super.dispose();
   }
 
@@ -911,178 +916,673 @@ class MarketTabState extends State<MarketTab> {
 
   Widget _buildCommunityListingsList(bool isDark) {
     final currencyFmt = NumberFormat("#,##0.00", "tr_TR");
-    final listings = widget.controller.communityListings;
+    final allListings = widget.controller.communityListings;
 
-    if (listings.isEmpty) {
+    if (allListings.isEmpty) {
       return Center(
-        child: Text(
-          'Şu anda pazarda aktif ilan yok.',
-          style: TextStyle(color: isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.storefront_outlined, size: 48, color: isDark ? Colors.grey[600] : const Color(0xFF94A3B8)),
+              const SizedBox(height: 12),
+              Text(
+                'Şu anda pazarda aktif ilan yok.',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Piyasa rezervleri hazırlanıyor veya yeni oyuncu ilanları bekleniyor...',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: isDark ? Colors.grey[500] : const Color(0xFF94A3B8)),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-      itemCount: listings.length,
-      itemBuilder: (ctx, i) {
-        final listing = listings[i];
-        final mItem = widget.controller.marketItems[listing.itemId];
-        final marketPrice = mItem?.currentPrice ?? listing.pricePerUnit;
-        final isDiscounted = listing.pricePerUnit < marketPrice;
+    // Kategori Sayaçları
+    final countAll = allListings.length;
+    final countRaw = allListings.where((l) => l.item.category == ItemCategory.rawMaterial).length;
+    final countIntermediate = allListings.where((l) => l.item.category == ItemCategory.intermediate).length;
+    final countFinished = allListings.where((l) => l.item.category == ItemCategory.finishedGood).length;
+    final countReserve = allListings.where((l) => l.isOfficialReserve).length;
+    final countPlayer = allListings.where((l) => !l.isOfficialReserve).length;
 
-        return Card(
-          color: isDark ? const Color(0xFF1B2234) : Colors.white,
-          margin: const EdgeInsets.only(bottom: 10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(listing.item.emoji, style: const TextStyle(fontSize: 24)),
+    // Filtreleme
+    final filtered = allListings.where((listing) {
+      if (_communityCategoryFilter == 1 && listing.item.category != ItemCategory.rawMaterial) return false;
+      if (_communityCategoryFilter == 2 && listing.item.category != ItemCategory.intermediate) return false;
+      if (_communityCategoryFilter == 3 && listing.item.category != ItemCategory.finishedGood) return false;
+      if (_communityCategoryFilter == 4 && !listing.isOfficialReserve) return false;
+      if (_communityCategoryFilter == 5 && listing.isOfficialReserve) return false;
+
+      if (_communitySearchQuery.isNotEmpty) {
+        final query = _communitySearchQuery.toLowerCase();
+        final matchItem = listing.item.name.toLowerCase().contains(query);
+        final matchSeller = listing.sellerName.toLowerCase().contains(query);
+        if (!matchItem && !matchSeller) return false;
+      }
+
+      return true;
+    }).toList();
+
+    // Sıralama
+    filtered.sort((a, b) {
+      final mA = widget.controller.marketItems[a.itemId];
+      final mB = widget.controller.marketItems[b.itemId];
+      final marketPriceA = mA?.currentPrice ?? a.pricePerUnit;
+      final marketPriceB = mB?.currentPrice ?? b.pricePerUnit;
+
+      switch (_communitySortMode) {
+        case 0: // En Uygun Fiyat
+          return a.pricePerUnit.compareTo(b.pricePerUnit);
+        case 1: // En Çok Stok
+          return b.remainingQuantity.compareTo(a.remainingQuantity);
+        case 2: // En Yeni
+          return b.listedAt.compareTo(a.listedAt);
+        case 3: // Borsa Altı Fırsatlar (en çok tasarruf sağlayan)
+          final discountA = marketPriceA - a.pricePerUnit;
+          final discountB = marketPriceB - b.pricePerUnit;
+          return discountB.compareTo(discountA);
+        default:
+          return 0;
+      }
+    });
+
+    return Column(
+      children: [
+        // 1. ARAMA VE SIRALAMA ÇUBUĞU
+        Padding(
+          padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
+          child: Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF161E2E) : Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? Colors.white12 : const Color(0xFFCBD5E1),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                  ),
+                  child: TextField(
+                    controller: _communitySearchController,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                    ),
+                    decoration: InputDecoration(
+                      hintText: 'Ürün veya satıcı ara...',
+                      hintStyle: TextStyle(
+                        fontSize: 12,
+                        color: isDark ? Colors.grey[500] : const Color(0xFF94A3B8),
+                      ),
+                      prefixIcon: Icon(
+                        Icons.search,
+                        size: 18,
+                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                      ),
+                      suffixIcon: _communitySearchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close, size: 16),
+                              onPressed: () {
+                                setState(() {
+                                  _communitySearchController.clear();
+                                  _communitySearchQuery = '';
+                                });
+                              },
+                            )
+                          : null,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
+                      isDense: true,
+                    ),
+                    onChanged: (val) => setState(() => _communitySearchQuery = val.trim()),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Sıralama Menüsü
+              Container(
+                height: 38,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF161E2E) : Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: isDark ? Colors.white12 : const Color(0xFFCBD5E1),
+                  ),
+                ),
+                child: PopupMenuButton<int>(
+                  initialValue: _communitySortMode,
+                  onSelected: (val) => setState(() => _communitySortMode = val),
+                  tooltip: 'Sıralama Seçenekleri',
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  color: isDark ? const Color(0xFF1E283E) : Colors.white,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.swap_vert_rounded,
+                        size: 18,
+                        color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _communitySortMode == 0
+                            ? 'En Uygun'
+                            : _communitySortMode == 1
+                                ? 'Çok Stok'
+                                : _communitySortMode == 2
+                                    ? 'En Yeni'
+                                    : 'Fırsatlar',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(Icons.arrow_drop_down, size: 16, color: isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+                    ],
+                  ),
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 0,
+                      child: Row(
                         children: [
-                          Row(
-                            children: [
-                              Icon(Icons.person_outline, size: 14, color: isDark ? Colors.grey[400] : const Color(0xFF64748B)),
-                              const SizedBox(width: 3),
-                              Expanded(
-                                child: Text(
-                                  listing.sellerName,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: isDark ? Colors.lightBlueAccent : const Color(0xFF0284C7),
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            listing.item.name,
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: isDark ? Colors.white : const Color(0xFF0F172A),
-                            ),
-                          ),
+                          Icon(Icons.arrow_downward, size: 16, color: Colors.green),
+                          SizedBox(width: 8),
+                          Text('En Uygun Fiyat', style: TextStyle(fontSize: 12.5)),
                         ],
                       ),
                     ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '${currencyFmt.format(listing.pricePerUnit)} ₺',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                          ),
-                        ),
-                        Text(
-                          isDiscounted ? '🔥 Piyasa Altı' : 'Borsa: ${currencyFmt.format(marketPrice)} ₺',
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: isDiscounted ? FontWeight.bold : FontWeight.normal,
-                            color: isDiscounted ? Colors.green : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
-                          ),
-                        ),
-                      ],
+                    const PopupMenuItem(
+                      value: 1,
+                      child: Row(
+                        children: [
+                          Icon(Icons.inventory_2_outlined, size: 16, color: Colors.blue),
+                          SizedBox(width: 8),
+                          Text('En Çok Stok', style: TextStyle(fontSize: 12.5)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 2,
+                      child: Row(
+                        children: [
+                          Icon(Icons.access_time_rounded, size: 16, color: Colors.amber),
+                          SizedBox(width: 8),
+                          Text('En Yeni İlanlar', style: TextStyle(fontSize: 12.5)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 3,
+                      child: Row(
+                        children: [
+                          Icon(Icons.local_fire_department, size: 16, color: Colors.orange),
+                          SizedBox(width: 8),
+                          Text('🔥 Borsa Altı Fırsatlar', style: TextStyle(fontSize: 12.5)),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'Kalan: ${listing.remainingQuantity} adet',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white70 : const Color(0xFF475569),
-                        ),
-                      ),
+              ),
+            ],
+          ),
+        ),
+
+        // 2. KATEGORİ FİLTRE ÇİPLERİ
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+          child: Row(
+            children: [
+              _buildCategoryFilterChip(0, 'Tümü', countAll, isDark),
+              const SizedBox(width: 6),
+              _buildCategoryFilterChip(1, '🌾 Hammadde', countRaw, isDark),
+              const SizedBox(width: 6),
+              _buildCategoryFilterChip(2, '🏭 Ara Mamul', countIntermediate, isDark),
+              const SizedBox(width: 6),
+              _buildCategoryFilterChip(3, '🥖 Nihai Ürün', countFinished, isDark),
+              const SizedBox(width: 6),
+              _buildCategoryFilterChip(4, '🏛️ Piyasa Rezervi', countReserve, isDark, isReserve: true),
+              const SizedBox(width: 6),
+              _buildCategoryFilterChip(5, '👤 Oyuncular', countPlayer, isDark),
+            ],
+          ),
+        ),
+
+        // 3. SONUÇ BİLGİ ŞERİDİ (Filtre veya Arama aktifse gösterilir)
+        if (_communitySearchQuery.isNotEmpty || _communityCategoryFilter != 0)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  '${filtered.length} ilan bulundu',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                  ),
+                ),
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _communitySearchQuery = '';
+                      _communitySearchController.clear();
+                      _communityCategoryFilter = 0;
+                    });
+                  },
+                  child: Text(
+                    'Filtreleri Temizle',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7),
                     ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ElevatedButton(
-                          onPressed: () => _showDirectBuyDialog(context, listing, isDark),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isDark ? const Color(0xFF263B66) : const Color(0xFF0284C7),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.shopping_bag_outlined, size: 13),
-                              SizedBox(width: 4),
-                              Text('Satın Al', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        ElevatedButton(
-                          onPressed: () => _showMakeOfferDialog(context, listing, isDark),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isDark ? const Color(0xFF8B4513) : const Color(0xFFD97706),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.question_answer_outlined, size: 13),
-                              SizedBox(width: 4),
-                              Text('Teklif Ver', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),
           ),
-        );
-      },
+
+        // 4. İLAN LİSTESİ VEYA BOŞ DURUM
+        Expanded(
+          child: filtered.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.search_off_rounded,
+                          size: 44,
+                          color: isDark ? Colors.grey[600] : const Color(0xFF94A3B8),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Kriterlere uygun ilan bulunamadı.',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white70 : const Color(0xFF334155),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Arama sözcüğünü veya kategori filtresini değiştirip tekrar deneyin.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _communitySearchQuery = '';
+                              _communitySearchController.clear();
+                              _communityCategoryFilter = 0;
+                            });
+                          },
+                          icon: const Icon(Icons.refresh, size: 14),
+                          label: const Text('Filtreleri Sıfırla'),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  itemCount: filtered.length,
+                  itemBuilder: (ctx, i) {
+                    final listing = filtered[i];
+                    final mItem = widget.controller.marketItems[listing.itemId];
+                    final marketPrice = mItem?.currentPrice ?? listing.pricePerUnit;
+                    final isDiscounted = listing.pricePerUnit < marketPrice;
+                    final isOfficial = listing.isOfficialReserve;
+
+                    return Card(
+                      color: isOfficial
+                          ? (isDark ? const Color(0xFF132228) : const Color(0xFFF0FDF4))
+                          : (isDark ? const Color(0xFF1B2234) : Colors.white),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: isOfficial
+                              ? (isDark ? const Color(0xFF0D9488).withOpacity(0.4) : const Color(0xFF14B8A6).withOpacity(0.5))
+                              : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+                          width: isOfficial ? 1.4 : 1.0,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ÜST BİLGİ ŞERİDİ (Resmi Rezerv vs Oyuncu İlanı)
+                            Row(
+                              children: [
+                                if (isOfficial) ...[
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? const Color(0xFF0F766E).withOpacity(0.3) : const Color(0xFFCCFBF1),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: isDark ? const Color(0xFF14B8A6).withOpacity(0.5) : const Color(0xFF14B8A6),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.verified_user_rounded,
+                                          size: 11,
+                                          color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          'RESMİ PİYASA REZERVİ',
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E),
+                                            letterSpacing: 0.3,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Text(
+                                      listing.sellerName,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark ? Colors.tealAccent.shade100 : const Color(0xFF047857),
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ] else ...[
+                                  Icon(
+                                    Icons.person_outline,
+                                    size: 13,
+                                    color: isDark ? Colors.lightBlueAccent : const Color(0xFF0284C7),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      listing.sellerName,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.lightBlueAccent : const Color(0xFF0284C7),
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'Oyuncu',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w600,
+                                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+
+                            // ORTA KISIM (Ürün Emoji, İsim, Birim Fiyat, Piyasa Kıyaslaması)
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: isOfficial
+                                        ? (isDark ? const Color(0xFF0B1B1E) : Colors.white)
+                                        : (isDark ? Colors.black26 : const Color(0xFFF1F5F9)),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: isOfficial
+                                          ? (isDark ? const Color(0xFF0D9488).withOpacity(0.3) : const Color(0xFFA7F3D0))
+                                          : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                                    ),
+                                  ),
+                                  child: Text(listing.item.emoji, style: const TextStyle(fontSize: 24)),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        listing.item.name,
+                                        style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.bold,
+                                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Kategori: ${listing.item.category.nameTr}',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      '${currencyFmt.format(listing.pricePerUnit)} ₺',
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                      ),
+                                    ),
+                                    Text(
+                                      isDiscounted
+                                          ? '🔥 Piyasa Altı'
+                                          : 'Borsa: ${currencyFmt.format(marketPrice)} ₺',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: isDiscounted ? FontWeight.bold : FontWeight.normal,
+                                        color: isDiscounted
+                                            ? Colors.green
+                                            : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 10),
+
+                            // ALT KISIM (Stok Miktarı ve Satın Alma / Teklif Butonları)
+                            Wrap(
+                              alignment: WrapAlignment.spaceBetween,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    'Kalan Stok: ${listing.remainingQuantity} adet',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white70 : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                ),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ElevatedButton(
+                                      onPressed: () => _showDirectBuyDialog(context, listing, isDark),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: isOfficial
+                                            ? (isDark ? const Color(0xFF0F766E) : const Color(0xFF0D9488))
+                                            : (isDark ? const Color(0xFF263B66) : const Color(0xFF0284C7)),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                        minimumSize: Size.zero,
+                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            isOfficial ? Icons.shopping_cart_checkout : Icons.shopping_bag_outlined,
+                                            size: 13,
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            isOfficial ? 'Hemen Satın Al' : 'Satın Al',
+                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    if (!isOfficial) ...[
+                                      const SizedBox(width: 6),
+                                      ElevatedButton(
+                                        onPressed: () => _showMakeOfferDialog(context, listing, isDark),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: isDark ? const Color(0xFF8B4513) : const Color(0xFFD97706),
+                                          foregroundColor: Colors.white,
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.question_answer_outlined, size: 13),
+                                            SizedBox(width: 4),
+                                            Text('Teklif Ver', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryFilterChip(int index, String label, int count, bool isDark, {bool isReserve = false}) {
+    final isSelected = _communityCategoryFilter == index;
+    final activeColor = isReserve
+        ? (isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E))
+        : (isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7));
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => setState(() => _communityCategoryFilter = index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? activeColor.withOpacity(isDark ? 0.25 : 0.15)
+              : (isDark ? const Color(0xFF1E283E) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? activeColor : (isDark ? Colors.white12 : const Color(0xFFCBD5E1)),
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected
+                    ? (isDark ? Colors.white : activeColor)
+                    : (isDark ? Colors.grey[400] : const Color(0xFF475569)),
+              ),
+            ),
+            const SizedBox(width: 5),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? activeColor
+                    : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                '$count',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected
+                      ? Colors.white
+                      : (isDark ? Colors.grey[300] : const Color(0xFF475569)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

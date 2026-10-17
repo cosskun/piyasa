@@ -8,7 +8,9 @@ class MarketListing {
   final double pricePerUnit;
   final DateTime listedAt;
   final String sellerName;
+  final String? sellerId;
   final bool isPlayerListing;
+  final bool isOfficialReserve;
   double totalEarned;
   double saleProgressTimer;
 
@@ -20,7 +22,9 @@ class MarketListing {
     required this.pricePerUnit,
     required this.listedAt,
     this.sellerName = 'Siz',
+    this.sellerId,
     this.isPlayerListing = true,
+    this.isOfficialReserve = false,
     this.totalEarned = 0.0,
     this.saleProgressTimer = 0.0,
   });
@@ -38,11 +42,23 @@ class MarketListing {
     'pricePerUnit': pricePerUnit,
     'listedAt': listedAt.toIso8601String(),
     'sellerName': sellerName,
+    'sellerId': sellerId,
     'isPlayerListing': isPlayerListing,
+    'isOfficialReserve': isOfficialReserve,
     'totalEarned': totalEarned,
   };
 
   static MarketListing fromJson(Map<String, dynamic> json) {
+    final sellerName = json['sellerName'] as String? ?? 'Siz';
+    final sellerId = json['sellerId'] as String?;
+    final isOfficial = (json['isOfficialReserve'] as bool?) ??
+        (sellerId == 'SYSTEM' ||
+            sellerName.contains('🏛️') ||
+            sellerName.contains('Rezerv') ||
+            sellerName.contains('TMO') ||
+            sellerName.contains('Ofisi') ||
+            sellerName.contains('İkmal'));
+
     return MarketListing(
       id: json['id'] as String,
       itemId: json['itemId'] as String,
@@ -50,8 +66,10 @@ class MarketListing {
       remainingQuantity: (json['remainingQuantity'] as num).toInt(),
       pricePerUnit: (json['pricePerUnit'] as num).toDouble(),
       listedAt: DateTime.tryParse(json['listedAt'] as String? ?? '') ?? DateTime.now(),
-      sellerName: json['sellerName'] as String? ?? 'Siz',
+      sellerName: sellerName,
+      sellerId: sellerId,
       isPlayerListing: json['isPlayerListing'] as bool? ?? true,
+      isOfficialReserve: isOfficial,
       totalEarned: (json['totalEarned'] as num?)?.toDouble() ?? 0.0,
     );
   }

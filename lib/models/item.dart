@@ -4,6 +4,19 @@ enum ItemCategory {
   finishedGood, // Perakende Tüketici Ürünleri ve Nihai Mallar
 }
 
+extension ItemCategoryExtension on ItemCategory {
+  String get nameTr {
+    switch (this) {
+      case ItemCategory.rawMaterial:
+        return 'Hammadde';
+      case ItemCategory.intermediate:
+        return 'Ara Mamul';
+      case ItemCategory.finishedGood:
+        return 'Nihai Ürün';
+    }
+  }
+}
+
 class ItemData {
   final String id;
   final String name;
