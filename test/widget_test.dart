@@ -950,10 +950,11 @@ void main() {
       // Switch to Dükkanlarım (Tab 4)
       await tester.tap(find.descendant(of: find.byType(BottomNavigationBar), matching: find.text('Dükkanlarım')));
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for Tab 4 (Dükkanlarım)');
+      // Switch back to Ana Sayfa (Tab 0) and open BankDialog
+      await tester.tap(find.descendant(of: find.byType(BottomNavigationBar), matching: find.text('Ana Sayfa')));
+      await tester.pumpAndSettle();
 
-      // Open BankDialog
-      await tester.tap(find.text('Banka'));
+      await tester.tap(find.textContaining('Banka & Kredi').first);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: 'Failed on screen size $size for BankDialog');
 

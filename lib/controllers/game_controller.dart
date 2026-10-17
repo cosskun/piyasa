@@ -571,7 +571,7 @@ class GameController extends ChangeNotifier {
         activeListings.isNotEmpty;
 
     _uiTickTimer += dt;
-    if (stateChanged || (hasActiveProgress && _uiTickTimer >= 0.25)) {
+    if (stateChanged || (hasActiveProgress && _uiTickTimer >= 0.5)) {
       _uiTickTimer = 0.0;
       notifyListeners();
     }

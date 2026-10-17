@@ -30,6 +30,7 @@ class MarketTabState extends State<MarketTab> {
   int _pazarSubTab = 0; // 0: Topluluk İlanları, 1: Benim İlanlarım
   int _offerSubTab = 0; // 0: Gelen Teklifler, 1: Verilen Teklifler
   MarketFilter _currentFilter = MarketFilter.all; // Varsayılan olarak Tüm Borsa
+  static final NumberFormat _currencyFmt = NumberFormat("#,##0.00", "tr_TR");
 
   final ScrollController _categoryScrollController = ScrollController();
   final TextEditingController _communitySearchController = TextEditingController();
@@ -273,9 +274,8 @@ class MarketTabState extends State<MarketTab> {
   // TAB 1: BORSA VE TOPTAN İŞLEMLER
   // ==========================================
   Widget _buildCommodityMarketView(bool isDark) {
-    final currencyFmt = NumberFormat("#,##0.00", "tr_TR");
+    final currencyFmt = _currencyFmt;
     final warehouse = widget.controller.warehouse;
-    final producedItemIds = widget.controller.ownedFacilities.map((f) => f.recipe.outputItemId).toSet();
 
     final items = widget.controller.marketItems.values.where((m) {
       switch (_currentFilter) {
@@ -407,7 +407,6 @@ class MarketTabState extends State<MarketTab> {
               ? _buildEmptyFilterView(isDark)
               : ListView.builder(
                   physics: const BouncingScrollPhysics(),
-                  cacheExtent: 600,
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   itemCount: items.length,
                   itemBuilder: (ctx, i) {

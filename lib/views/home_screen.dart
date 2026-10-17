@@ -310,47 +310,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.of(ctx).pop();
-                LeaderboardView.show(context, controller: widget.controller);
-              },
-              icon: const Icon(Icons.emoji_events_rounded, size: 18),
-              label: const Text(
-                '🏆 Liderlik Tablosu & Sıralama',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF59E0B),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (fb.isAdmin) ...[
-              ElevatedButton.icon(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const AdminDashboardView()),
-                  );
-                },
-                icon: const Icon(Icons.security_rounded, size: 18),
-                label: const Text(
-                  '🛡️ Yönetici Paneli (Admin)',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFD97706),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
+            const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: () async {
                 Navigator.of(ctx).pop();
@@ -518,35 +478,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(width: 4),
 
-                            // Banka Butonu
-                            InkWell(
-                              onTap: () => showDialog(
-                                context: context,
-                                barrierDismissible: true,
-                                builder: (_) => BankDialog(controller: c),
-                              ),
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.blueAccent[700] : const Color(0xFF2563EB),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(Icons.account_balance, size: 13, color: Colors.white),
-                                    SizedBox(width: 3),
-                                    Text(
-                                      'Banka',
-                                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-
                             // Şirket Defteri & İşlem Geçmişi Butonu
                             InkWell(
                               onTap: () => LedgerDialog.show(context),
@@ -565,50 +496,6 @@ class _HomeScreenState extends State<HomeScreen> {
                               ),
                             ),
                             const SizedBox(width: 4),
-
-                            // Liderlik Tablosu & Sıralama Butonu (🏆)
-                            InkWell(
-                              onTap: () => LeaderboardView.show(context, controller: c),
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: BoxDecoration(
-                                  color: Colors.amber.withOpacity(0.2),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.amber, width: 1.2),
-                                ),
-                                child: const Icon(
-                                  Icons.emoji_events_rounded,
-                                  size: 16,
-                                  color: Colors.amber,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-
-                            // Yönetici Paneli Butonu (Sadece Admin Yetkisine Sahip Kullanıcılar İçin)
-                            if (FirebaseService().isAdmin) ...[
-                              InkWell(
-                                onTap: () => Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (_) => const AdminDashboardView()),
-                                ),
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  padding: const EdgeInsets.all(5),
-                                  decoration: BoxDecoration(
-                                    color: Colors.amber.withOpacity(0.2),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.amber, width: 1.2),
-                                  ),
-                                  child: const Icon(
-                                    Icons.security_rounded,
-                                    size: 16,
-                                    color: Colors.amber,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                            ],
 
                             // Tema Butonu
                             InkWell(
