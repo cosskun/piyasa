@@ -4051,8 +4051,10 @@ class MarketTabState extends State<MarketTab> {
             final itemData = mItem.data;
             final weightNeeded = quantity * itemData.weight;
             final fitsInWarehouse = widget.controller.currentWarehouseWeight + weightNeeded <= widget.controller.maxWarehouseCapacity;
-            final potentialSaving = (currentPrice - targetPrice) * quantity;
-            final discountPct = ((currentPrice - targetPrice) / currentPrice * 100).clamp(0.0, 100.0);
+            final potentialSaving = targetPrice < currentPrice ? (currentPrice - targetPrice) * quantity : 0.0;
+            final discountPct = targetPrice < currentPrice
+                ? ((currentPrice - targetPrice) / currentPrice * 100).clamp(0.0, 100.0)
+                : 0.0;
 
             return AlertDialog(
               backgroundColor: isDark ? const Color(0xFF141A29) : Colors.white,
@@ -4084,7 +4086,7 @@ class MarketTabState extends State<MarketTab> {
                           ),
                         ),
                         Text(
-                          'Fiyat düşünce sistem otomatik alır',
+                          'Fiyat düşünce veya uygun pazar ilanında sistem otomatik alır',
                           style: TextStyle(
                             fontSize: 11,
                             color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
@@ -4143,10 +4145,21 @@ class MarketTabState extends State<MarketTab> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text('Hedef Alış Fiyatı (₺):', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: isDark ? Colors.white70 : const Color(0xFF334155))),
-                          Text(
-                            '%${discountPct.toStringAsFixed(1)} daha ucuz',
-                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.greenAccent),
-                          ),
+                          if (targetPrice < currentPrice)
+                            Text(
+                              '%${discountPct.toStringAsFixed(1)} daha ucuz',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.greenAccent),
+                            )
+                          else if (targetPrice == currentPrice)
+                            const Text(
+                              '⚡ Anlık Borsa Seviyesi (Hemen Alınır)',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amberAccent),
+                            )
+                          else
+                            const Text(
+                              '⚡ Piyasa Üstü (Hemen Alınır)',
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.cyanAccent),
+                            ),
                         ],
                       ),
                       const SizedBox(height: 6),
@@ -4182,6 +4195,8 @@ class MarketTabState extends State<MarketTab> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
+                            _buildPresetDiscountChip('Anlık Fiyat', currentPrice, targetPriceController, (val) => setDialogState(() => targetPrice = val), isDark),
+                            const SizedBox(width: 6),
                             _buildPresetDiscountChip('-%5', currentPrice * 0.95, targetPriceController, (val) => setDialogState(() => targetPrice = val), isDark),
                             const SizedBox(width: 6),
                             _buildPresetDiscountChip('-%10', currentPrice * 0.90, targetPriceController, (val) => setDialogState(() => targetPrice = val), isDark),
@@ -4278,14 +4293,25 @@ class MarketTabState extends State<MarketTab> {
                               ],
                             ),
                             const SizedBox(height: 4),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('Tahmini Tasarruf:', style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
-                                Text('+${currencyFmt.format(potentialSaving)} ₺ kâr', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
+                            if (targetPrice < currentPrice) ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('Tahmini Tasarruf:', style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
+                                  Text('+${currencyFmt.format(potentialSaving)} ₺ kâr', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green)),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                            ] else ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text('İcra Durumu:', style: TextStyle(fontSize: 11, color: isDark ? Colors.grey[400] : const Color(0xFF64748B))),
+                                  Text('Anında Eşleşme (Hemen Alınır)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: isDark ? Colors.greenAccent : const Color(0xFF059669))),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                            ],
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -4313,7 +4339,7 @@ class MarketTabState extends State<MarketTab> {
                   child: const Text('Vazgeç'),
                 ),
                 ElevatedButton.icon(
-                  onPressed: canAfford && fitsInWarehouse && targetPrice < currentPrice
+                  onPressed: canAfford && fitsInWarehouse && targetPrice > 0 && quantity > 0
                       ? () {
                           final err = widget.controller.placeLimitBuyOrder(
                             itemId: mItem.itemId,
@@ -4324,9 +4350,16 @@ class MarketTabState extends State<MarketTab> {
                           if (err != null) {
                             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err), backgroundColor: Colors.red[800]));
                           } else {
+                            final matchingOrder = widget.controller.limitBuyOrders.isNotEmpty
+                                ? widget.controller.limitBuyOrders.first
+                                : null;
+                            final wasInstant = matchingOrder != null && matchingOrder.isCompleted;
+
                             ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                content: Text('${quantity} adet ${itemData.name} için ${targetPrice.toStringAsFixed(2)} ₺ alış emri verildi! 🎯'),
+                                content: Text(wasInstant
+                                    ? '$quantity adet ${itemData.name} için emir verildi ve hemen satın alındı! 🎯'
+                                    : '$quantity adet ${itemData.name} için ${targetPrice.toStringAsFixed(2)} ₺ alış emri verildi! 🎯'),
                                 backgroundColor: const Color(0xFF059669),
                               ),
                             );

@@ -27,6 +27,8 @@ import 'package:piyasa/views/game_loading_screen.dart';
 import 'package:piyasa/views/leaderboard_view.dart';
 import 'package:piyasa/services/leaderboard_service.dart';
 import 'package:piyasa/models/leaderboard_entry.dart';
+import 'package:piyasa/models/limit_order.dart';
+import 'package:piyasa/models/market_listing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -2054,6 +2056,84 @@ void main() {
     expect(find.text('Buğday Tarlası'), findsWidgets);
     expect(find.text('Un Değirmeni'), findsWidgets);
     expect(find.text('Mandıra Çiftliği'), findsOneWidget);
+
+    controller.dispose();
+  });
+
+  testWidgets('Limit buy orders allow targetPrice >= currentPrice, match against community listings or market, and execute immediately', (WidgetTester tester) async {
+    final controller = GameController(autoLoad: false);
+    controller.cash = 100000.0;
+    controller.warehouse.clear();
+
+    final mItem = controller.marketItems['wheat']!;
+    final wheatPrice = mItem.currentPrice;
+
+    // 1. Placing limit buy order at current price or higher is allowed (no error)
+    final err = controller.placeLimitBuyOrder(
+      itemId: 'wheat',
+      targetPrice: wheatPrice + 2.0, // higher than current market price!
+      quantity: 10,
+    );
+    expect(err, isNull);
+    expect(controller.limitBuyOrders.length, 1);
+    final order = controller.limitBuyOrders.first;
+    // Because targetPrice >= currentPrice, it matches immediately!
+    expect(order.isCompleted, isTrue);
+    expect(order.executedPrice, wheatPrice);
+    expect(controller.warehouse['wheat'], 10);
+    // Reserved cost was (wheatPrice + 2.0) * 10, actual cost was wheatPrice * 10, so 20.0 refund returned to cash
+    expect(controller.cash, 100000.0 - (wheatPrice * 10));
+
+    // 2. Test matching against community listing cheaper than market
+    controller.communityListings.add(
+      MarketListing(
+        id: 'test_comm_1',
+        itemId: 'wheat',
+        initialQuantity: 20,
+        remainingQuantity: 20,
+        pricePerUnit: double.parse((wheatPrice * 0.8).toStringAsFixed(2)), // 20% cheaper than market
+        listedAt: DateTime.now(),
+        sellerName: 'Simulated Farmer',
+        isPlayerListing: false,
+      ),
+    );
+
+    final initialCash = controller.cash;
+    final err2 = controller.placeLimitBuyOrder(
+      itemId: 'wheat',
+      targetPrice: wheatPrice * 0.9, // Lower than borsa, but higher than the community listing!
+      quantity: 5,
+    );
+    expect(err2, isNull);
+    expect(controller.limitBuyOrders.length, 2);
+    final order2 = controller.limitBuyOrders.first;
+    expect(order2.isCompleted, isTrue);
+    expect(order2.executedPrice, double.parse((wheatPrice * 0.8).toStringAsFixed(2)));
+    expect(controller.warehouse['wheat'], 15); // 10 + 5
+    expect(controller.cash, initialCash - (double.parse((wheatPrice * 0.8).toStringAsFixed(2)) * 5));
+
+    // 3. UI Dialog: opening _showLimitBuyOrderDialog allows submitting when targetPrice >= currentPrice
+    tester.view.physicalSize = const Size(600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MarketTab(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify limit orders tab displays both completed orders
+    await tester.ensureVisible(find.textContaining('Alış Emirlerim'));
+    await tester.tap(find.textContaining('Alış Emirlerim'), warnIfMissed: false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Geçmiş Emirler (2)'), findsOneWidget);
+    expect(find.text('10 Adet Buğday'), findsOneWidget);
+    expect(find.text('5 Adet Buğday'), findsOneWidget);
 
     controller.dispose();
   });

@@ -757,7 +757,7 @@ class GameController extends ChangeNotifier {
     return null;
   }
 
-  // === BORSA LİMİT ALIŞ EMİRLERİ (FİYAT DÜŞÜNCE OTOMATİK ALIM) ===
+  // === BORSA LİMİT ALIŞ EMİRLERİ (FİYAT DÜŞÜNCE VEYA ANINDA OTOMATİK ALIM) ===
   String? placeLimitBuyOrder({
     required String itemId,
     required double targetPrice,
@@ -768,11 +768,6 @@ class GameController extends ChangeNotifier {
 
     final mItem = marketItems[itemId];
     if (mItem == null) return 'Ürün borsada bulunamadı.';
-
-    if (targetPrice >= mItem.currentPrice) {
-      return 'Hedef fiyat, anlık borsa fiyatından (${mItem.currentPrice.toStringAsFixed(2)} ₺) daha düşük olmalıdır. '
-          'Hemen almak için "Hızlı Al" butonunu kullanabilirsiniz.';
-    }
 
     final totalCost = targetPrice * quantity;
     if (cash < totalCost) {
@@ -818,6 +813,9 @@ class GameController extends ChangeNotifier {
       },
     );
 
+    // Pazarda veya borsada bu fiyata uygun ürün varsa anında icra et
+    _checkLimitBuyOrders();
+
     notifyListeners();
     saveState();
     return null;
@@ -857,56 +855,91 @@ class GameController extends ChangeNotifier {
       final mItem = marketItems[order.itemId];
       if (mItem == null) continue;
 
-      // Fiyat hedeflenen seviyeye veya daha altına düştü mü?
-      if (mItem.currentPrice <= order.targetPrice) {
-        final itemData = ItemRegistry.get(order.itemId);
-        if (itemData == null) continue;
+      final itemData = ItemRegistry.get(order.itemId);
+      if (itemData == null) continue;
 
-        final weightNeeded = order.quantity * itemData.weight;
-        if (currentWarehouseWeight + weightNeeded <= maxWarehouseCapacity) {
-          final actualPrice = mItem.currentPrice;
-          final actualTotalCost = actualPrice * order.quantity;
+      final weightNeeded = order.quantity * itemData.weight;
+      if (currentWarehouseWeight + weightNeeded > maxWarehouseCapacity) {
+        order.statusMessage = 'Depo Dolu! Yer açıldığında alınacak.';
+        continue;
+      }
 
-          // Fiyat iyileştirmesi: Eğer piyasa hedeften de aşağı düşmüşse aradaki fark oyuncuya kalır!
-          final refund = order.totalReservedCost - actualTotalCost;
-          if (refund > 0) {
-            cash += refund;
+      // 1. Önce Topluluk / Oyuncu Pazarında bu fiyata veya altına ürün satan ilan var mı bak
+      MarketListing? bestCommunityListing;
+      for (var l in communityListings) {
+        if (l.itemId == order.itemId &&
+            l.remainingQuantity >= order.quantity &&
+            l.pricePerUnit <= order.targetPrice &&
+            !l.isPlayerListing) {
+          if (bestCommunityListing == null || l.pricePerUnit < bestCommunityListing.pricePerUnit) {
+            bestCommunityListing = l;
           }
-
-          warehouse[order.itemId] = (warehouse[order.itemId] ?? 0) + order.quantity;
-          order.status = LimitOrderStatus.completed;
-          order.executedAt = DateTime.now();
-          order.executedPrice = actualPrice;
-          order.statusMessage = 'İcra Edildi: ${actualPrice.toStringAsFixed(2)} ₺';
-
-          AuditLogService().log(
-            category: LogCategory.trade,
-            action: 'LIMIT_ORDER_EXECUTED',
-            title: 'Alış Emri İcra Edildi: ${itemData.name}',
-            description: '${order.quantity} adet ${itemData.name} birim başı ${actualPrice.toStringAsFixed(2)} ₺ fiyattan satın alındı.${refund > 0 ? ' (${refund.toStringAsFixed(0)} ₺ fiyat iyileşme iadesi)' : ''}',
-            amountChange: refund > 0 ? refund : null,
-            cashAfter: cash,
-            details: {
-              'orderId': order.id,
-              'quantity': order.quantity,
-              'executedPrice': actualPrice,
-              'refund': refund,
-            },
-          );
-
-          latestNotificationToast =
-              '🎯 ALIŞ EMRİ GERÇEKLEŞTİ! ${order.quantity} adet ${itemData.name}, '
-              'hedeflediğiniz ${order.targetPrice.toStringAsFixed(2)} ₺ fiyattan (${actualPrice.toStringAsFixed(2)} ₺) '
-              'otomatik satın alındı ve deponuza yüklendi!';
-          NotificationService().showLimitOrderExecutedNotification(
-            itemName: itemData.name,
-            quantity: order.quantity,
-            price: actualPrice,
-          );
-          hasChanges = true;
-        } else {
-          order.statusMessage = 'Depo Dolu! Yer açıldığında alınacak.';
         }
+      }
+
+      // En uygun icra fiyatını belirle (Pazar ilanı mı yoksa borsa kotasyonu mu?)
+      double? execPrice;
+      bool isFromCommunity = false;
+
+      if (bestCommunityListing != null && bestCommunityListing.pricePerUnit <= mItem.currentPrice) {
+        execPrice = bestCommunityListing.pricePerUnit;
+        isFromCommunity = true;
+      } else if (mItem.currentPrice <= order.targetPrice) {
+        execPrice = mItem.currentPrice;
+        isFromCommunity = false;
+      }
+
+      // Fiyat hedeflenen seviyeye veya daha altına denk geldiyse emri icra et!
+      if (execPrice != null) {
+        final actualTotalCost = execPrice * order.quantity;
+
+        // Fiyat iyileştirmesi: Eğer piyasa hedeften de aşağıdaysa aradaki fark oyuncuya iade edilir!
+        final refund = order.totalReservedCost - actualTotalCost;
+        if (refund > 0) {
+          cash += refund;
+        }
+
+        warehouse[order.itemId] = (warehouse[order.itemId] ?? 0) + order.quantity;
+        order.status = LimitOrderStatus.completed;
+        order.executedAt = DateTime.now();
+        order.executedPrice = execPrice;
+        order.statusMessage = 'İcra Edildi: ${execPrice.toStringAsFixed(2)} ₺${isFromCommunity ? " (Pazar İlanı)" : ""}';
+
+        if (isFromCommunity && bestCommunityListing != null) {
+          bestCommunityListing.remainingQuantity -= order.quantity;
+          if (bestCommunityListing.remainingQuantity <= 0) {
+            communityListings.remove(bestCommunityListing);
+          }
+          if (FirebaseService().isCloudConnected) {
+            FirebaseService().buyFromPublicMarket(listing: bestCommunityListing, quantityToBuy: order.quantity);
+          }
+        }
+
+        AuditLogService().log(
+          category: LogCategory.trade,
+          action: 'LIMIT_ORDER_EXECUTED',
+          title: 'Alış Emri İcra Edildi: ${itemData.name}',
+          description: '${order.quantity} adet ${itemData.name} birim başı ${execPrice.toStringAsFixed(2)} ₺ fiyattan ${isFromCommunity ? "pazardan" : "borsadan"} satın alındı.${refund > 0 ? ' (${refund.toStringAsFixed(0)} ₺ fiyat iyileşme iadesi)' : ''}',
+          amountChange: refund > 0 ? refund : null,
+          cashAfter: cash,
+          details: {
+            'orderId': order.id,
+            'quantity': order.quantity,
+            'executedPrice': execPrice,
+            'refund': refund,
+            'isFromCommunity': isFromCommunity,
+          },
+        );
+
+        latestNotificationToast =
+            '🎯 ALIŞ EMRİ GERÇEKLEŞTİ! ${order.quantity} adet ${itemData.name}, '
+            '${execPrice.toStringAsFixed(2)} ₺ birim fiyatla otomatik satın alındı ve deponuza yüklendi!';
+        NotificationService().showLimitOrderExecutedNotification(
+          itemName: itemData.name,
+          quantity: order.quantity,
+          price: execPrice,
+        );
+        hasChanges = true;
       }
     }
     if (hasChanges) {
