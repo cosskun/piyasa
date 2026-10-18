@@ -1112,7 +1112,9 @@ class FirebaseService {
       for (var acc in localAccounts.values) {
         if (acc['uid'] == pid) {
           acc['isOnline'] = isOnline;
-          acc['lastActiveAt'] = nowIso;
+          if (!isOnline) {
+            acc['lastActiveAt'] = nowIso;
+          }
           await saveLocalAccount(acc);
           break;
         }
@@ -1124,10 +1126,13 @@ class FirebaseService {
     // 2. Cloud Firestore'da güncelle
     if (isCloudConnected && _firestore != null) {
       try {
-        await _firestore!.collection('players').doc(pid).set({
+        final updateData = <String, dynamic>{
           'isOnline': isOnline,
-          'lastActiveAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        };
+        if (!isOnline) {
+          updateData['lastActiveAt'] = FieldValue.serverTimestamp();
+        }
+        await _firestore!.collection('players').doc(pid).set(updateData, SetOptions(merge: true));
       } catch (e) {
         debugPrint('FirebaseService: setPlayerOnlineStatus bulut hata: $e');
       }

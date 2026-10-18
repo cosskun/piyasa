@@ -2566,6 +2566,96 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('Cold boot offline progress: Closing app overnight, relaunching next morning simulates full production, retail sales, interest, and shows OfflineSummaryDialog', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 950);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    const testPid = 'player_cold_boot_offline';
+
+    // 1. Dün gece oynayan oyuncunun oyun durumu (1 buğday tarlası, 1 fırın büfesi, 10.000 TL mevduat)
+    final initialController = GameController();
+    initialController.cash = 10000.0;
+    initialController.bankSavings = 10000.0;
+
+    final farm = ProductionFacility.getBlueprints().firstWhere((f) => f.id == 'wheat_farm').copy();
+    farm.level = 1;
+    farm.isProducing = true;
+    initialController.ownedFacilities.add(farm);
+
+    final bakery = RetailStore.getBlueprints().firstWhere((s) => s.id == 'kiosk_bread').copy();
+    bakery.level = 1;
+    bakery.isSelling = true;
+    bakery.productSlots[0].shelfStock = 25;
+    bakery.productSlots[0].isSelling = true;
+    bakery.productSlots[0].retailPrice = 18.0;
+    initialController.ownedStores.add(bakery);
+
+    // 8 saat önce (dün gece) oyundan çıkış yapıldı
+    final eightHoursAgo = DateTime.now().subtract(const Duration(hours: 8));
+    initialController.lastActiveAt = eightHoursAgo;
+
+    final saveData = initialController.toSaveJson();
+    // lastActiveAt ve savedAt 8 saat öncesine ayarlanır
+    saveData['lastActiveAt'] = eightHoursAgo.toIso8601String();
+    saveData['savedAt'] = eightHoursAgo.toIso8601String();
+    await SaveService().saveDirectData(saveData, playerId: testPid);
+
+    initialController.dispose();
+
+    // 2. Sabah oldu: Uygulama sıfırdan soğuk açılış (Cold Boot) ile başlatılıyor
+    final coldBootController = GameController(autoLoad: false);
+    expect(coldBootController.ownedFacilities.isEmpty, isTrue);
+
+    // loadFromStorage çağrılır
+    final loaded = await coldBootController.loadFromStorage(playerId: testPid);
+    expect(loaded, isTrue);
+
+    // 3. Tarlaların çalıştığı ve hasatların depoya girdiği doğrulanır
+    expect(coldBootController.ownedFacilities.length, 1);
+    expect(coldBootController.latestOfflineReport, isNotNull, reason: '8 saat çevrimdışı kalındığında mutlaka çevrimdışı raporu oluşturulmalıdır');
+
+    final report = coldBootController.latestOfflineReport!;
+    expect(report.hasAnyActivity, isTrue);
+    expect(report.producedItems['wheat'], isNotNull);
+    expect(report.producedItems['wheat']!, greaterThan(0), reason: 'Buğday tarlası dün geceden bu sabaha buğday üretmiş olmalıdır');
+    expect(coldBootController.warehouse['wheat'], greaterThan(0));
+
+    // Perakende fırın satışları yapıldı
+    expect(report.retailItemsSold, greaterThan(0));
+    expect(report.retailRevenue, greaterThan(0));
+
+    // Bankadaki mevduat gece boyunca faiz kazandı
+    expect(report.bankInterestEarned, greaterThan(0));
+    expect(coldBootController.bankSavings, greaterThan(10000.0));
+
+    // 4. HomeScreen açıldığında OfflineSummaryDialog'un oyuncuya gösterildiği doğrulanır
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HomeScreen(controller: coldBootController),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OfflineSummaryDialog), findsOneWidget, reason: 'Oyuncu oyunu açtığında Siz Yokken Şirketiniz Çalıştı diyaloğu çıkmalıdır');
+    expect(find.text('Siz Yokken Şirketiniz Çalıştı!'), findsOneWidget);
+    expect(find.textContaining('Buğday'), findsWidgets);
+
+    // Diyalogdaki kapatma butonuna basıldığında kapanır
+    final dismissBtn = find.textContaining('Harika');
+    expect(dismissBtn, findsOneWidget);
+    await tester.tap(dismissBtn);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OfflineSummaryDialog), findsNothing);
+
+    coldBootController.dispose();
+  });
 }
 
 

@@ -141,7 +141,9 @@ class _GameLoadingScreenState extends State<GameLoadingScreen> with TickerProvid
   Future<void> _startLoadingData() async {
     try {
       final pid = FirebaseService().playerId;
-      await widget.controller.loadFromStorage(playerId: pid);
+      if (!widget.controller.hasLoadedFromStorage) {
+        await widget.controller.loadFromStorage(playerId: pid);
+      }
       await AuditLogService().initializeForPlayer(pid);
     } catch (e) {
       debugPrint('GameLoadingScreen load error: $e');

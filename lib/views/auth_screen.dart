@@ -89,7 +89,7 @@ class _AuthScreenState extends State<AuthScreen> {
         final pid = FirebaseService().playerId;
         try {
           if (widget.controller != null) {
-            await widget.controller!.loadFromStorage(playerId: pid);
+            await widget.controller!.loadFromStorage(playerId: pid, forceReload: true);
           }
         } catch (e) {
           debugPrint('AuthScreen: loadFromStorage hatası: $e');
@@ -210,7 +210,7 @@ class _AuthScreenState extends State<AuthScreen> {
     await FirebaseService().continueAsGuest();
     final pid = FirebaseService().playerId;
     if (widget.controller != null) {
-      await widget.controller!.loadFromStorage(playerId: pid);
+      await widget.controller!.loadFromStorage(playerId: pid, forceReload: true);
     }
     await AuditLogService().initializeForPlayer(pid);
 

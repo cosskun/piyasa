@@ -29,6 +29,31 @@ class GameController extends ChangeNotifier {
   // Son aktiflik ve Çevrimdışı Kazanç Raporu
   DateTime? lastActiveAt;
   OfflineCatchUpReport? latestOfflineReport;
+  bool _hasLoadedFromStorage = false;
+  bool get hasLoadedFromStorage => _hasLoadedFromStorage;
+  String? _lastLoadedPlayerId;
+
+  static DateTime? parseDateTime(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is DateTime) return raw;
+    if (raw is int) return DateTime.fromMillisecondsSinceEpoch(raw);
+    try {
+      if ((raw as dynamic).toDate != null) {
+        return (raw as dynamic).toDate() as DateTime;
+      }
+    } catch (_) {}
+    if (raw is String) {
+      final parsed = DateTime.tryParse(raw);
+      if (parsed != null) return parsed;
+      final m = RegExp(r'seconds=(\d+)').firstMatch(raw);
+      if (m != null) {
+        final secs = int.tryParse(m.group(1)!);
+        if (secs != null) return DateTime.fromMillisecondsSinceEpoch(secs * 1000);
+      }
+    }
+    return null;
+  }
+
   void clearLatestOfflineReport() {
     latestOfflineReport = null;
   }
@@ -2012,19 +2037,31 @@ class GameController extends ChangeNotifier {
 
         fac.progress += dt / fac.effectiveDuration;
         while (fac.progress >= 1.0) {
-          fac.progress -= 1.0;
-
-          // Girdi tüketimi
+          // Girdilerin bu döngü için yeterli olup olmadığını kontrol et
+          bool hasInputs = true;
           fac.recipe.inputs.forEach((inItemId, inCount) {
-            warehouse[inItemId] = (warehouse[inItemId] ?? 0) - inCount;
-            if (warehouse[inItemId]! <= 0) warehouse.remove(inItemId);
+            int inWarehouse = warehouse[inItemId] ?? 0;
+            if (inWarehouse < inCount) hasInputs = false;
           });
+
+          if (!hasInputs) {
+            fac.progress = min(0.99, fac.progress);
+            break;
+          }
 
           int outCount = fac.effectiveOutput;
           var outItemData = ItemRegistry.get(fac.recipe.outputItemId);
           double addedWeight = outCount * (outItemData?.weight ?? 1.0);
 
           if (currentWarehouseWeight + addedWeight <= maxWarehouseCapacity) {
+            fac.progress -= 1.0;
+
+            // Girdi tüketimi
+            fac.recipe.inputs.forEach((inItemId, inCount) {
+              warehouse[inItemId] = (warehouse[inItemId] ?? 0) - inCount;
+              if (warehouse[inItemId]! <= 0) warehouse.remove(inItemId);
+            });
+
             warehouse[fac.recipe.outputItemId] =
                 (warehouse[fac.recipe.outputItemId] ?? 0) + outCount;
             producedItems[fac.recipe.outputItemId] =
@@ -2291,19 +2328,22 @@ class GameController extends ChangeNotifier {
     limitBuyOrders.clear();
     isDarkMode = false;
     themeModeNotifier.value = false;
+    _hasLoadedFromStorage = false;
+    _lastLoadedPlayerId = null;
     _initializeMarket();
     _initializeCommunityListings();
     notifyListeners();
   }
 
-  Future<bool> loadFromStorage({String? playerId}) async {
+  Future<bool> loadFromStorage({String? playerId, bool forceReload = false}) async {
     final pid = playerId ?? FirebaseService().playerId;
 
-    // 1. Yerel cihazdaki son kaydı oku ve anında belleğe yükle (0 ms gecikme)
-    final localData = await SaveService().getLocalSaveData(playerId: pid);
-    if (localData != null) {
-      loadFromSaveJson(localData);
+    if (!forceReload && _hasLoadedFromStorage && _lastLoadedPlayerId == pid) {
+      return true;
     }
+
+    // 1. Yerel cihazdaki son kaydı oku
+    final localData = await SaveService().getLocalSaveData(playerId: pid);
 
     // 2. Buluttaki oyuncu verisini oku
     Map<String, dynamic>? cloudData;
@@ -2314,6 +2354,10 @@ class GameController extends ChangeNotifier {
     }
 
     // 3. Akıllı Hibrit Karşılaştırma & Yükleme
+    Map<String, dynamic>? chosenData;
+    bool syncLocalToCloudNeeded = false;
+    bool syncCloudToLocalNeeded = false;
+
     if (localData != null && cloudData != null) {
       final localFacilities = (localData['ownedFacilities'] as List?)?.length ?? 0;
       final cloudFacilities = (cloudData['ownedFacilities'] as List?)?.length ?? 0;
@@ -2322,73 +2366,91 @@ class GameController extends ChangeNotifier {
       final localAssets = localFacilities + localStores;
       final cloudAssets = cloudFacilities + cloudStores;
 
-      final localSavedAt = DateTime.tryParse(localData['savedAt'] as String? ?? '');
-      final cloudSavedAt = DateTime.tryParse(cloudData['savedAt'] as String? ?? '');
+      final localSavedAt = parseDateTime(localData['savedAt']) ?? parseDateTime(localData['lastActiveAt']);
+      final cloudSavedAt = parseDateTime(cloudData['savedAt']) ?? parseDateTime(cloudData['lastActiveAt']);
 
-      // KURAL 1: Yerelde tesisler/tarlalar var ve buluttakinden fazlaysa, ASLA yereli ezme!
       if (localAssets > cloudAssets) {
-        loadFromSaveJson(localData);
-        saveState(targetPlayerId: pid); // Bulutu da yerelle eşitle
+        chosenData = localData;
+        syncLocalToCloudNeeded = true;
       } else if (cloudAssets > localAssets) {
-        loadFromSaveJson(cloudData);
-        await SaveService().saveDirectData(cloudData, playerId: pid);
+        chosenData = cloudData;
+        syncCloudToLocalNeeded = true;
       } else if (localSavedAt != null && cloudSavedAt != null) {
         if (localSavedAt.isAfter(cloudSavedAt) || localSavedAt.isAtSameMomentAs(cloudSavedAt)) {
-          loadFromSaveJson(localData);
-          saveState(targetPlayerId: pid);
+          chosenData = localData;
+          syncLocalToCloudNeeded = true;
         } else {
-          loadFromSaveJson(cloudData);
-          await SaveService().saveDirectData(cloudData, playerId: pid);
+          chosenData = cloudData;
+          syncCloudToLocalNeeded = true;
         }
       } else {
-        // Tarih yoksa servet ve nakdi daha yüksek olan tarafı yükle
         final localNet = (localData['netWorth'] as num?)?.toDouble() ?? 0.0;
         final cloudNet = (cloudData['netWorth'] as num?)?.toDouble() ?? 0.0;
         if (localNet >= cloudNet) {
-          loadFromSaveJson(localData);
-          saveState(targetPlayerId: pid);
+          chosenData = localData;
+          syncLocalToCloudNeeded = true;
         } else {
-          loadFromSaveJson(cloudData);
-          await SaveService().saveDirectData(cloudData, playerId: pid);
+          chosenData = cloudData;
+          syncCloudToLocalNeeded = true;
         }
       }
     } else if (localData != null) {
-      loadFromSaveJson(localData);
-      saveState(targetPlayerId: pid); // Buluta da aktar
+      chosenData = localData;
+      syncLocalToCloudNeeded = true;
     } else if (cloudData != null && (cloudData.containsKey('ownedFacilities') || cloudData.containsKey('warehouse') || cloudData.containsKey('savedAt'))) {
-      loadFromSaveJson(cloudData);
-      await SaveService().saveDirectData(cloudData, playerId: pid);
+      chosenData = cloudData;
+      syncCloudToLocalNeeded = true;
     } else {
-      // Yerel veya bulutta veri bulunamadıysa cihazdaki genel son aktif yedeği ara
       final fallbackData = await SaveService().getLastFallbackSaveData(forPlayerId: pid);
       if (fallbackData != null) {
-        loadFromSaveJson(fallbackData);
-        await SaveService().saveDirectData(fallbackData, playerId: pid);
+        chosenData = fallbackData;
+        syncLocalToCloudNeeded = true;
+        syncCloudToLocalNeeded = true;
+      } else {
+        // Gerçekten sıfır / yeni bir oyuncu profili!
+        resetToNewGame();
+        _hasLoadedFromStorage = true;
+        _lastLoadedPlayerId = pid;
+        final freshData = toSaveJson();
+        await SaveService().saveDirectData(freshData, playerId: pid);
         saveState(targetPlayerId: pid);
         return true;
       }
-
-      // Gerçekten sıfır / yeni bir oyuncu profili!
-      resetToNewGame();
-      final freshData = toSaveJson();
-      await SaveService().saveDirectData(freshData, playerId: pid);
-      saveState(targetPlayerId: pid);
-      return true;
     }
+
+    // Veriyi belleğe yükle (lastActiveAt'i ezmeden!)
+    loadFromSaveJson(chosenData);
+
+    if (syncCloudToLocalNeeded && chosenData != null) {
+      await SaveService().saveDirectData(chosenData, playerId: pid);
+    }
+
+    // Çevrimdışı zaman başlangıç damgasını belirle
+    final offlineStartTime = lastActiveAt ?? parseDateTime(chosenData['savedAt']);
 
     // 4. Çevrimdışı pazar satışlarını çek
     final offlineSales = await FirebaseService().claimOfflineSales();
 
     // 5. Oyun kapalıyken geçen süre boyunca Tesisleri, Dükkanları ve Bankayı çalıştır!
-    if (lastActiveAt != null) {
-      final elapsed = DateTime.now().difference(lastActiveAt!);
-      if (elapsed.inSeconds >= 5) {
-        processOfflineCatchUp(lastActiveAt!, offlineSales: offlineSales);
+    bool catchUpRan = false;
+    if (offlineStartTime != null) {
+      final now = DateTime.now();
+      final elapsed = now.difference(offlineStartTime);
+      if (elapsed.inSeconds >= 3) {
+        processOfflineCatchUp(offlineStartTime, offlineSales: offlineSales);
+        catchUpRan = true;
       }
-    } else {
-      lastActiveAt = DateTime.now();
     }
 
+    if (!catchUpRan) {
+      lastActiveAt = DateTime.now();
+      if (syncLocalToCloudNeeded) {
+        saveState(targetPlayerId: pid);
+      }
+    }
+
+    _hasLoadedFromStorage = true;
+    _lastLoadedPlayerId = pid;
     _setupCloudMarketSync();
 
     return true;
@@ -2459,8 +2521,12 @@ class GameController extends ChangeNotifier {
   }
 
   void loadFromSaveJson(Map<String, dynamic> data) {
-    if (data.containsKey('lastActiveAt') && data['lastActiveAt'] != null) {
-      lastActiveAt = DateTime.tryParse(data['lastActiveAt'].toString()) ?? lastActiveAt;
+    final parsedLastActive = parseDateTime(data['lastActiveAt']);
+    final parsedSavedAt = parseDateTime(data['savedAt']);
+    if (parsedLastActive != null) {
+      lastActiveAt = parsedLastActive;
+    } else if (parsedSavedAt != null) {
+      lastActiveAt = parsedSavedAt;
     }
     if (data.containsKey('highestNetWorth') && data['highestNetWorth'] != null) {
       highestNetWorth = (data['highestNetWorth'] as num).toDouble();
