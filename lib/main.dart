@@ -111,6 +111,7 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       NotificationService().setAppInForeground(true);
       FirebaseService().setPlayerOnlineStatus(isOnline: true);
+      FirebaseService().checkSessionValidity();
       _controller.resumeGameLoop();
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||

@@ -17,6 +17,7 @@ import '../services/audit_log_service.dart';
 import '../models/audit_log.dart';
 import 'admin_dashboard_view.dart';
 import 'banned_dialog.dart';
+import 'session_terminated_dialog.dart';
 import 'leaderboard_view.dart';
 import 'home_dashboard_tab.dart';
 import 'profile_screen.dart';
@@ -35,25 +36,53 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentTabIndex = 0;
   final GlobalKey<MarketTabState> _marketTabKey = GlobalKey<MarketTabState>();
   StreamSubscription<String>? _notificationSub;
+  bool _isBanDialogShowing = false;
+  bool _isSessionDialogShowing = false;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onControllerUpdate);
     FirebaseService().isBannedNotifier.addListener(_checkBanStatus);
+    FirebaseService().isSessionTerminatedNotifier.addListener(_checkSessionStatus);
     _notificationSub =
         NotificationService().onNotificationTapped.listen(_handlePhoneNotificationTap);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkOfflineReport();
       _checkBanStatus();
+      _checkSessionStatus();
     });
   }
 
   void _checkBanStatus() {
     if (!mounted) return;
-    if (FirebaseService().isBannedNotifier.value) {
+    if (FirebaseService().isBannedNotifier.value && !_isBanDialogShowing) {
+      _isBanDialogShowing = true;
       final reason = FirebaseService().banReasonNotifier.value;
-      BannedDialog.show(context, reason: reason, onLoggedOut: widget.onLoggedOut);
+      BannedDialog.show(
+        context,
+        reason: reason,
+        onLoggedOut: () {
+          _isBanDialogShowing = false;
+          widget.onLoggedOut?.call();
+        },
+      );
+    }
+  }
+
+  void _checkSessionStatus() {
+    if (!mounted) return;
+    if (FirebaseService().isSessionTerminatedNotifier.value && !_isSessionDialogShowing) {
+      _isSessionDialogShowing = true;
+      final reason = FirebaseService().sessionTerminatedReasonNotifier.value;
+      SessionTerminatedDialog.show(
+        context,
+        reason: reason,
+        onLoggedOut: () {
+          _isSessionDialogShowing = false;
+          widget.onLoggedOut?.call();
+        },
+      );
     }
   }
 
@@ -69,6 +98,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     FirebaseService().isBannedNotifier.removeListener(_checkBanStatus);
+    FirebaseService().isSessionTerminatedNotifier.removeListener(_checkSessionStatus);
     _notificationSub?.cancel();
     widget.controller.removeListener(_onControllerUpdate);
     super.dispose();

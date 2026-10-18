@@ -35,6 +35,11 @@ class FirebaseService {
   final ValueNotifier<bool> isBannedNotifier = ValueNotifier<bool>(false);
   final ValueNotifier<String?> banReasonNotifier = ValueNotifier<String?>(null);
 
+  // Tek aktif oturum denetimi (Single Active Session Concurrency)
+  String? _currentSessionId;
+  final ValueNotifier<bool> isSessionTerminatedNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<String?> sessionTerminatedReasonNotifier = ValueNotifier<String?>(null);
+
   static const String _localPlayerIdKey = 'piyasa_player_unique_id';
   static const String _localCompanyNameKey = 'piyasa_player_company_name';
   static const String _localUsernameKey = 'piyasa_player_username';
@@ -44,6 +49,7 @@ class FirebaseService {
   static const String _localAccountsKey = 'piyasa_registered_accounts_v2';
   static const String _localMarketOffersKey = 'piyasa_local_market_offers_pool_v1';
   static const String _localMarketListingsKey = 'piyasa_local_market_listings_pool_v1';
+  static const String _localCurrentSessionIdKey = 'piyasa_active_session_id';
   StreamController<List<MarketOffer>>? _localOffersController;
   bool _isLoggedInExplicit = false;
 
@@ -51,6 +57,7 @@ class FirebaseService {
   String get playerId => _playerId ?? 'player_guest';
   String get companyName => _companyName ?? 'Piyasa Holding';
   String? get username => _username;
+  String? get currentSessionId => _currentSessionId;
   bool get isLoggedIn =>
       _isLoggedInExplicit ||
       _auth?.currentUser != null ||
@@ -72,6 +79,63 @@ class FirebaseService {
   String? get banReason => _banReason;
   String get role => _role;
 
+  String _generateSessionId() {
+    return 'sess_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(999999)}';
+  }
+
+  /// Testler ve yerel simülasyonlar için: Başka bir cihazın giriş yaptığını simüle eder
+  void simulateRemoteLoginSession(String newSessionId) {
+    if (_currentSessionId != null && newSessionId != _currentSessionId) {
+      isSessionTerminatedNotifier.value = true;
+      sessionTerminatedReasonNotifier.value =
+          'Hesabınıza başka bir cihazdan giriş yapıldı. Güvenliğiniz için bu cihazdaki oturumunuz kapatıldı.';
+    }
+  }
+
+  /// Cihazın mevcut oturumunun geçerliliğini kontrol eder (Bulut ve Yerel)
+  Future<bool> checkSessionValidity() async {
+    if (_playerId == null || _isGuest || _currentSessionId == null) {
+      return true;
+    }
+
+    if (isCloudConnected && _firestore != null) {
+      try {
+        final doc = await _firestore!.collection('players').doc(_playerId).get().timeout(const Duration(seconds: 4));
+        if (doc.exists && doc.data() != null) {
+          final cloudSessionId = doc.data()!['currentSessionId'] as String?;
+          if (cloudSessionId != null && cloudSessionId != _currentSessionId) {
+            isSessionTerminatedNotifier.value = true;
+            sessionTerminatedReasonNotifier.value =
+                'Hesabınıza başka bir cihazdan giriş yapıldı. Güvenliğiniz için bu cihazdaki oturumunuz kapatıldı.';
+            return false;
+          }
+        }
+      } catch (e) {
+        debugPrint('FirebaseService: checkSessionValidity bulut hatası: $e');
+      }
+    }
+
+    try {
+      final localAccounts = await getLocalAccounts();
+      for (var acc in localAccounts.values) {
+        if (acc['uid'] == _playerId) {
+          final localSessionId = acc['currentSessionId'] as String?;
+          if (localSessionId != null && localSessionId != _currentSessionId) {
+            isSessionTerminatedNotifier.value = true;
+            sessionTerminatedReasonNotifier.value =
+                'Hesabınıza başka bir cihazdan giriş yapıldı. Güvenliğiniz için bu cihazdaki oturumunuz kapatıldı.';
+            return false;
+          }
+          break;
+        }
+      }
+    } catch (e) {
+      debugPrint('FirebaseService: checkSessionValidity yerel hesap hatası: $e');
+    }
+
+    return true;
+  }
+
   void _listenToBanStatus(String uid) {
     _banSubscription?.cancel();
     if (!isCloudConnected || _firestore == null) return;
@@ -87,6 +151,17 @@ class FirebaseService {
           _banReason = reason;
           isBannedNotifier.value = banned;
           banReasonNotifier.value = reason;
+
+          // Oturum kontrolü (Single Active Session Concurrency)
+          final cloudSessionId = data['currentSessionId'] as String?;
+          if (cloudSessionId != null &&
+              _currentSessionId != null &&
+              cloudSessionId != _currentSessionId) {
+            debugPrint('FirebaseService: Oturum sonlandırıldı (Başka cihazdan giriş yapıldı).');
+            isSessionTerminatedNotifier.value = true;
+            sessionTerminatedReasonNotifier.value =
+                'Hesabınıza başka bir cihazdan giriş yapıldı. Güvenliğiniz için bu cihazdaki oturumunuz kapatıldı.';
+          }
         }
       }, onError: (e) {
         debugPrint('FirebaseService: Ban dinleyici hatası: $e');
@@ -119,6 +194,7 @@ class FirebaseService {
     _username = prefs.getString(_localUsernameKey);
     _isGuest = prefs.getBool(_localIsGuestKey) ?? false;
     _isLoggedInExplicit = prefs.getBool(_localIsLoggedInKey) ?? false;
+    _currentSessionId = prefs.getString(_localCurrentSessionIdKey);
 
     // 2. Firebase Bulut Bağlantısı
     if (FirebaseConfig.isConfigured && FirebaseConfig.currentPlatform != null) {
@@ -163,6 +239,19 @@ class FirebaseService {
               isBannedNotifier.value = _isBanned;
               banReasonNotifier.value = _banReason;
 
+              // Oturum kontrolü (Bulutta farklı cihaz oturumu var mı?)
+              final cloudSessionId = data['currentSessionId'] as String?;
+              if (cloudSessionId != null && _currentSessionId != null && cloudSessionId != _currentSessionId) {
+                isSessionTerminatedNotifier.value = true;
+                sessionTerminatedReasonNotifier.value =
+                    'Hesabınıza başka bir cihazdan giriş yapıldı. Güvenliğiniz için bu cihazdaki oturumunuz kapatıldı.';
+              } else if (cloudSessionId == null && _currentSessionId != null) {
+                unawaited(_firestore!.collection('players').doc(_playerId).set({'currentSessionId': _currentSessionId}, SetOptions(merge: true)));
+              } else if (_currentSessionId == null && cloudSessionId != null) {
+                _currentSessionId = cloudSessionId;
+                await prefs.setString(_localCurrentSessionIdKey, _currentSessionId!);
+              }
+
               if (isAdmin && _role != 'admin') {
                 _role = 'admin';
                 unawaited(_firestore!.collection('players').doc(_playerId).set({'role': 'admin'}, SetOptions(merge: true)));
@@ -181,6 +270,29 @@ class FirebaseService {
     } else {
       debugPrint('FirebaseService: Yapılandırma anahtarları henüz girilmedi, yerel + simüle mod devrede.');
       _initialized = false;
+    }
+
+    // Yerel modda aktif oturum geçerliliğini denetle
+    if (!isCloudConnected && _playerId != null && !_isGuest) {
+      try {
+        final localAccounts = await getLocalAccounts();
+        for (var acc in localAccounts.values) {
+          if (acc['uid'] == _playerId) {
+            final locSess = acc['currentSessionId'] as String?;
+            if (locSess != null && _currentSessionId != null && locSess != _currentSessionId) {
+              isSessionTerminatedNotifier.value = true;
+              sessionTerminatedReasonNotifier.value =
+                  'Hesabınıza başka bir cihazdan giriş yapıldı. Güvenliğiniz için bu cihazdaki oturumunuz kapatıldı.';
+            } else if (locSess != null && _currentSessionId == null) {
+              _currentSessionId = locSess;
+              await prefs.setString(_localCurrentSessionIdKey, _currentSessionId!);
+            }
+            break;
+          }
+        }
+      } catch (e) {
+        debugPrint('FirebaseService: Yerel oturum doğrulama hatası: $e');
+      }
     }
 
     // Bilinmeyen / geçersiz kullanıcıları arka planda otomatik temizle
@@ -806,6 +918,19 @@ class FirebaseService {
     if (usernameLower.isNotEmpty) {
       accounts[usernameLower] = accountData;
       await prefs.setString(_localAccountsKey, jsonEncode(accounts));
+
+      // Eğer mevcut açık oturum bu hesaba aitse ve başka bir oturum kimliği kaydedildiyse:
+      if (_playerId != null && accountData['uid'] == _playerId) {
+        final incomingSession = accountData['currentSessionId'] as String?;
+        if (incomingSession != null &&
+            _currentSessionId != null &&
+            incomingSession != _currentSessionId) {
+          debugPrint('FirebaseService: Yerel oturum uyuşmazlığı tespit edildi.');
+          isSessionTerminatedNotifier.value = true;
+          sessionTerminatedReasonNotifier.value =
+              'Hesabınıza başka bir cihazdan giriş yapıldı. Güvenliğiniz için bu cihazdaki oturumunuz kapatıldı.';
+        }
+      }
     }
   }
 
@@ -1334,12 +1459,21 @@ class FirebaseService {
       _isGuest = false;
       _isLoggedInExplicit = true;
 
+      final newSessionId = _generateSessionId();
+      _currentSessionId = newSessionId;
+      isSessionTerminatedNotifier.value = false;
+      sessionTerminatedReasonNotifier.value = null;
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_localPlayerIdKey, _playerId!);
       await prefs.setString(_localUsernameKey, _username!);
       await prefs.setString(_localCompanyNameKey, _companyName!);
+      await prefs.setString(_localCurrentSessionIdKey, newSessionId);
       await prefs.setBool(_localIsGuestKey, false);
       await prefs.setBool(_localIsLoggedInKey, true);
+
+      matchedAccount['currentSessionId'] = newSessionId;
+      await saveLocalAccount(matchedAccount);
 
       await setPlayerOnlineStatus(isOnline: true);
       return null;
@@ -1375,12 +1509,21 @@ class FirebaseService {
               _isGuest = false;
               _isLoggedInExplicit = true;
 
+              final newSessionId = _generateSessionId();
+              _currentSessionId = newSessionId;
+              isSessionTerminatedNotifier.value = false;
+              sessionTerminatedReasonNotifier.value = null;
+
               final prefs = await SharedPreferences.getInstance();
               await prefs.setString(_localPlayerIdKey, _playerId!);
               await prefs.setString(_localUsernameKey, _username!);
               await prefs.setString(_localCompanyNameKey, _companyName!);
+              await prefs.setString(_localCurrentSessionIdKey, newSessionId);
               await prefs.setBool(_localIsGuestKey, false);
               await prefs.setBool(_localIsLoggedInKey, true);
+
+              locAcc['currentSessionId'] = newSessionId;
+              await saveLocalAccount(locAcc);
 
               // Bu yerel hesabı buluta da senkronize et (arkaplanda)
               try {
@@ -1403,9 +1546,11 @@ class FirebaseService {
                   'role': _role,
                   'isBanned': false,
                   'authProvider': 'firestore_cloud',
+                  'currentSessionId': newSessionId,
                   'createdAt': FieldValue.serverTimestamp(),
                 }, SetOptions(merge: true));
                 await batch.commit().timeout(const Duration(seconds: 4));
+                _listenToBanStatus(_playerId!);
               } catch (_) {}
 
               await setPlayerOnlineStatus(isOnline: true);
@@ -1432,12 +1577,24 @@ class FirebaseService {
             _isGuest = false;
             _isLoggedInExplicit = true;
 
+            final newSessionId = _generateSessionId();
+            _currentSessionId = newSessionId;
+            isSessionTerminatedNotifier.value = false;
+            sessionTerminatedReasonNotifier.value = null;
+
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString(_localPlayerIdKey, _playerId!);
             await prefs.setString(_localUsernameKey, _username!);
             await prefs.setString(_localCompanyNameKey, _companyName!);
+            await prefs.setString(_localCurrentSessionIdKey, newSessionId);
             await prefs.setBool(_localIsGuestKey, false);
             await prefs.setBool(_localIsLoggedInKey, true);
+
+            unawaited(_firestore!.collection('players').doc(uid).set({
+              'currentSessionId': newSessionId,
+              'lastLoginAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true)));
+            _listenToBanStatus(uid);
 
             try {
               final pDoc = await _firestore!.collection('players').doc(uid).get().timeout(const Duration(seconds: 4));
@@ -1479,12 +1636,23 @@ class FirebaseService {
       _username = cleanIdentifier.contains('@') ? cleanIdentifier.split('@').first : cleanIdentifier;
       _companyName = '$_username Holding';
 
+      final newSessionId = _generateSessionId();
+      _currentSessionId = newSessionId;
+      isSessionTerminatedNotifier.value = false;
+      sessionTerminatedReasonNotifier.value = null;
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_localPlayerIdKey, _playerId!);
       await prefs.setString(_localUsernameKey, _username!);
       await prefs.setString(_localCompanyNameKey, _companyName!);
+      await prefs.setString(_localCurrentSessionIdKey, newSessionId);
       await prefs.setBool(_localIsGuestKey, false);
       await prefs.setBool(_localIsLoggedInKey, true);
+
+      unawaited(_firestore!.collection('players').doc(user.uid).set({
+        'currentSessionId': newSessionId,
+        'lastLoginAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true)));
 
       // Profil bilgilerini Firestore'dan çek ve varsa zenginleştir
       try {
@@ -1524,6 +1692,7 @@ class FirebaseService {
             'companyName': _companyName,
             'role': _role,
             'isBanned': _isBanned,
+            'currentSessionId': newSessionId,
             'createdAt': DateTime.now().toIso8601String(),
           });
         }
@@ -1546,11 +1715,20 @@ class FirebaseService {
           _role = locAcc['role'] as String? ?? (isAdmin ? 'admin' : 'user');
           _isGuest = false;
 
+          final newSessionId = _generateSessionId();
+          _currentSessionId = newSessionId;
+          isSessionTerminatedNotifier.value = false;
+          sessionTerminatedReasonNotifier.value = null;
+
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString(_localPlayerIdKey, _playerId!);
           await prefs.setString(_localUsernameKey, _username!);
           await prefs.setString(_localCompanyNameKey, _companyName!);
+          await prefs.setString(_localCurrentSessionIdKey, newSessionId);
           await prefs.setBool(_localIsGuestKey, false);
+
+          locAcc['currentSessionId'] = newSessionId;
+          await saveLocalAccount(locAcc);
           return null;
         } else {
           return 'Şifreniz hatalı. Lütfen kontrol edip tekrar deneyin.';
@@ -1611,6 +1789,9 @@ class FirebaseService {
     _role = 'user';
     isBannedNotifier.value = false;
     banReasonNotifier.value = null;
+    _currentSessionId = null;
+    isSessionTerminatedNotifier.value = false;
+    sessionTerminatedReasonNotifier.value = null;
 
     try {
       await _auth?.signOut();
@@ -1628,6 +1809,7 @@ class FirebaseService {
     await prefs.remove(_localUsernameKey);
     await prefs.remove(_localCompanyNameKey);
     await prefs.remove(_localPlayerIdKey);
+    await prefs.remove(_localCurrentSessionIdKey);
   }
 
   // ==========================================

@@ -23,6 +23,7 @@ import 'package:piyasa/views/auth_screen.dart';
 import 'package:piyasa/views/ledger_dialog.dart';
 import 'package:piyasa/views/admin_dashboard_view.dart';
 import 'package:piyasa/views/banned_dialog.dart';
+import 'package:piyasa/views/session_terminated_dialog.dart';
 import 'package:piyasa/views/game_loading_screen.dart';
 import 'package:piyasa/views/leaderboard_view.dart';
 import 'package:piyasa/services/leaderboard_service.dart';
@@ -2919,6 +2920,80 @@ void main() {
 
     sellerController.dispose();
     buyerController.dispose();
+  });
+
+  testWidgets('Single Active Session Concurrency: Remote device login invalidates active session, renders SessionTerminatedDialog, and signs out', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 850);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final fb = FirebaseService();
+    await fb.signOut();
+
+    // 1. Register and log in on Device A
+    final regErr = await fb.registerWithEmail(
+      email: 'deviceA@piyasa.com',
+      password: 'password123',
+      username: 'device_user',
+      companyName: 'Device A Holding',
+    );
+    expect(regErr, isNull);
+
+    final loginErr = await fb.loginWithEmailOrUsername(
+      identifier: 'device_user',
+      password: 'password123',
+    );
+    expect(loginErr, isNull);
+    expect(fb.isLoggedIn, isTrue);
+    expect(fb.currentSessionId, isNotNull);
+    final originalSessionId = fb.currentSessionId!;
+
+    final controller = GameController(autoLoad: false);
+    controller.resetToNewGame();
+
+    await tester.pumpWidget(
+      PiyasaApp(
+        controller: controller,
+        skipAuthForTesting: true,
+        skipLoadingForTesting: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify HomeScreen is rendered and session is healthy
+    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.byType(SessionTerminatedDialog), findsNothing);
+    expect(fb.isSessionTerminatedNotifier.value, isFalse);
+
+    // 2. Simulate Device B logging into the same account with a new session ID
+    final remoteSessionId = 'sess_remote_device_b_999';
+    final userAccounts = await fb.getLocalAccounts();
+    final userAcc = Map<String, dynamic>.from(userAccounts['device_user']!);
+    userAcc['currentSessionId'] = remoteSessionId;
+    await fb.saveLocalAccount(userAcc);
+
+    // Verify session termination notifier triggers
+    expect(fb.isSessionTerminatedNotifier.value, isTrue);
+
+    // Pump to let HomeScreen's listener present SessionTerminatedDialog
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SessionTerminatedDialog), findsOneWidget);
+    expect(find.text('OTURUMUNUZ KAPATILDI'), findsOneWidget);
+    expect(find.text('Farklı Cihazdan Giriş Yapıldı'), findsOneWidget);
+    expect(find.text('Giriş Ekranına Dön'), findsOneWidget);
+
+    // 3. Tap "Giriş Ekranına Dön" button
+    await tester.tap(find.text('Giriş Ekranına Dön'));
+    await tester.pumpAndSettle();
+
+    // Verify user is signed out and redirected to AuthScreen
+    expect(fb.isLoggedIn, isFalse);
+    expect(fb.currentSessionId, isNull);
+    expect(find.byType(SessionTerminatedDialog), findsNothing);
+    expect(find.byType(AuthScreen), findsOneWidget);
+
+    controller.dispose();
   });
 }
 
