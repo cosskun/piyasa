@@ -42,6 +42,9 @@ class FirebaseService {
   static const String _localIsLoggedInKey = 'piyasa_is_logged_in';
   static const String _localOfflineSalesKey = 'piyasa_unclaimed_market_sales';
   static const String _localAccountsKey = 'piyasa_registered_accounts_v2';
+  static const String _localMarketOffersKey = 'piyasa_local_market_offers_pool_v1';
+  static const String _localMarketListingsKey = 'piyasa_local_market_listings_pool_v1';
+  StreamController<List<MarketOffer>>? _localOffersController;
   bool _isLoggedInExplicit = false;
 
   bool get isCloudConnected => _initialized && FirebaseConfig.isConfigured && _firestore != null;
@@ -267,15 +270,32 @@ class FirebaseService {
   // CANLI ORTAK OYUNCU PAZARI (MARKET LISTINGS)
   // ==========================================
   /// Oyuncu offline olsa dahi tüm dünyadaki oyuncuların görebileceği ortak pazar ilanı oluşturur
+  // ==========================================
+  // CANLI ORTAK OYUNCU PAZARI (MARKET LISTINGS)
+  // ==========================================
+  /// Oyuncu offline olsa dahi tüm dünyadaki oyuncuların görebileceği ortak pazar ilanı oluşturur
   Future<void> publishListingToMarket(MarketListing listing) async {
+    // 1. Yerel hesap havuzuna kaydet (yerel testlerde diğer hesapların görebilmesi için)
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_localMarketListingsKey);
+    List<dynamic> list = [];
+    if (raw != null) {
+      try {
+        list = jsonDecode(raw) as List<dynamic>;
+      } catch (_) {}
+    }
+    list.removeWhere((e) => (e is Map) && e['id'] == listing.id);
+    final data = listing.toJson();
+    data['sellerId'] = playerId;
+    data['sellerName'] = companyName;
+    data['isCompleted'] = false;
+    list.add(data);
+    await prefs.setString(_localMarketListingsKey, jsonEncode(list));
+
     if (!isCloudConnected) return;
 
     try {
       final docRef = _firestore!.collection('market_listings').doc(listing.id);
-      final data = listing.toJson();
-      data['sellerId'] = playerId;
-      data['sellerName'] = companyName;
-      data['isCompleted'] = false;
       data['serverCreatedAt'] = FieldValue.serverTimestamp();
       await docRef.set(data);
     } catch (e) {
@@ -286,7 +306,26 @@ class FirebaseService {
   /// Ortak pazardaki canlı ilanları anlık akış (Stream) olarak dinler
   Stream<List<MarketListing>> streamPublicMarketListings() {
     if (!isCloudConnected) {
-      return const Stream.empty();
+      // Yerel modda yerel listeyi akış olarak sun
+      return (() async* {
+        final prefs = await SharedPreferences.getInstance();
+        final raw = prefs.getString(_localMarketListingsKey);
+        if (raw != null) {
+          try {
+            final list = jsonDecode(raw) as List<dynamic>;
+            final listings = list.whereType<Map>().map((d) {
+              final map = Map<String, dynamic>.from(d);
+              map['isPlayerListing'] = (map['sellerId'] == playerId);
+              return MarketListing.fromJson(map);
+            }).where((l) => !l.isCompleted).toList();
+            yield listings;
+          } catch (_) {
+            yield <MarketListing>[];
+          }
+        } else {
+          yield <MarketListing>[];
+        }
+      })();
     }
 
     return _firestore!
@@ -308,7 +347,46 @@ class FirebaseService {
     required MarketListing listing,
     required int quantityToBuy,
   }) async {
-    if (!isCloudConnected) return false;
+    // 1. Yerel havuz güncellemesi
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_localMarketListingsKey);
+    if (raw != null) {
+      try {
+        final list = jsonDecode(raw) as List<dynamic>;
+        for (var item in list) {
+          if (item is Map && item['id'] == listing.id) {
+            final rem = (item['remainingQuantity'] as num).toInt() - quantityToBuy;
+            item['remainingQuantity'] = max(0, rem);
+            item['isCompleted'] = rem <= 0;
+            item['totalEarned'] = ((item['totalEarned'] as num?)?.toDouble() ?? 0.0) + (quantityToBuy * listing.pricePerUnit);
+          }
+        }
+        await prefs.setString(_localMarketListingsKey, jsonEncode(list));
+      } catch (_) {}
+    }
+
+    if (!isCloudConnected) {
+      final revenue = quantityToBuy * listing.pricePerUnit;
+      final saleData = {
+        'listingId': listing.id,
+        'buyerName': companyName,
+        'itemId': listing.itemId,
+        'quantity': quantityToBuy,
+        'pricePerUnit': listing.pricePerUnit,
+        'totalRevenue': revenue,
+        'timestamp': DateTime.now().toIso8601String(),
+        'isClaimed': false,
+      };
+      if (listing.sellerId != null && listing.sellerId!.isNotEmpty) {
+        final key = '${_localOfflineSalesKey}_${listing.sellerId}';
+        final localSales = prefs.getStringList(key) ?? [];
+        localSales.add(jsonEncode(saleData));
+        await prefs.setStringList(key, localSales);
+      } else {
+        await recordMockOfflineSale(saleData);
+      }
+      return true;
+    }
 
     try {
       final docRef = _firestore!.collection('market_listings').doc(listing.id);
@@ -368,7 +446,9 @@ class FirebaseService {
     if (!isCloudConnected) {
       // Yerel mod simülasyonu
       final prefs = await SharedPreferences.getInstance();
-      final localSales = prefs.getStringList(_localOfflineSalesKey) ?? [];
+      final key = '${_localOfflineSalesKey}_$playerId';
+      final localSales = prefs.getStringList(key) ?? prefs.getStringList(_localOfflineSalesKey) ?? [];
+      await prefs.remove(key);
       await prefs.remove(_localOfflineSalesKey);
       return localSales.map((s) => jsonDecode(s) as Map<String, dynamic>).toList();
     }
@@ -405,14 +485,286 @@ class FirebaseService {
     await prefs.setStringList(_localOfflineSalesKey, localSales);
   }
 
-  /// Pazar ilanını buluttan siler
+  /// Pazar ilanını buluttan ve yerel havuzdan siler
   Future<void> cancelListingInMarket(String listingId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_localMarketListingsKey);
+    if (raw != null) {
+      try {
+        final list = jsonDecode(raw) as List<dynamic>;
+        list.removeWhere((e) => (e is Map) && e['id'] == listingId);
+        await prefs.setString(_localMarketListingsKey, jsonEncode(list));
+      } catch (_) {}
+    }
+
     if (!isCloudConnected) return;
 
     try {
       await _firestore!.collection('market_listings').doc(listingId).delete();
     } catch (e) {
       debugPrint('FirebaseService: İlan pazardan kaldırılamadı: $e');
+    }
+  }
+
+  // ==========================================
+  // OYUNCULAR ARASI GERÇEK TEKLİFLER (PAZARLIK SİSTEMİ)
+  // ==========================================
+
+  StreamController<List<MarketOffer>> get _offersBroadcaster {
+    _localOffersController ??= StreamController<List<MarketOffer>>.broadcast();
+    return _localOffersController!;
+  }
+
+  Future<List<MarketOffer>> getLocalOffers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_localMarketOffersKey);
+    if (raw == null) return [];
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .whereType<Map>()
+          .map((e) => MarketOffer.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  void _broadcastLocalOffers(List<dynamic> list) {
+    if (_localOffersController != null && !_localOffersController!.isClosed) {
+      final loaded = list
+          .whereType<Map>()
+          .map((e) => MarketOffer.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      _localOffersController!.add(loaded);
+    }
+  }
+
+  Stream<List<MarketOffer>> _streamLocalOffersFor(String pid, bool isIncoming) async* {
+    final current = await getLocalOffers();
+    yield current.where((o) => isIncoming ? (o.sellerId == pid) : (o.buyerId == pid)).map((o) {
+      o.direction = isIncoming ? OfferDirection.incoming : OfferDirection.outgoing;
+      return o;
+    }).toList();
+
+    yield* _offersBroadcaster.stream.map((list) {
+      return list.where((o) => isIncoming ? (o.sellerId == pid) : (o.buyerId == pid)).map((o) {
+        o.direction = isIncoming ? OfferDirection.incoming : OfferDirection.outgoing;
+        return o;
+      }).toList();
+    });
+  }
+
+  /// Bir oyuncunun ilanına pazarlık teklifi iletir (Hem yerel hem bulut)
+  Future<bool> submitMarketOffer(MarketOffer offer) async {
+    // 1. Yerel havuza ekle
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_localMarketOffersKey);
+    List<dynamic> list = [];
+    if (raw != null) {
+      try {
+        list = jsonDecode(raw) as List<dynamic>;
+      } catch (_) {}
+    }
+    list.removeWhere((e) => (e is Map) && e['id'] == offer.id);
+    list.add(offer.toJson());
+    await prefs.setString(_localMarketOffersKey, jsonEncode(list));
+    _broadcastLocalOffers(list);
+
+    // 2. Buluta gönder
+    if (isCloudConnected) {
+      try {
+        final docRef = _firestore!.collection('market_offers').doc(offer.id);
+        final data = offer.toJson();
+        data['serverCreatedAt'] = FieldValue.serverTimestamp();
+        data['updatedAt'] = FieldValue.serverTimestamp();
+        await docRef.set(data);
+        return true;
+      } catch (e) {
+        debugPrint('FirebaseService: Teklif buluta iletilemedi: $e');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Oyuncunun kendi ilanlarına diğer oyuncuların verdiği teklifleri dinler (Gelen Teklifler)
+  Stream<List<MarketOffer>> streamIncomingOffers({String? targetPlayerId}) {
+    final pid = targetPlayerId ?? playerId;
+    if (!isCloudConnected) {
+      return _streamLocalOffersFor(pid, true);
+    }
+
+    return _firestore!
+        .collection('market_offers')
+        .where('sellerId', isEqualTo: pid)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        data['direction'] = 'incoming';
+        return MarketOffer.fromJson(data);
+      }).toList();
+    });
+  }
+
+  /// Oyuncunun diğer satıcılara ilettiği teklifleri dinler (Verilen Teklifler)
+  Stream<List<MarketOffer>> streamOutgoingOffers({String? targetPlayerId}) {
+    final pid = targetPlayerId ?? playerId;
+    if (!isCloudConnected) {
+      return _streamLocalOffersFor(pid, false);
+    }
+
+    return _firestore!
+        .collection('market_offers')
+        .where('buyerId', isEqualTo: pid)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        data['direction'] = 'outgoing';
+        return MarketOffer.fromJson(data);
+      }).toList();
+    });
+  }
+
+  /// Satıcının teklifi onaylama veya reddetme durumunu günceller
+  Future<bool> updateMarketOfferStatus({
+    required String offerId,
+    required OfferStatus status,
+  }) async {
+    // 1. Yerel güncelleme
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_localMarketOffersKey);
+    if (raw != null) {
+      try {
+        final list = jsonDecode(raw) as List<dynamic>;
+        for (var item in list) {
+          if (item is Map && item['id'] == offerId) {
+            item['status'] = status.name;
+          }
+        }
+        await prefs.setString(_localMarketOffersKey, jsonEncode(list));
+        _broadcastLocalOffers(list);
+      } catch (_) {}
+    }
+
+    // 2. Bulut güncelleme
+    if (isCloudConnected) {
+      try {
+        await _firestore!.collection('market_offers').doc(offerId).update({
+          'status': status.name,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return true;
+      } catch (e) {
+        debugPrint('FirebaseService: Teklif durumu güncellenemedi: $e');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Alıcı onaylanan teklifi satın aldığında satış işlemini kapatır ve satıcıya parayı aktarır
+  Future<bool> executeOfferPurchase({
+    required MarketOffer offer,
+    required String buyerCompanyName,
+  }) async {
+    // 1. Yerel durumu güncelle
+    await updateMarketOfferStatus(offerId: offer.id, status: OfferStatus.completed);
+
+    // Satıcı için satış kaydını oluştur
+    final sellerId = offer.sellerId;
+    final saleData = {
+      'listingId': offer.listingId,
+      'offerId': offer.id,
+      'buyerName': buyerCompanyName,
+      'itemId': offer.itemId,
+      'quantity': offer.quantity,
+      'pricePerUnit': offer.offeredPricePerUnit,
+      'totalRevenue': offer.totalOfferedPrice,
+      'timestamp': DateTime.now().toIso8601String(),
+      'isClaimed': false,
+    };
+
+    if (sellerId.isNotEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      final key = '${_localOfflineSalesKey}_$sellerId';
+      final localSales = prefs.getStringList(key) ?? [];
+      localSales.add(jsonEncode(saleData));
+      await prefs.setStringList(key, localSales);
+    } else {
+      await recordMockOfflineSale(saleData);
+    }
+
+    if (!isCloudConnected) return true;
+
+    // 2. Firestore Bulut İşlemi (Atomik Transaction)
+    try {
+      final offerRef = _firestore!.collection('market_offers').doc(offer.id);
+      final listingRef = _firestore!.collection('market_listings').doc(offer.listingId);
+
+      return await _firestore!.runTransaction<bool>((transaction) async {
+        final offerSnap = await transaction.get(offerRef);
+        if (!offerSnap.exists) return false;
+
+        final listingSnap = await transaction.get(listingRef);
+        final revenue = offer.totalOfferedPrice;
+
+        if (listingSnap.exists) {
+          final currentRemaining = (listingSnap.get('remainingQuantity') as num).toInt();
+          final newRemaining = max(0, currentRemaining - offer.quantity);
+          final isCompleted = newRemaining <= 0;
+
+          transaction.update(listingRef, {
+            'remainingQuantity': newRemaining,
+            'isCompleted': isCompleted,
+            'totalEarned': FieldValue.increment(revenue),
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+        }
+
+        transaction.update(offerRef, {
+          'status': OfferStatus.completed.name,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        // Satıcıya çevrimdışı satış kaydı ve doğrudan bakiye aktarımı
+        final targetSellerId = offer.sellerId.isNotEmpty
+            ? offer.sellerId
+            : (listingSnap.exists ? listingSnap.get('sellerId') as String? : null);
+
+        if (targetSellerId != null && targetSellerId != playerId) {
+          final saleRef = _firestore!
+              .collection('players')
+              .doc(targetSellerId)
+              .collection('offline_sales')
+              .doc();
+
+          transaction.set(saleRef, {
+            'listingId': offer.listingId,
+            'offerId': offer.id,
+            'buyerName': buyerCompanyName,
+            'itemId': offer.itemId,
+            'quantity': offer.quantity,
+            'pricePerUnit': offer.offeredPricePerUnit,
+            'totalRevenue': revenue,
+            'timestamp': FieldValue.serverTimestamp(),
+            'isClaimed': false,
+          });
+
+          transaction.update(_firestore!.collection('players').doc(targetSellerId), {
+            'cash': FieldValue.increment(revenue),
+          });
+        }
+
+        return true;
+      });
+    } catch (e) {
+      debugPrint('FirebaseService: Teklif satın alma başarısız: $e');
+      return false;
     }
   }
 

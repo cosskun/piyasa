@@ -7,6 +7,7 @@ import '../models/market_item.dart';
 import '../models/market_listing.dart';
 import '../models/market_offer.dart';
 import '../models/limit_order.dart';
+import '../services/firebase_service.dart';
 
 enum MarketFilter {
   all, // Tüm Borsa
@@ -1496,7 +1497,7 @@ class MarketTabState extends State<MarketTab> {
                                         ],
                                       ),
                                     ),
-                                    if (!isOfficial) ...[
+                                    if (!isOfficial && !(listing.isPlayerListing || (listing.sellerId != null && listing.sellerId == FirebaseService().playerId))) ...[
                                       const SizedBox(width: 6),
                                       ElevatedButton(
                                         onPressed: () => _showMakeOfferDialog(context, listing, isDark),
@@ -2084,7 +2085,7 @@ class MarketTabState extends State<MarketTab> {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
                                   content: Text(
-                                    'Teklif onaylandı! +${currencyFmt.format(offer.totalOfferedPrice)} ₺ kasaya eklendi.',
+                                    'Teklif onaylandı! Alıcıya (${offer.buyerName}) onay bildirimi iletildi.',
                                   ),
                                   backgroundColor: Colors.green[800],
                                 ),
@@ -2092,7 +2093,7 @@ class MarketTabState extends State<MarketTab> {
                             }
                           },
                           icon: const Icon(Icons.check, size: 14),
-                          label: const Text('Onayla & Sat'),
+                          label: const Text('Teklifi Kabul Et'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: isDark ? Colors.greenAccent[700] : const Color(0xFF059669),
                             foregroundColor: Colors.white,
@@ -2149,7 +2150,11 @@ class MarketTabState extends State<MarketTab> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      isAccepted ? '✔️ Satış Onaylandı & Tamamlandı' : '❌ Reddedildi',
+                      offer.status == OfferStatus.completed
+                          ? '🤝 Satış Başarıyla Tamamlandı (+${currencyFmt.format(offer.totalOfferedPrice)} ₺)'
+                          : (isAccepted
+                              ? '✔️ Teklifi Onayladınız • Alıcının Satın Alması Bekleniyor'
+                              : '❌ Reddedildi'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 11,
@@ -2368,7 +2373,7 @@ class MarketTabState extends State<MarketTab> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          'Satıcı teklifinizi değerlendiriyor...',
+                          'Satıcı (${offer.sellerName}) teklifinizi değerlendiriyor... Onaylandığında bildirim alacaksınız.',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w600,
@@ -2791,7 +2796,7 @@ class MarketTabState extends State<MarketTab> {
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
                           content: Text(
-                            'Teklifiniz "${listing.sellerName}" satıcısına iletildi. Birkaç saniye içinde yanıt gelecektir.',
+                            'Teklifiniz "${listing.sellerName}" satıcısına iletildi. Satıcı teklifinizi değerlendirdiğinde bildirim alacaksınız.',
                           ),
                           backgroundColor: Colors.blueGrey[800],
                         ),

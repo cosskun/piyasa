@@ -2800,6 +2800,126 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('Real Player-to-Player Offers: Offer arrives to real seller account, requires manual approval, prevents auto-acceptance timer, and buyer completes purchase', (tester) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+
+    final fb = FirebaseService();
+
+    // 1. Satıcı 'rumeysa' olarak kayıt ol ve giriş yap
+    await fb.registerWithEmail(
+      email: 'rumeysa@test.com',
+      password: 'password123',
+      username: 'rumeysa',
+      companyName: 'Rumeysa Tarım',
+    );
+    await fb.loginWithEmailOrUsername(
+      identifier: 'rumeysa',
+      password: 'password123',
+    );
+
+    final sellerController = GameController(autoLoad: false);
+    sellerController.warehouse['wheat'] = 100;
+
+    // Satıcı 100 buğdayı 5.00 TL'den pazara koyar
+    sellerController.createListing('wheat', 100, 5.00);
+    final sellerListing = sellerController.activeListings.firstWhere((l) => l.itemId == 'wheat');
+    expect(sellerListing.remainingQuantity, 100);
+    expect(sellerListing.sellerId, fb.playerId);
+
+    // 2. Alıcı 'cosskun' olarak kayıt ol ve giriş yap
+    await fb.registerWithEmail(
+      email: 'cosskun@test.com',
+      password: 'password123',
+      username: 'cosskun',
+      companyName: 'Cosskun Holding',
+    );
+    await fb.loginWithEmailOrUsername(
+      identifier: 'cosskun',
+      password: 'password123',
+    );
+
+    final buyerController = GameController(autoLoad: false);
+    buyerController.cash = 10000.0;
+
+    // Alıcı, rumeysa'nın ilanına 40 adet buğday için 4.00 TL teklif verir (Toplam 160 TL)
+    final offerListing = MarketListing(
+      id: sellerListing.id,
+      itemId: 'wheat',
+      initialQuantity: 100,
+      remainingQuantity: 100,
+      pricePerUnit: 5.00,
+      listedAt: DateTime.now(),
+      sellerName: 'Rumeysa Tarım',
+      sellerId: sellerListing.sellerId,
+      isPlayerListing: false,
+    );
+
+    final offerErr = buyerController.makeOfferOnListing(
+      offerListing,
+      40,
+      4.00,
+      message: '40 adet için 4 TL olur mu?',
+    );
+    expect(offerErr, isNull);
+
+    // Alıcıda teklif oluşmalı ve durumu pending olmalı
+    expect(buyerController.offers.length, 1);
+    final outgoingOffer = buyerController.offers.first;
+    expect(outgoingOffer.direction, OfferDirection.outgoing);
+    expect(outgoingOffer.status, OfferStatus.pending);
+    expect(outgoingOffer.buyerName, 'Cosskun Holding');
+    expect(outgoingOffer.sellerName, 'Rumeysa Tarım');
+
+    // 3. Simülasyon zamanı ilerletilse bile teklif ASLA otomatik onaylanmamalı!
+    for (int i = 0; i < 10; i++) {
+      buyerController.tickForTesting(1.0);
+    }
+    expect(outgoingOffer.status, OfferStatus.pending); // Hâlâ pending!
+
+    // 4. Teklif satıcı rumeysa'nın havuzuna düşmeli
+    final incomingOffers = await fb.getLocalOffers();
+    final sellerOffer = incomingOffers.firstWhere((o) => o.id == outgoingOffer.id);
+    expect(sellerOffer.sellerId, sellerListing.sellerId);
+    expect(sellerOffer.status, OfferStatus.pending);
+
+    // Satıcı rumeysa teklifi manuel onaylar
+    final acceptErr = sellerController.acceptIncomingOffer(sellerOffer);
+    expect(acceptErr, isNull);
+    expect(sellerOffer.status, OfferStatus.accepted);
+
+    // 5. Alıcı cosskun onay bildirimini alır ve satın almayı tamamlar
+    outgoingOffer.status = OfferStatus.accepted;
+    final buyErr = buyerController.buyAcceptedOffer(outgoingOffer);
+    expect(buyErr, isNull);
+
+    // Alıcının kasasından para düşmeli, buğday depoya eklenmeli
+    expect(buyerController.cash, 10000.0 - 160.0);
+    expect(buyerController.warehouse['wheat'], 40);
+    expect(outgoingOffer.status, OfferStatus.completed);
+
+    // 6. Kendi ilanına teklif verememe kuralı
+    final ownOfferErr = buyerController.makeOfferOnListing(
+      MarketListing(
+        id: 'own_list_1',
+        itemId: 'wheat',
+        initialQuantity: 10,
+        remainingQuantity: 10,
+        pricePerUnit: 5.0,
+        listedAt: DateTime.now(),
+        sellerId: fb.playerId,
+        sellerName: fb.companyName,
+        isPlayerListing: true,
+      ),
+      5,
+      4.0,
+    );
+    expect(ownOfferErr, contains('Kendi ilanınıza teklif veremezsiniz'));
+
+    sellerController.dispose();
+    buyerController.dispose();
+  });
 }
 
 

@@ -108,6 +108,10 @@ class GameController extends ChangeNotifier {
   // Sayaçlar ve Simülasyon
   Timer? _gameLoopTimer;
   StreamSubscription<List<MarketListing>>? _cloudMarketSub;
+  StreamSubscription<List<MarketOffer>>? _incomingOffersSub;
+  StreamSubscription<List<MarketOffer>>? _outgoingOffersSub;
+  final Set<String> _notifiedIncomingOfferIds = {};
+  final Set<String> _notifiedDecisionOfferIds = {};
   final Random _random = Random();
   double _marketTickTimer = 0.0;
   double _bankTickTimer = 0.0;
@@ -128,6 +132,7 @@ class GameController extends ChangeNotifier {
     _initializeMarket();
     _initializeCommunityListings();
     _startGameLoop();
+    _setupCloudMarketSync();
     if (autoLoad) {
       loadFromStorage();
     }
@@ -373,6 +378,7 @@ class GameController extends ChangeNotifier {
               off.status == OfferStatus.pending) {
             if (listing.remainingQuantity < off.quantity) {
               off.status = OfferStatus.expired;
+              FirebaseService().updateMarketOfferStatus(offerId: off.id, status: OfferStatus.expired);
               latestNotificationToast =
                   '🏷️ ${listing.item.name} ilanınızdaki ürünler normal fiyattan (${listing.pricePerUnit.toStringAsFixed(2)} ₺) satıldı! ${off.buyerName} teklifi otomatik kapandı.';
             }
@@ -385,98 +391,8 @@ class GameController extends ChangeNotifier {
       }
     }
 
-    // 4. Verilen Tekliflerin Değerlendirilmesi (Simüle Satıcılar Teklifi İnceler)
-    for (var offer in offers) {
-      if (offer.direction == OfferDirection.outgoing && offer.status == OfferStatus.pending) {
-        offer.decisionTimer += dt;
-        if (offer.decisionTimer >= 3.5) { // 3.5 saniye sonra karar
-          offer.decisionTimer = 0.0;
-          double ratio = offer.offeredPricePerUnit / offer.originalPricePerUnit;
-          // %85 ve üstü ise veya piyasaya yakınsa kabul şansı yüksek
-          bool accepted = ratio >= 0.85 || (_random.nextDouble() < (ratio * ratio * 0.95));
-          if (accepted) {
-            offer.status = OfferStatus.accepted;
-            latestNotificationToast =
-                '🔔 TEKLİFİNİZ ONAYLANDI! "${offer.sellerName}", ${offer.quantity} adet ${offer.item.name} teklifinizi (${offer.offeredPricePerUnit.toStringAsFixed(2)} ₺) kabul etti! Teklifler sekmesinden satın alabilirsiniz.';
-            NotificationService().showOfferDecisionNotification(
-              sellerName: offer.sellerName,
-              itemName: offer.item.name,
-              quantity: offer.quantity,
-              price: offer.offeredPricePerUnit,
-              accepted: true,
-            );
-          } else {
-            offer.status = OfferStatus.rejected;
-            latestNotificationToast =
-                '❌ TEKLİF REDDEDİLDİ: "${offer.sellerName}", ${offer.quantity} adet ${offer.item.name} için verdiğiniz teklifi çok düşük buldu.';
-            NotificationService().showOfferDecisionNotification(
-              sellerName: offer.sellerName,
-              itemName: offer.item.name,
-              quantity: offer.quantity,
-              price: offer.offeredPricePerUnit,
-              accepted: false,
-            );
-          }
-          notifyListeners();
-        }
-      }
-    }
-
-    // 5. Oyuncunun İlanlarına Gelen Yeni Teklifler (Simüle Alıcılar Teklif Verir)
-    if (activeListings.isNotEmpty) {
-      _incomingOfferTimer += dt;
-      if (_incomingOfferTimer >= 22.0) {
-        _incomingOfferTimer = 0.0;
-        final candidateListings = activeListings.where((l) => l.remainingQuantity > 0).toList();
-        if (candidateListings.isNotEmpty) {
-          final target = candidateListings[_random.nextInt(candidateListings.length)];
-          bool hasPending = offers.any((o) => o.listingId == target.id && o.status == OfferStatus.pending);
-          if (!hasPending) {
-            final buyerPool = [
-              'Ahmet Usta Fırıncılık',
-              'Güven Toptancılık',
-              'Marmara Gurme Restoran',
-              'Yıldız Otel & Gıda',
-              'Sultanbeyli Çiftliği',
-              'Akdeniz Dağıtım',
-              'Boğaziçi Marketler',
-            ];
-            final buyer = buyerPool[_random.nextInt(buyerPool.length)];
-            int qty = min(target.remainingQuantity, max(5, (_random.nextInt(3) + 1) * 5));
-            double ratio = 0.88 + _random.nextDouble() * 0.14; // %88 - %102 arası
-            double offeredUnit = double.parse((target.pricePerUnit * ratio).toStringAsFixed(2));
-
-            final incOffer = MarketOffer(
-              id: 'inc_${DateTime.now().millisecondsSinceEpoch}_${_random.nextInt(999)}',
-              listingId: target.id,
-              itemId: target.itemId,
-              buyerName: buyer,
-              sellerName: 'Siz',
-              quantity: qty,
-              originalPricePerUnit: target.pricePerUnit,
-              offeredPricePerUnit: offeredUnit,
-              direction: OfferDirection.incoming,
-              status: OfferStatus.pending,
-              createdAt: DateTime.now(),
-              message: '$qty adet için birim başı $offeredUnit ₺ teklif ediyorum, uygun mudur?',
-            );
-            offers.insert(0, incOffer);
-            latestNotificationToast =
-                '📩 YENİ TEKLİF GELDİ! $buyer, ${target.item.name} ilanınıza birim başı $offeredUnit ₺ teklif etti. Teklifler sekmesinden inceleyin.';
-            NotificationService().showIncomingOfferNotification(
-              buyerName: buyer,
-              itemName: target.item.name,
-              quantity: qty,
-              price: offeredUnit,
-            );
-            notifyListeners();
-          }
-        }
-      }
-    }
-
-    // Bulut pazar senkronizasyonunun canlı kalmasını sağla
-    if (_cloudMarketSub == null && FirebaseService().isCloudConnected) {
+    // Bulut pazar ve teklif senkronizasyonunun canlı kalmasını sağla
+    if ((_cloudMarketSub == null || _incomingOffersSub == null) && FirebaseService().isCloudConnected) {
       _setupCloudMarketSync();
     }
 
@@ -1056,6 +972,7 @@ class GameController extends ChangeNotifier {
   }
 
   // === DİĞER OYUNCUNUN İLANINA TEKLİF VERME (PAZARLIK) ===
+  // === DİĞER OYUNCUNUN İLANINA TEKLİF VERME (PAZARLIK) ===
   String? makeOfferOnListing(
     MarketListing listing,
     int qty,
@@ -1071,12 +988,22 @@ class GameController extends ChangeNotifier {
     if (cash < totalOffer) {
       return 'Bu teklifi satın alabilmek için kasanızda en az ${totalOffer.toStringAsFixed(0)} ₺ olmalıdır.';
     }
+    final myId = FirebaseService().playerId;
+    if (listing.isPlayerListing || (listing.sellerId != null && listing.sellerId == myId)) {
+      return 'Kendi ilanınıza teklif veremezsiniz.';
+    }
+    if (offers.any((o) => o.listingId == listing.id && o.direction == OfferDirection.outgoing && o.status == OfferStatus.pending)) {
+      return 'Bu ilana zaten bekleyen bir teklifiniz bulunmaktadır.';
+    }
 
+    final buyerName = FirebaseService().companyName.isNotEmpty ? FirebaseService().companyName : 'Siz';
     final offer = MarketOffer(
       id: 'off_${DateTime.now().millisecondsSinceEpoch}_${_random.nextInt(999)}',
       listingId: listing.id,
       itemId: listing.itemId,
-      buyerName: 'Siz',
+      buyerId: myId,
+      buyerName: buyerName,
+      sellerId: listing.sellerId ?? '',
       sellerName: listing.sellerName,
       quantity: qty,
       originalPricePerUnit: listing.pricePerUnit,
@@ -1088,6 +1015,23 @@ class GameController extends ChangeNotifier {
     );
 
     offers.insert(0, offer);
+    FirebaseService().submitMarketOffer(offer);
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'OFFER_MADE',
+      title: 'Pazarlık Teklifi Verildi: ${listing.item.name}',
+      description: '${listing.sellerName} satıcısına $qty adet ${listing.item.name} için birim başı ${offeredPricePerUnit.toStringAsFixed(2)} ₺ teklif gönderildi.',
+      cashAfter: cash,
+      details: {
+        'offerId': offer.id,
+        'listingId': listing.id,
+        'quantity': qty,
+        'offeredPrice': offeredPricePerUnit,
+        'totalOffer': totalOffer,
+      },
+    );
+
     notifyListeners();
     saveState();
     return null;
@@ -1110,11 +1054,17 @@ class GameController extends ChangeNotifier {
     // İlgili ilanın stokunu da düş
     final target = communityListings.where((l) => l.id == offer.listingId).firstOrNull;
     if (target != null) {
-      target.remainingQuantity -= offer.quantity;
+      target.remainingQuantity = max(0, target.remainingQuantity - offer.quantity);
       if (target.remainingQuantity <= 0) {
         communityListings.remove(target);
       }
     }
+
+    // Bulut ve yerel pazar satışını kapat
+    FirebaseService().executeOfferPurchase(
+      offer: offer,
+      buyerCompanyName: FirebaseService().companyName.isNotEmpty ? FirebaseService().companyName : 'Alıcı',
+    );
 
     AuditLogService().log(
       category: LogCategory.trade,
@@ -1146,6 +1096,7 @@ class GameController extends ChangeNotifier {
     final listing = activeListings.where((l) => l.id == offer.listingId).firstOrNull;
     if (listing == null || listing.remainingQuantity < offer.quantity) {
       offer.status = OfferStatus.expired;
+      FirebaseService().updateMarketOfferStatus(offerId: offer.id, status: OfferStatus.expired);
       notifyListeners();
       saveState();
       return 'İlanınızdaki ürünler pazarda tam fiyattan satıldığı için bu teklif otomatik olarak kapandı.';
@@ -1155,36 +1106,28 @@ class GameController extends ChangeNotifier {
     int currentStock = warehouse[listing.itemId] ?? 0;
     if (currentStock < offer.quantity) {
       offer.status = OfferStatus.expired;
+      FirebaseService().updateMarketOfferStatus(offerId: offer.id, status: OfferStatus.expired);
       notifyListeners();
       saveState();
       return 'Deponuzda bu teklifi karşılayacak kadar ${offer.item.name} kalmadı!';
     }
-    warehouse[listing.itemId] = currentStock - offer.quantity;
-    if (warehouse[listing.itemId]! <= 0) warehouse.remove(listing.itemId);
 
-    listing.remainingQuantity -= offer.quantity;
-    double earnings = offer.totalOfferedPrice;
-    cash += earnings;
-    listing.totalEarned += earnings;
-    offer.status = OfferStatus.completed;
-
-    if (listing.isCompleted) {
-      activeListings.remove(listing);
-    }
+    // Satıcı teklifi onaylar (durum accepted yapılır)
+    offer.status = OfferStatus.accepted;
+    FirebaseService().updateMarketOfferStatus(offerId: offer.id, status: OfferStatus.accepted);
 
     AuditLogService().log(
       category: LogCategory.trade,
       action: 'OFFER_ACCEPTED',
-      title: 'Gelen Teklif Satıldı: ${offer.item.name}',
-      description: '${offer.buyerName} alıcısına ${offer.quantity} adet ${offer.item.name} ${offer.offeredPricePerUnit.toStringAsFixed(2)} ₺ fiyattan satıldı.',
-      amountChange: earnings,
+      title: 'Gelen Teklif Onaylandı: ${offer.item.name}',
+      description: '${offer.buyerName} alıcısına ${offer.quantity} adet ${offer.item.name} için verilen ${offer.offeredPricePerUnit.toStringAsFixed(2)} ₺ teklif onaylandı. Alıcının satın alması bekleniyor.',
       cashAfter: cash,
       details: {
         'offerId': offer.id,
         'buyerName': offer.buyerName,
         'quantity': offer.quantity,
         'unitPrice': offer.offeredPricePerUnit,
-        'totalEarnings': earnings,
+        'totalEarnings': offer.totalOfferedPrice,
       },
     );
 
@@ -1195,6 +1138,19 @@ class GameController extends ChangeNotifier {
 
   void rejectIncomingOffer(MarketOffer offer) {
     offer.status = OfferStatus.rejected;
+    FirebaseService().updateMarketOfferStatus(offerId: offer.id, status: OfferStatus.rejected);
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'OFFER_REJECTED',
+      title: 'Gelen Teklif Reddedildi: ${offer.item.name}',
+      description: '${offer.buyerName} alıcısının ${offer.quantity} adet ${offer.item.name} teklifi reddedildi.',
+      cashAfter: cash,
+      details: {
+        'offerId': offer.id,
+        'buyerName': offer.buyerName,
+        'quantity': offer.quantity,
+      },
+    );
     notifyListeners();
     saveState();
   }
@@ -1218,6 +1174,7 @@ class GameController extends ChangeNotifier {
 
     // DİKKAT: Ürünler satıldıkça merkezi depo ve silolardan düşer, ilan açarken fiziksel stok depoda kalır.
 
+    final sellerName = FirebaseService().companyName.isNotEmpty ? FirebaseService().companyName : 'Siz';
     final listing = MarketListing(
       id: 'list_${DateTime.now().millisecondsSinceEpoch}_${Random().nextInt(999)}',
       itemId: itemId,
@@ -1225,7 +1182,8 @@ class GameController extends ChangeNotifier {
       remainingQuantity: qty,
       pricePerUnit: double.parse(pricePerUnit.toStringAsFixed(2)),
       listedAt: DateTime.now(),
-      sellerName: 'Siz',
+      sellerName: sellerName,
+      sellerId: FirebaseService().playerId,
       isPlayerListing: true,
     );
 
@@ -2456,34 +2414,122 @@ class GameController extends ChangeNotifier {
     return true;
   }
 
-  void _setupCloudMarketSync() {
-    if (FirebaseService().isCloudConnected) {
-      _cloudMarketSub?.cancel();
-      _cloudMarketSub = FirebaseService().streamPublicMarketListings().listen((cloudListings) {
-        final myId = FirebaseService().playerId;
-        final activeCloudOthers = cloudListings.where((l) {
-          final isMine = l.isPlayerListing || (l.sellerId != null && l.sellerId == myId);
-          return !isMine && !l.isCompleted && l.sellerId != null && l.sellerId != 'SYSTEM';
-        }).toList();
-        final cloudOtherIds = activeCloudOthers.map((l) => l.id).toSet();
+  void _setupCloudOffersSync() {
+    _incomingOffersSub?.cancel();
+    _outgoingOffersSub?.cancel();
 
-        // 1. Bulutta tamamlanmış, silinmiş veya eski sahte simüle edilmiş ilanları temizle
-        communityListings.removeWhere((l) =>
-            !l.isOfficialReserve && (l.sellerId == null || l.id.startsWith('comm_') || !cloudOtherIds.contains(l.id)));
+    _incomingOffersSub = FirebaseService().streamIncomingOffers().listen((incomingCloudList) {
+      bool changed = false;
+      for (var inc in incomingCloudList) {
+        inc.direction = OfferDirection.incoming;
+        final idx = offers.indexWhere((o) => o.id == inc.id);
+        if (idx >= 0) {
+          if (offers[idx].status != inc.status) {
+            offers[idx] = inc;
+            changed = true;
+          }
+        } else {
+          offers.insert(0, inc);
+          changed = true;
+        }
 
-        // 2. Yeni ve güncellenen diğer gerçek oyuncu ilanlarını listeye entegre et
-        for (var cListing in activeCloudOthers) {
-          final idx = communityListings.indexWhere((l) => l.id == cListing.id);
-          if (idx >= 0) {
-            communityListings[idx] = cListing;
-          } else {
-            // Gerçek oyuncu ilanlarını listenin en başına yerleştir
-            communityListings.insert(0, cListing);
+        // Yeni gelen beklemedeki teklif bildirimi
+        if (inc.status == OfferStatus.pending && !_notifiedIncomingOfferIds.contains(inc.id)) {
+          _notifiedIncomingOfferIds.add(inc.id);
+          latestNotificationToast =
+              '📩 YENİ TEKLİF GELDİ! ${inc.buyerName}, ${inc.quantity} adet ${inc.item.name} için birim başı ${inc.offeredPricePerUnit.toStringAsFixed(2)} ₺ teklif etti! Teklifler sekmesinden inceleyin.';
+          NotificationService().showIncomingOfferNotification(
+            buyerName: inc.buyerName,
+            itemName: inc.item.name,
+            quantity: inc.quantity,
+            price: inc.offeredPricePerUnit,
+          );
+          changed = true;
+        }
+      }
+      if (changed) {
+        notifyListeners();
+      }
+    });
+
+    _outgoingOffersSub = FirebaseService().streamOutgoingOffers().listen((outgoingCloudList) {
+      bool changed = false;
+      for (var out in outgoingCloudList) {
+        out.direction = OfferDirection.outgoing;
+        final idx = offers.indexWhere((o) => o.id == out.id);
+        final oldStatus = idx >= 0 ? offers[idx].status : null;
+        if (idx >= 0) {
+          if (offers[idx].status != out.status) {
+            offers[idx] = out;
+            changed = true;
+          }
+        } else {
+          offers.insert(0, out);
+          changed = true;
+        }
+
+        // Satıcının kararı sonrası alıcıya bildirim
+        if (oldStatus == OfferStatus.pending && !_notifiedDecisionOfferIds.contains(out.id)) {
+          if (out.status == OfferStatus.accepted) {
+            _notifiedDecisionOfferIds.add(out.id);
+            latestNotificationToast =
+                '🔔 TEKLİFİNİZ ONAYLANDI! "${out.sellerName}", ${out.quantity} adet ${out.item.name} teklifinizi (${out.offeredPricePerUnit.toStringAsFixed(2)} ₺) kabul etti! Teklifler sekmesinden satın alabilirsiniz.';
+            NotificationService().showOfferDecisionNotification(
+              sellerName: out.sellerName,
+              itemName: out.item.name,
+              quantity: out.quantity,
+              price: out.offeredPricePerUnit,
+              accepted: true,
+            );
+            changed = true;
+          } else if (out.status == OfferStatus.rejected) {
+            _notifiedDecisionOfferIds.add(out.id);
+            latestNotificationToast =
+                '❌ TEKLİF REDDEDİLDİ: "${out.sellerName}", ${out.quantity} adet ${out.item.name} için verdiğiniz teklifi reddetti.';
+            NotificationService().showOfferDecisionNotification(
+              sellerName: out.sellerName,
+              itemName: out.item.name,
+              quantity: out.quantity,
+              price: out.offeredPricePerUnit,
+              accepted: false,
+            );
+            changed = true;
           }
         }
+      }
+      if (changed) {
         notifyListeners();
-      });
-    }
+      }
+    });
+  }
+
+  void _setupCloudMarketSync() {
+    _setupCloudOffersSync();
+    _cloudMarketSub?.cancel();
+    _cloudMarketSub = FirebaseService().streamPublicMarketListings().listen((cloudListings) {
+      final myId = FirebaseService().playerId;
+      final activeCloudOthers = cloudListings.where((l) {
+        final isMine = l.isPlayerListing || (l.sellerId != null && l.sellerId == myId);
+        return !isMine && !l.isCompleted && l.sellerId != null && l.sellerId != 'SYSTEM';
+      }).toList();
+      final cloudOtherIds = activeCloudOthers.map((l) => l.id).toSet();
+
+      // 1. Bulutta tamamlanmış, silinmiş veya eski sahte simüle edilmiş ilanları temizle
+      communityListings.removeWhere((l) =>
+          !l.isOfficialReserve && (l.sellerId == null || l.id.startsWith('comm_') || !cloudOtherIds.contains(l.id)));
+
+      // 2. Yeni ve güncellenen diğer gerçek oyuncu ilanlarını listeye entegre et
+      for (var cListing in activeCloudOthers) {
+        final idx = communityListings.indexWhere((l) => l.id == cListing.id);
+        if (idx >= 0) {
+          communityListings[idx] = cListing;
+        } else {
+          // Gerçek oyuncu ilanlarını listenin en başına yerleştir
+          communityListings.insert(0, cListing);
+        }
+      }
+      notifyListeners();
+    });
   }
 
   Future<void> resetProgress({String? playerId}) async {
@@ -2708,6 +2754,8 @@ class GameController extends ChangeNotifier {
     saveState();
     _gameLoopTimer?.cancel();
     _cloudMarketSub?.cancel();
+    _incomingOffersSub?.cancel();
+    _outgoingOffersSub?.cancel();
     themeModeNotifier.dispose();
     super.dispose();
   }

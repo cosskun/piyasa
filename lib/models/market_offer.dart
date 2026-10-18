@@ -17,12 +17,14 @@ class MarketOffer {
   final String id;
   final String listingId;
   final String itemId;
+  final String buyerId;
   final String buyerName;
+  final String sellerId;
   final String sellerName;
   final int quantity;
   final double originalPricePerUnit;
   final double offeredPricePerUnit;
-  final OfferDirection direction;
+  OfferDirection direction;
   OfferStatus status;
   final DateTime createdAt;
   double decisionTimer;
@@ -32,7 +34,9 @@ class MarketOffer {
     required this.id,
     required this.listingId,
     required this.itemId,
+    this.buyerId = '',
     required this.buyerName,
+    this.sellerId = '',
     required this.sellerName,
     required this.quantity,
     required this.originalPricePerUnit,
@@ -50,11 +54,49 @@ class MarketOffer {
   double get discountPercent =>
       originalPricePerUnit > 0 ? ((originalPricePerUnit - offeredPricePerUnit) / originalPricePerUnit) * 100 : 0.0;
 
+  MarketOffer copyWith({
+    String? id,
+    String? listingId,
+    String? itemId,
+    String? buyerId,
+    String? buyerName,
+    String? sellerId,
+    String? sellerName,
+    int? quantity,
+    double? originalPricePerUnit,
+    double? offeredPricePerUnit,
+    OfferDirection? direction,
+    OfferStatus? status,
+    DateTime? createdAt,
+    double? decisionTimer,
+    String? message,
+  }) {
+    return MarketOffer(
+      id: id ?? this.id,
+      listingId: listingId ?? this.listingId,
+      itemId: itemId ?? this.itemId,
+      buyerId: buyerId ?? this.buyerId,
+      buyerName: buyerName ?? this.buyerName,
+      sellerId: sellerId ?? this.sellerId,
+      sellerName: sellerName ?? this.sellerName,
+      quantity: quantity ?? this.quantity,
+      originalPricePerUnit: originalPricePerUnit ?? this.originalPricePerUnit,
+      offeredPricePerUnit: offeredPricePerUnit ?? this.offeredPricePerUnit,
+      direction: direction ?? this.direction,
+      status: status ?? this.status,
+      createdAt: createdAt ?? this.createdAt,
+      decisionTimer: decisionTimer ?? this.decisionTimer,
+      message: message ?? this.message,
+    );
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'listingId': listingId,
     'itemId': itemId,
+    'buyerId': buyerId,
     'buyerName': buyerName,
+    'sellerId': sellerId,
     'sellerName': sellerName,
     'quantity': quantity,
     'originalPricePerUnit': originalPricePerUnit,
@@ -70,8 +112,10 @@ class MarketOffer {
       id: json['id'] as String,
       listingId: json['listingId'] as String,
       itemId: json['itemId'] as String,
-      buyerName: json['buyerName'] as String,
-      sellerName: json['sellerName'] as String,
+      buyerId: json['buyerId'] as String? ?? '',
+      buyerName: json['buyerName'] as String? ?? 'Alıcı',
+      sellerId: json['sellerId'] as String? ?? '',
+      sellerName: json['sellerName'] as String? ?? 'Satıcı',
       quantity: (json['quantity'] as num).toInt(),
       originalPricePerUnit: (json['originalPricePerUnit'] as num).toDouble(),
       offeredPricePerUnit: (json['offeredPricePerUnit'] as num).toDouble(),
