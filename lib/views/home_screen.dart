@@ -19,6 +19,7 @@ import 'admin_dashboard_view.dart';
 import 'banned_dialog.dart';
 import 'leaderboard_view.dart';
 import 'home_dashboard_tab.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final GameController controller;
@@ -243,74 +244,109 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: isDark ? const Color(0xFF0F766E) : const Color(0xFFD1FAE5),
-                  child: Text(
-                    username.isNotEmpty ? username[0].toUpperCase() : 'P',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.white : const Color(0xFF065F46),
-                    ),
+            InkWell(
+              onTap: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ProfileScreen(
+                    controller: widget.controller,
+                    onLoggedOut: widget.onLoggedOut,
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        username,
+                ));
+              },
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: isDark ? const Color(0xFF0F766E) : const Color(0xFFD1FAE5),
+                      child: Text(
+                        username.isNotEmpty ? username[0].toUpperCase() : 'P',
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: 20,
                           fontWeight: FontWeight.bold,
-                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          color: isDark ? Colors.white : const Color(0xFF065F46),
                         ),
                       ),
-                      Text(
-                        company,
-                        style: TextStyle(
-                          fontSize: 12.5,
-                          color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                          fontWeight: FontWeight.w600,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            username,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
+                          ),
+                          Text(
+                            company,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            email,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isLoggedIn
+                            ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5))
+                            : (isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isLoggedIn ? const Color(0xFF10B981) : Colors.grey.withOpacity(0.4),
                         ),
                       ),
-                      Text(
-                        email,
+                      child: Text(
+                        isLoggedIn ? 'Bulut Bağlı ☁️' : 'Misafir 👤',
                         style: TextStyle(
                           fontSize: 11,
-                          color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                          fontWeight: FontWeight.bold,
+                          color: isLoggedIn ? const Color(0xFF10B981) : Colors.grey,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isLoggedIn
-                        ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFECFDF5))
-                        : (isDark ? Colors.white10 : const Color(0xFFF1F5F9)),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isLoggedIn ? const Color(0xFF10B981) : Colors.grey.withOpacity(0.4),
                     ),
-                  ),
-                  child: Text(
-                    isLoggedIn ? 'Bulut Bağlı ☁️' : 'Misafir 👤',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: isLoggedIn ? const Color(0xFF10B981) : Colors.grey,
-                    ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
             const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ProfileScreen(
+                    controller: widget.controller,
+                    onLoggedOut: widget.onLoggedOut,
+                  ),
+                ));
+              },
+              icon: const Icon(Icons.manage_accounts_rounded, size: 18),
+              label: const Text('Profili ve Şirket Bilgilerini Düzenle'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F766E),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 10),
             ElevatedButton.icon(
               onPressed: () async {
                 Navigator.of(ctx).pop();

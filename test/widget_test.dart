@@ -28,6 +28,7 @@ import 'package:piyasa/views/leaderboard_view.dart';
 import 'package:piyasa/services/leaderboard_service.dart';
 import 'package:piyasa/models/leaderboard_entry.dart';
 import 'package:piyasa/models/market_listing.dart';
+import 'package:piyasa/views/profile_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -2655,6 +2656,149 @@ void main() {
     expect(find.byType(OfflineSummaryDialog), findsNothing);
 
     coldBootController.dispose();
+  });
+
+  testWidgets('User Profile: Username uniqueness is strictly enforced and duplicate usernames are rejected', (WidgetTester tester) async {
+    final fb = FirebaseService();
+    await fb.initialize();
+
+    // 1. Oyuncu 1 (ALPEREN) kayıt olur ve oturum açar
+    final regErr1 = await fb.registerWithEmail(
+      email: 'alperen@test.com',
+      password: 'password123',
+      username: 'ALPEREN',
+      companyName: 'Alperen Holding',
+    );
+    expect(regErr1, isNull);
+
+    // 2. Oyuncu 2 (BERKE) kayıt olur ve oturum açar
+    final regErr2 = await fb.registerWithEmail(
+      email: 'berke@test.com',
+      password: 'password123',
+      username: 'BERKE',
+      companyName: 'Berke Lojistik',
+    );
+    expect(regErr2, isNull);
+
+    // Berke olarak giriş yap
+    final loginErr = await fb.loginWithEmailOrUsername(
+      identifier: 'BERKE',
+      password: 'password123',
+    );
+    expect(loginErr, isNull);
+    expect(fb.username, 'BERKE');
+
+    // 3. Berke kullanıcı adını ALPEREN (büyük-küçük harf farketmeksizin) yapmaya çalışır -> REDDEDİLMELİ!
+    final dupErr = await fb.updateProfile(newUsername: 'alperen');
+    expect(dupErr, isNotNull);
+    expect(dupErr, contains('zaten başka bir oyuncu tarafından kullanılıyor'));
+
+    // 4. Berke kendi kullanıcı adını (BERKE -> Berke_Pro) benzersiz yeni bir adla değiştirir -> BAŞARILI OLMALI!
+    final okErr = await fb.updateProfile(
+      newUsername: 'Berke_Pro',
+      newCompanyName: 'Berke Global A.Ş.',
+    );
+    expect(okErr, isNull);
+    expect(fb.username, 'Berke_Pro');
+    expect(fb.companyName, 'Berke Global A.Ş.');
+
+    // 5. Eski ad (BERKE) artık boşa çıktığından başkası alabilmeli
+    final availableOld = await fb.isUsernameAvailable('BERKE');
+    expect(availableOld, isTrue);
+
+    // 6. Yanlış mevcut şifre ile şifre değiştirilememeli
+    final wrongPassErr = await fb.updateProfile(
+      currentPassword: 'wrong_password',
+      newPassword: 'new_password123',
+    );
+    expect(wrongPassErr, isNotNull);
+    expect(wrongPassErr, contains('Mevcut şifreniz hatalı'));
+
+    // 7. Doğru mevcut şifre ile şifre güncellenmeli
+    final passOk = await fb.updateProfile(
+      currentPassword: 'password123',
+      newPassword: 'new_password123',
+    );
+    expect(passOk, isNull);
+
+    // 8. Yeni şifreyle çıkış yapıp tekrar giriş yapılabilmeli
+    await fb.signOut();
+    final reLoginErr = await fb.loginWithEmailOrUsername(
+      identifier: 'Berke_Pro',
+      password: 'new_password123',
+    );
+    expect(reLoginErr, isNull);
+    expect(fb.username, 'Berke_Pro');
+  });
+
+  testWidgets('User Profile Page: ProfileScreen allows editing username, company name, changing password, and reflects updates', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final fb = FirebaseService();
+    await fb.initialize();
+
+    // 1. Oyuncu kayıt olup oturum açar
+    await fb.registerWithEmail(
+      email: 'profile_test@test.com',
+      password: 'secret_pass_123',
+      username: 'TestUser1',
+      companyName: 'İlk Şirketim Ltd.',
+    );
+
+    await fb.loginWithEmailOrUsername(
+      identifier: 'TestUser1',
+      password: 'secret_pass_123',
+    );
+
+    final controller = GameController(autoLoad: false);
+    controller.cash = 45000.0;
+
+    // 2. ProfileScreen ekrana yüklenir
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileScreen(controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 3. Mevcut bilgilerin formda gösterildiği doğrulanır
+    expect(find.text('Kullanıcı Profili'), findsOneWidget);
+    expect(find.text('TestUser1'), findsWidgets);
+    expect(find.text('İlk Şirketim Ltd.'), findsWidgets);
+
+    // 4. Şirket adını ve kullanıcı adını değiştir
+    final usernameField = find.widgetWithText(TextFormField, 'TestUser1');
+    await tester.enterText(usernameField, 'TestUser_V2');
+
+    final companyField = find.widgetWithText(TextFormField, 'İlk Şirketim Ltd.');
+    await tester.enterText(companyField, 'Zirve Holding A.Ş.');
+
+    // Şifre alanlarına yeni şifre gir
+    final currentPassField = find.widgetWithText(TextFormField, 'Mevcut Şifreniz');
+    await tester.enterText(currentPassField, 'secret_pass_123');
+
+    final newPassField = find.widgetWithText(TextFormField, 'Yeni Şifre (en az 6 karakter)');
+    await tester.enterText(newPassField, 'super_secret_456');
+
+    final confirmPassField = find.widgetWithText(TextFormField, 'Yeni Şifre (Tekrar)');
+    await tester.enterText(confirmPassField, 'super_secret_456');
+
+    // 5. Değişiklikleri Kaydet butonuna tıkla
+    final saveBtn = find.text('Değişiklikleri Kaydet');
+    await tester.ensureVisible(saveBtn);
+    await tester.tap(saveBtn);
+    await tester.pumpAndSettle();
+
+    // Başarı bildirimi çıkmalı
+    expect(find.text('Profil bilgileriniz başarıyla güncellendi!'), findsOneWidget);
+
+    // FirebaseService üzerinde bilgilerin güncellendiği doğrulanır
+    expect(fb.username, 'TestUser_V2');
+    expect(fb.companyName, 'Zirve Holding A.Ş.');
+
+    controller.dispose();
   });
 }
 

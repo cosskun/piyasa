@@ -458,24 +458,237 @@ class FirebaseService {
   }
 
   /// Kullanıcı adının daha önce alınıp alınmadığını kontrol eder (Case-insensitive)
-  Future<bool> isUsernameAvailable(String username) async {
+  Future<bool> isUsernameAvailable(String username, {String? excludeUid}) async {
     final clean = username.trim().toLowerCase();
     if (clean.length < 3 || clean.length > 20) return false;
     if (!RegExp(r'^[a-zA-Z0-9_.]+$').hasMatch(clean)) return false;
 
     // 1. Yerel veritabanında benzersizlik kontrolü
     final localAccounts = await getLocalAccounts();
-    if (localAccounts.containsKey(clean)) return false;
+    if (localAccounts.containsKey(clean)) {
+      final acc = localAccounts[clean];
+      if (excludeUid != null && acc != null && acc['uid'] == excludeUid) {
+        // Mevcut kullanıcının kendi kullanıcı adı
+      } else {
+        return false;
+      }
+    }
 
-    if (!isCloudConnected) return true;
+    if (!isCloudConnected || _firestore == null) return true;
 
     try {
       final doc = await _firestore!.collection('usernames').doc(clean).get().timeout(const Duration(seconds: 4));
-      return !doc.exists;
+      if (!doc.exists) return true;
+      final data = doc.data();
+      if (excludeUid != null && data != null && data['uid'] == excludeUid) {
+        return true;
+      }
+      return false;
     } catch (e) {
       debugPrint('FirebaseService: Kullanıcı adı kontrol hatası: $e');
       return true;
     }
+  }
+
+  /// Oyuncu profili bilgilerini (Kullanıcı Adı, Şirket Adı, Şifre) günceller.
+  /// Kullanıcı adının benzersizliği hem yerelde hem Firestore bulutunda denetlenir.
+  Future<String?> updateProfile({
+    String? newUsername,
+    String? newCompanyName,
+    String? currentPassword,
+    String? newPassword,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentUid = playerId;
+    if (currentUid.isEmpty) {
+      return 'Oturum bilgisi bulunamadı.';
+    }
+
+    // 1. KULLANICI ADI GÜNCELLEMESİ VE UNIQ KONTROLÜ
+    String? updatedUsername;
+    String? oldNormalized;
+    String? newNormalized;
+
+    if (newUsername != null && newUsername.trim().isNotEmpty) {
+      final cleanUsername = newUsername.trim();
+      final currUsername = _username ?? '';
+
+      if (cleanUsername != currUsername) {
+        if (cleanUsername.length < 3 || cleanUsername.length > 20) {
+          return 'Kullanıcı adı 3 ile 20 karakter arasında olmalıdır.';
+        }
+        if (!RegExp(r'^[a-zA-Z0-9_.]+$').hasMatch(cleanUsername)) {
+          return 'Kullanıcı adı sadece harf, rakam, nokta ve alt çizgi içerebilir.';
+        }
+
+        final available = await isUsernameAvailable(cleanUsername, excludeUid: currentUid);
+        if (!available) {
+          return 'Bu kullanıcı adı zaten başka bir oyuncu tarafından kullanılıyor.';
+        }
+
+        updatedUsername = cleanUsername;
+        oldNormalized = currUsername.toLowerCase();
+        newNormalized = cleanUsername.toLowerCase();
+      }
+    }
+
+    // 2. ŞİRKET ADI GÜNCELLEMESİ
+    String? updatedCompanyName;
+    if (newCompanyName != null && newCompanyName.trim().isNotEmpty) {
+      final cleanCompany = newCompanyName.trim();
+      if (cleanCompany != (_companyName ?? '')) {
+        if (cleanCompany.length < 3 || cleanCompany.length > 30) {
+          return 'Şirket adı 3 ile 30 karakter arasında olmalıdır.';
+        }
+        updatedCompanyName = cleanCompany;
+      }
+    }
+
+    // 3. ŞİFRE GÜNCELLEMESİ
+    String? updatedPassword;
+    if (newPassword != null && newPassword.trim().isNotEmpty) {
+      final cleanNewPass = newPassword.trim();
+      if (cleanNewPass.length < 6) {
+        return 'Yeni şifreniz en az 6 karakterden oluşmalıdır.';
+      }
+      if (isGuest) {
+        return 'Misafir kullanıcıların şifresi bulunmaz. Kalıcı hesap oluşturmak için kayıt olunuz.';
+      }
+
+      // Mevcut şifre denetimi
+      final cleanCurrentPass = (currentPassword ?? '').trim();
+      if (cleanCurrentPass.isEmpty) {
+        return 'Şifrenizi değiştirmek için lütfen mevcut şifrenizi girin.';
+      }
+
+      // Yerel hesaptaki şifreyi kontrol et
+      final localAccounts = await getLocalAccounts();
+      Map<String, dynamic>? userAcc;
+      for (var acc in localAccounts.values) {
+        if (acc['uid'] == currentUid) {
+          userAcc = acc;
+          break;
+        }
+      }
+
+      if (userAcc != null && userAcc['password'] != null) {
+        if (userAcc['password'] != cleanCurrentPass) {
+          return 'Mevcut şifreniz hatalı.';
+        }
+      }
+
+      // Firebase Auth varsa şifreyi yeniden doğrulayıp güncelle
+      if (isCloudConnected && _auth?.currentUser != null && _auth!.currentUser!.email != null) {
+        try {
+          final cred = EmailAuthProvider.credential(
+            email: _auth!.currentUser!.email!,
+            password: cleanCurrentPass,
+          );
+          await _auth!.currentUser!.reauthenticateWithCredential(cred).timeout(const Duration(seconds: 6));
+          await _auth!.currentUser!.updatePassword(cleanNewPass).timeout(const Duration(seconds: 6));
+        } on FirebaseAuthException catch (e) {
+          if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+            return 'Mevcut şifreniz hatalı.';
+          } else if (e.code == 'weak-password') {
+            return 'Yeni şifreniz çok zayıf. Lütfen daha güçlü bir şifre seçin.';
+          }
+        } catch (_) {}
+      }
+
+      updatedPassword = cleanNewPass;
+    }
+
+    // Hiçbir değişiklik girilmediyse
+    if (updatedUsername == null && updatedCompanyName == null && updatedPassword == null) {
+      return null;
+    }
+
+    // 4. DEĞİŞİKLİKLERİ YEREL HESAP HAVUZUNA VE PREFS'E YANSIT
+    final localAccounts = await getLocalAccounts();
+    Map<String, dynamic>? targetAccount;
+    String? foundKey;
+
+    for (var entry in localAccounts.entries) {
+      if (entry.value['uid'] == currentUid) {
+        targetAccount = Map<String, dynamic>.from(entry.value);
+        foundKey = entry.key;
+        break;
+      }
+    }
+
+    if (targetAccount != null && foundKey != null) {
+      if (updatedUsername != null) {
+        targetAccount['username'] = updatedUsername;
+        targetAccount['username_lowercase'] = newNormalized!;
+      }
+      if (updatedCompanyName != null) {
+        targetAccount['companyName'] = updatedCompanyName;
+      }
+      if (updatedPassword != null) {
+        targetAccount['password'] = updatedPassword;
+      }
+
+      localAccounts.remove(foundKey);
+      final newKey = (newNormalized != null && newNormalized.isNotEmpty)
+          ? newNormalized
+          : foundKey;
+      localAccounts[newKey] = targetAccount;
+      await prefs.setString(_localAccountsKey, jsonEncode(localAccounts));
+    }
+
+    if (updatedUsername != null) {
+      _username = updatedUsername;
+      await prefs.setString(_localUsernameKey, updatedUsername);
+    }
+    if (updatedCompanyName != null) {
+      _companyName = updatedCompanyName;
+      await prefs.setString(_localCompanyNameKey, updatedCompanyName);
+    }
+
+    // 5. BULUT FIRESTORE GÜNCELLEMESİ
+    if (isCloudConnected && _firestore != null) {
+      try {
+        final playerUpdate = <String, dynamic>{
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+        if (updatedUsername != null) {
+          playerUpdate['username'] = updatedUsername;
+          playerUpdate['username_lowercase'] = newNormalized!;
+        }
+        if (updatedCompanyName != null) {
+          playerUpdate['companyName'] = updatedCompanyName;
+        }
+
+        final batch = _firestore!.batch();
+        batch.set(_firestore!.collection('players').doc(currentUid), playerUpdate, SetOptions(merge: true));
+
+        // Kullanıcı adı değiştiyse eski rezerveyi sil ve yeni benzersiz rezerve aç
+        if (updatedUsername != null && newNormalized != null) {
+          if (oldNormalized != null && oldNormalized.isNotEmpty && oldNormalized != newNormalized) {
+            batch.delete(_firestore!.collection('usernames').doc(oldNormalized));
+          }
+          batch.set(_firestore!.collection('usernames').doc(newNormalized), {
+            'uid': currentUid,
+            'displayUsername': updatedUsername,
+            'email': email ?? '',
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+        }
+
+        await batch.commit().timeout(const Duration(seconds: 8));
+
+        // Firebase Auth displayName güncelle
+        if (updatedUsername != null && _auth?.currentUser != null) {
+          try {
+            await _auth!.currentUser!.updateDisplayName(updatedUsername);
+          } catch (_) {}
+        }
+      } catch (e) {
+        debugPrint('FirebaseService: updateProfile bulut senkronizasyon hatası: $e');
+      }
+    }
+
+    return null; // Başarılı!
   }
 
   /// Benzersiz kullanıcı adı ve e-posta ile yeni oyuncu hesabı oluşturur
