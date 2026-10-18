@@ -38,6 +38,8 @@ class MarketTabState extends State<MarketTab> {
   String _communitySearchQuery = '';
   int _communityCategoryFilter = 0; // 0: Tümü, 1: Hammadde, 2: Ara Mamul, 3: Nihai Ürün, 4: Resmi Rezerv, 5: Oyuncular
   int _communitySortMode = 0; // 0: En Uygun Fiyat, 1: En Çok Stok, 2: En Yeni, 3: Fırsatlar
+  bool _isCatalogSidebarOpen = false; // Sol açılır/kapanır ürün katalog paneli
+  String? _selectedCatalogItemId; // Seçili ürün (null = tümü)
 
   void switchToOffers({int subTab = 0}) {
     if (!mounted) return;
@@ -962,6 +964,14 @@ class MarketTabState extends State<MarketTab> {
     final countReserve = allListings.where((l) => l.isOfficialReserve).length;
     final countPlayer = allListings.where((l) => !l.isOfficialReserve).length;
 
+    // Yan katalog için benzersiz ürünler ve ilan sayıları
+    final itemListingCounts = <String, int>{};
+    for (var l in allListings) {
+      itemListingCounts[l.itemId] = (itemListingCounts[l.itemId] ?? 0) + 1;
+    }
+    final sortedItemIds = itemListingCounts.keys.toList()
+      ..sort((a, b) => (itemListingCounts[b] ?? 0).compareTo(itemListingCounts[a] ?? 0));
+
     // Filtreleme
     final filtered = allListings.where((listing) {
       if (_communityCategoryFilter == 1 && listing.item.category != ItemCategory.rawMaterial) return false;
@@ -969,6 +979,9 @@ class MarketTabState extends State<MarketTab> {
       if (_communityCategoryFilter == 3 && listing.item.category != ItemCategory.finishedGood) return false;
       if (_communityCategoryFilter == 4 && !listing.isOfficialReserve) return false;
       if (_communityCategoryFilter == 5 && listing.isOfficialReserve) return false;
+
+      // Sol katalogdan tekil ürün seçimi
+      if (_selectedCatalogItemId != null && listing.itemId != _selectedCatalogItemId) return false;
 
       if (_communitySearchQuery.isNotEmpty) {
         final query = _communitySearchQuery.toLowerCase();
@@ -1010,6 +1023,50 @@ class MarketTabState extends State<MarketTab> {
           padding: const EdgeInsets.fromLTRB(14, 4, 14, 6),
           child: Row(
             children: [
+              // Sol Katalog Paneli Aç/Kapat Butonu
+              InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => setState(() => _isCatalogSidebarOpen = !_isCatalogSidebarOpen),
+                child: Container(
+                  height: 38,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: _isCatalogSidebarOpen
+                        ? (isDark ? const Color(0xFF0F766E).withValues(alpha: 0.35) : const Color(0xFFCCFBF1))
+                        : (isDark ? const Color(0xFF161E2E) : Colors.white),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: _isCatalogSidebarOpen
+                          ? const Color(0xFF14B8A6)
+                          : (isDark ? Colors.white12 : const Color(0xFFCBD5E1)),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        _isCatalogSidebarOpen ? Icons.view_sidebar_rounded : Icons.view_sidebar_outlined,
+                        size: 18,
+                        color: _isCatalogSidebarOpen
+                            ? (isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E))
+                            : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Katalog',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.bold,
+                          color: _isCatalogSidebarOpen
+                              ? (isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E))
+                              : (isDark ? Colors.white : const Color(0xFF0F172A)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               Expanded(
                 child: Container(
                   height: 38,
@@ -1170,20 +1227,62 @@ class MarketTabState extends State<MarketTab> {
           ),
         ),
 
-        // 3. SONUÇ BİLGİ ŞERİDİ (Filtre veya Arama aktifse gösterilir)
-        if (_communitySearchQuery.isNotEmpty || _communityCategoryFilter != 0)
+        // 3. SONUÇ BİLGİ ŞERİDİ (Filtre, Arama veya Katalog Seçimi aktifse)
+        if (_communitySearchQuery.isNotEmpty || _communityCategoryFilter != 0 || _selectedCatalogItemId != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  '${filtered.length} ilan bulundu',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                  ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${filtered.length} ilan bulundu',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                      ),
+                    ),
+                    if (_selectedCatalogItemId != null) ...[
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => setState(() => _selectedCatalogItemId = null),
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF0F766E).withValues(alpha: 0.35) : const Color(0xFFCCFBF1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isDark ? const Color(0xFF14B8A6).withValues(alpha: 0.5) : const Color(0xFF14B8A6),
+                              width: 0.8,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${ItemRegistry.get(_selectedCatalogItemId!)?.emoji ?? '📦'} ${ItemRegistry.get(_selectedCatalogItemId!)?.name ?? _selectedCatalogItemId}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.close_rounded,
+                                size: 12,
+                                color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 InkWell(
                   onTap: () {
@@ -1191,6 +1290,7 @@ class MarketTabState extends State<MarketTab> {
                       _communitySearchQuery = '';
                       _communitySearchController.clear();
                       _communityCategoryFilter = 0;
+                      _selectedCatalogItemId = null;
                     });
                   },
                   child: Text(
@@ -1206,331 +1306,572 @@ class MarketTabState extends State<MarketTab> {
             ),
           ),
 
-        // 4. İLAN LİSTESİ VEYA BOŞ DURUM
+        // 4. İLAN LİSTESİ VEYA BOŞ DURUM (SOL KATALOG PANELİ İLE BİRLİKTE)
         Expanded(
-          child: filtered.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Açılır / Kapanır Sol Katalog Paneli
+              _buildCatalogSidebar(
+                isDark: isDark,
+                itemListingCounts: itemListingCounts,
+                sortedItemIds: sortedItemIds,
+                totalCount: allListings.length,
+              ),
+
+              // Ana İlan Alanı (2'li Zengin Vitrin Kartları Grid)
+              Expanded(
+                child: filtered.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.search_off_rounded,
+                                size: 44,
+                                color: isDark ? Colors.grey[600] : const Color(0xFF94A3B8),
+                              ),
+                              const SizedBox(height: 10),
+                              Text(
+                                'Kriterlere uygun ilan bulunamadı.',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white70 : const Color(0xFF334155),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Arama sözcüğünü veya kategori filtresini değiştirip tekrar deneyin.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _communitySearchQuery = '';
+                                    _communitySearchController.clear();
+                                    _communityCategoryFilter = 0;
+                                    _selectedCatalogItemId = null;
+                                  });
+                                },
+                                icon: const Icon(Icons.refresh, size: 14),
+                                label: const Text('Filtreleri Sıfırla'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : GridView.builder(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.fromLTRB(10, 4, 14, 16),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                          mainAxisExtent: 228,
+                        ),
+                        itemCount: filtered.length,
+                        itemBuilder: (ctx, i) {
+                          return _buildShowcaseGridCard(filtered[i], isDark, currencyFmt);
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCatalogSidebar({
+    required bool isDark,
+    required Map<String, int> itemListingCounts,
+    required List<String> sortedItemIds,
+    required int totalCount,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeInOut,
+      width: _isCatalogSidebarOpen ? 92 : 0,
+      child: _isCatalogSidebarOpen
+          ? Container(
+              margin: const EdgeInsets.only(left: 10, bottom: 8),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF131B2A) : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isDark ? Colors.white12 : const Color(0xFFCBD5E1),
+                ),
+              ),
+              child: Column(
+                children: [
+                  // Başlık & Kapatma Butonu
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF1A2438) : const Color(0xFFE2E8F0),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Icon(
-                          Icons.search_off_rounded,
-                          size: 44,
-                          color: isDark ? Colors.grey[600] : const Color(0xFF94A3B8),
-                        ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Kriterlere uygun ilan bulunamadı.',
+                        const Text(
+                          'ÜRÜNLER',
                           style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.white70 : const Color(0xFF334155),
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
                           ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Arama sözcüğünü veya kategori filtresini değiştirip tekrar deneyin.',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: () {
-                            setState(() {
-                              _communitySearchQuery = '';
-                              _communitySearchController.clear();
-                              _communityCategoryFilter = 0;
-                            });
-                          },
-                          icon: const Icon(Icons.refresh, size: 14),
-                          label: const Text('Filtreleri Sıfırla'),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
+                        InkWell(
+                          onTap: () => setState(() => _isCatalogSidebarOpen = false),
+                          child: const Icon(Icons.chevron_left_rounded, size: 18),
                         ),
                       ],
                     ),
                   ),
-                )
-              : ListView.builder(
-                  physics: const BouncingScrollPhysics(),
-                  cacheExtent: 600,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                  itemCount: filtered.length,
-                  itemBuilder: (ctx, i) {
-                    final listing = filtered[i];
-                    final mItem = widget.controller.marketItems[listing.itemId];
-                    final marketPrice = mItem?.currentPrice ?? listing.pricePerUnit;
-                    final isDiscounted = listing.pricePerUnit < marketPrice;
-                    final isOfficial = listing.isOfficialReserve;
-
-                    return Card(
-                      color: isOfficial
-                          ? (isDark ? const Color(0xFF132228) : const Color(0xFFF0FDF4))
-                          : (isDark ? const Color(0xFF1B2234) : Colors.white),
-                      margin: const EdgeInsets.only(bottom: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: isOfficial
-                              ? (isDark ? const Color(0xFF0D9488).withOpacity(0.4) : const Color(0xFF14B8A6).withOpacity(0.5))
-                              : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
-                          width: isOfficial ? 1.4 : 1.0,
-                        ),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ÜST BİLGİ ŞERİDİ (Resmi Rezerv vs Oyuncu İlanı)
-                            Row(
-                              children: [
-                                if (isOfficial) ...[
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? const Color(0xFF0F766E).withOpacity(0.3) : const Color(0xFFCCFBF1),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: isDark ? const Color(0xFF14B8A6).withOpacity(0.5) : const Color(0xFF14B8A6),
-                                        width: 0.8,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.verified_user_rounded,
-                                          size: 11,
-                                          color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E),
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          'RESMİ PİYASA REZERVİ',
-                                          style: TextStyle(
-                                            fontSize: 9.5,
-                                            fontWeight: FontWeight.bold,
-                                            color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E),
-                                            letterSpacing: 0.3,
-                                          ),
-                                        ),
-                                      ],
+                  // Ürün Kartları Listesi
+                  Expanded(
+                    child: ListView.builder(
+                      padding: const EdgeInsets.all(4),
+                      itemCount: sortedItemIds.length + 1,
+                      itemBuilder: (ctx, idx) {
+                        if (idx == 0) {
+                          final isSelected = _selectedCatalogItemId == null;
+                          return InkWell(
+                            onTap: () => setState(() => _selectedCatalogItemId = null),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 4),
+                              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? (isDark ? const Color(0xFF0F766E).withValues(alpha: 0.35) : const Color(0xFFCCFBF1))
+                                    : (isDark ? const Color(0xFF1B2234) : Colors.white),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? const Color(0xFF14B8A6)
+                                      : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                                  width: isSelected ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Column(
+                                children: [
+                                  const Text('📦', style: TextStyle(fontSize: 18)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Tümü',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                      color: isSelected
+                                          ? (isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E))
+                                          : (isDark ? Colors.white : const Color(0xFF0F172A)),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      listing.sellerName,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark ? Colors.tealAccent.shade100 : const Color(0xFF047857),
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ] else ...[
-                                  Icon(
-                                    Icons.person_outline,
-                                    size: 13,
-                                    color: isDark ? Colors.lightBlueAccent : const Color(0xFF0284C7),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Expanded(
-                                    child: Text(
-                                      listing.sellerName,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.lightBlueAccent : const Color(0xFF0284C7),
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      'Oyuncu',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                                      ),
+                                  Text(
+                                    '$totalCount İlan',
+                                    style: TextStyle(
+                                      fontSize: 8.5,
+                                      color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
                                     ),
                                   ),
                                 ],
-                              ],
+                              ),
                             ),
-                            const SizedBox(height: 8),
+                          );
+                        }
 
-                            // ORTA KISIM (Ürün Emoji, İsim, Birim Fiyat, Piyasa Kıyaslaması)
-                            Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: isOfficial
-                                        ? (isDark ? const Color(0xFF0B1B1E) : Colors.white)
-                                        : (isDark ? Colors.black26 : const Color(0xFFF1F5F9)),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(
-                                      color: isOfficial
-                                          ? (isDark ? const Color(0xFF0D9488).withOpacity(0.3) : const Color(0xFFA7F3D0))
-                                          : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
-                                    ),
-                                  ),
-                                  child: Text(listing.item.emoji, style: const TextStyle(fontSize: 24)),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        listing.item.name,
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.bold,
-                                          color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Kategori: ${listing.item.category.nameTr}',
-                                        style: TextStyle(
-                                          fontSize: 10.5,
-                                          color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    Text(
-                                      '${currencyFmt.format(listing.pricePerUnit)} ₺',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                      ),
-                                    ),
-                                    Text(
-                                      isDiscounted
-                                          ? '🔥 Piyasa Altı'
-                                          : 'Borsa: ${currencyFmt.format(marketPrice)} ₺',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: isDiscounted ? FontWeight.bold : FontWeight.normal,
-                                        color: isDiscounted
-                                            ? Colors.green
-                                            : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
+                        final itemId = sortedItemIds[idx - 1];
+                        final item = ItemRegistry.get(itemId);
+                        final count = itemListingCounts[itemId] ?? 0;
+                        final isSelected = _selectedCatalogItemId == itemId;
 
-                            // ALT KISIM (Stok Miktarı ve Satın Alma / Teklif Butonları)
-                            Wrap(
-                              alignment: WrapAlignment.spaceBetween,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 6,
-                              runSpacing: 6,
+                        return InkWell(
+                          onTap: () => setState(() {
+                            _selectedCatalogItemId = isSelected ? null : itemId;
+                          }),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 4),
+                            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? (isDark ? const Color(0xFF0F766E).withValues(alpha: 0.35) : const Color(0xFFCCFBF1))
+                                  : (isDark ? const Color(0xFF1B2234) : Colors.white),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFF14B8A6)
+                                    : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                                width: isSelected ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Column(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    'Kalan Stok: ${listing.remainingQuantity} adet',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: isDark ? Colors.white70 : const Color(0xFF475569),
-                                    ),
+                                Text(item?.emoji ?? '📦', style: const TextStyle(fontSize: 18)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  item?.name ?? itemId,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                    color: isSelected
+                                        ? (isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E))
+                                        : (isDark ? Colors.white : const Color(0xFF0F172A)),
                                   ),
                                 ),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ElevatedButton(
-                                      onPressed: () => _showDirectBuyDialog(context, listing, isDark),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: isOfficial
-                                            ? (isDark ? const Color(0xFF0F766E) : const Color(0xFF0D9488))
-                                            : (isDark ? const Color(0xFF263B66) : const Color(0xFF0284C7)),
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                        minimumSize: Size.zero,
-                                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            isOfficial ? Icons.shopping_cart_checkout : Icons.shopping_bag_outlined,
-                                            size: 13,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            isOfficial ? 'Hemen Satın Al' : 'Satın Al',
-                                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (!isOfficial && !(listing.isPlayerListing || (listing.sellerId != null && listing.sellerId == FirebaseService().playerId))) ...[
-                                      const SizedBox(width: 6),
-                                      ElevatedButton(
-                                        onPressed: () => _showMakeOfferDialog(context, listing, isDark),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: isDark ? const Color(0xFF8B4513) : const Color(0xFFD97706),
-                                          foregroundColor: Colors.white,
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                                          minimumSize: Size.zero,
-                                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                        ),
-                                        child: const Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(Icons.question_answer_outlined, size: 13),
-                                            SizedBox(width: 4),
-                                            Text('Teklif Ver', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ],
+                                Text(
+                                  '$count İlan',
+                                  style: TextStyle(
+                                    fontSize: 8.5,
+                                    color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                  ),
                                 ),
                               ],
                             ),
-                          ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
+  }
+
+  Widget _buildShowcaseGridCard(MarketListing listing, bool isDark, NumberFormat currencyFmt) {
+    final mItem = widget.controller.marketItems[listing.itemId];
+    final marketPrice = mItem?.currentPrice ?? listing.pricePerUnit;
+    final isDiscounted = listing.pricePerUnit < marketPrice;
+    final discountPct = isDiscounted ? ((marketPrice - listing.pricePerUnit) / marketPrice) * 100 : 0.0;
+    final isOfficial = listing.isOfficialReserve;
+    final isOwn = listing.isPlayerListing || (listing.sellerId != null && listing.sellerId == FirebaseService().playerId);
+
+    return Container(
+      padding: const EdgeInsets.all(9),
+      decoration: BoxDecoration(
+        color: isOfficial
+            ? (isDark ? const Color(0xFF132228) : const Color(0xFFF0FDF4))
+            : (isDark ? const Color(0xFF1B2234) : Colors.white),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isOfficial
+              ? (isDark ? const Color(0xFF0D9488).withValues(alpha: 0.5) : const Color(0xFF14B8A6).withValues(alpha: 0.6))
+              : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+          width: isOfficial ? 1.5 : 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. Üst Rozet
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: isOfficial
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF0F766E).withValues(alpha: 0.3) : const Color(0xFFCCFBF1),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF14B8A6).withValues(alpha: 0.5) : const Color(0xFF14B8A6),
+                          width: 0.8,
                         ),
                       ),
-                    );
-                  },
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.verified_user_rounded,
+                            size: 10,
+                            color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            'RESMİ PİYASA REZERVİ',
+                            style: TextStyle(
+                              fontSize: 8.0,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0F766E),
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : isDiscounted
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.amber.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(color: Colors.amber, width: 0.8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.local_fire_department, size: 10, color: Colors.amber),
+                              const SizedBox(width: 2),
+                              Text(
+                                '-%${discountPct.toStringAsFixed(0)} FIRSAT',
+                                style: const TextStyle(
+                                  fontSize: 8.0,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.amber,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      : Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.person, size: 10, color: isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+                              const SizedBox(width: 2),
+                              Text(
+                                'Oyuncu',
+                                style: TextStyle(
+                                  fontSize: 8.0,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+            ),
+          ),
+
+          const Spacer(),
+
+          // 2. Ürün Vitrini (Büyük Emoji, İsim, Satıcı)
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF141E30) : const Color(0xFFF8FAFC),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    listing.item.emoji,
+                    style: const TextStyle(fontSize: 24),
+                  ),
                 ),
-        ),
-      ],
+                const SizedBox(height: 4),
+                Text(
+                  listing.item.name,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  isOwn ? 'Senin İlanın' : listing.sellerName,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: isOfficial
+                        ? (isDark ? Colors.tealAccent.shade100 : const Color(0xFF047857))
+                        : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+                    fontWeight: isOfficial ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+
+          const Spacer(),
+
+          // 3. Fiyat ve Stok Kutusu
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            decoration: BoxDecoration(
+              color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${currencyFmt.format(listing.pricePerUnit)} ₺',
+                        style: const TextStyle(
+                          fontSize: 12.0,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF10B981),
+                        ),
+                      ),
+                      if (isDiscounted) ...[
+                        const SizedBox(width: 6),
+                        Text(
+                          '${currencyFmt.format(marketPrice)} ₺',
+                          style: TextStyle(
+                            fontSize: 9.0,
+                            decoration: TextDecoration.lineThrough,
+                            color: isDark ? Colors.grey[500] : const Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Text(
+                  'Stok: ${listing.remainingQuantity} adet',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    color: isDark ? Colors.grey[300] : const Color(0xFF475569),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 6),
+
+          // 4. Aksiyon Butonları
+          if (isOfficial)
+            SizedBox(
+              width: double.infinity,
+              height: 28,
+              child: ElevatedButton(
+                onPressed: () => _showDirectBuyDialog(context, listing, isDark),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDark ? const Color(0xFF0F766E) : const Color(0xFF0D9488),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                ),
+                child: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.shopping_cart_checkout, size: 12),
+                      SizedBox(width: 4),
+                      Text('Hemen Satın Al', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else if (isOwn)
+            Container(
+              width: double.infinity,
+              height: 28,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: isDark ? Colors.white12 : const Color(0xFFCBD5E1)),
+              ),
+              child: Text(
+                'Senin İlanın',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                ),
+              ),
+            )
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 28,
+                    child: ElevatedButton(
+                      onPressed: () => _showDirectBuyDialog(context, listing, isDark),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isDark ? const Color(0xFF263B66) : const Color(0xFF0284C7),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                      ),
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Satın Al', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: SizedBox(
+                    height: 28,
+                    child: ElevatedButton(
+                      onPressed: () => _showMakeOfferDialog(context, listing, isDark),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isDark ? const Color(0xFF8B4513) : const Color(0xFFD97706),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                      ),
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Teklif Ver', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 

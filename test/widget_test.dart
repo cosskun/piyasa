@@ -2946,7 +2946,7 @@ void main() {
     expect(loginErr, isNull);
     expect(fb.isLoggedIn, isTrue);
     expect(fb.currentSessionId, isNotNull);
-    final originalSessionId = fb.currentSessionId!;
+    expect(fb.currentSessionId, isNotEmpty);
 
     final controller = GameController(autoLoad: false);
     controller.resetToNewGame();
