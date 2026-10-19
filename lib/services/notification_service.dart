@@ -34,8 +34,15 @@ class NotificationService {
   /// Kullanıcı oyun içindeyken (foreground) telefon bildirim çubuğunu rahatsız etmeme bayrağı
   bool isAppInForeground = true;
 
+  /// Oyun açılış / yükleme ekranındayken atmosferi korumak için bildirimleri engelleme bayrağı
+  bool isGameLoading = false;
+
   void setAppInForeground(bool inForeground) {
     isAppInForeground = inForeground;
+  }
+
+  void setGameLoading(bool loading) {
+    isGameLoading = loading;
   }
 
   Future<void> initialize() async {
@@ -412,6 +419,11 @@ class NotificationService {
     lastShownNotificationId = id;
     lastShownTitle = title;
     lastShownBody = body;
+
+    // Oyun açılış / yükleme ekranındayken atmosferi bozmamak için hiçbir bildirim gösterilmez
+    if (isGameLoading) {
+      return;
+    }
 
     // Kullanıcı oyunun içindeyse standart bildirimler telefon çubuğuna düşürülmez.
     // Ancak force == true ise (örneğin deponun tamamen dolması gibi kritik bildirimler)

@@ -102,6 +102,7 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
       FirebaseService().setPlayerOnlineStatus(isOnline: true);
       if (widget.skipLoadingForTesting != true) {
         _isLoadingGame = true;
+        NotificationService().setGameLoading(true);
       }
     }
   }
@@ -188,6 +189,8 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
               ? GameLoadingScreen(
                   controller: _controller,
                   onLoaded: () {
+                    NotificationService().setGameLoading(false);
+                    _controller.clearNotificationToast();
                     setState(() {
                       _isLoadingGame = false;
                       _isAuthenticated = true;
@@ -200,6 +203,7 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
                       onLoggedOut: () {
                         _controller.resetToNewGame();
                         AuditLogService().clearInProcess();
+                        NotificationService().setGameLoading(false);
                         setState(() {
                           _isAuthenticated = false;
                           _isLoadingGame = false;
@@ -217,6 +221,7 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
                             _isAuthenticated = true;
                           });
                         } else {
+                          NotificationService().setGameLoading(true);
                           setState(() {
                             _isLoadingGame = true;
                           });

@@ -158,8 +158,10 @@ class _GameLoadingScreenState extends State<GameLoadingScreen> with TickerProvid
   void _checkAndFinish() {
     if (_dataLoaded && _minDurationPassed && !_completed && mounted) {
       _completed = true;
+      widget.controller.clearNotificationToast();
       Future.delayed(const Duration(milliseconds: 200), () {
         if (mounted) {
+          widget.controller.clearNotificationToast();
           widget.onLoaded();
         }
       });
@@ -168,6 +170,7 @@ class _GameLoadingScreenState extends State<GameLoadingScreen> with TickerProvid
 
   @override
   void dispose() {
+    widget.controller.clearNotificationToast();
     _pulseController.dispose();
     _slideController.dispose();
     _progressController.dispose();

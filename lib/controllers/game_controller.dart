@@ -87,6 +87,10 @@ class GameController extends ChangeNotifier {
   bool _hasNotifiedWarehouseFull = false;
   bool get hasNotifiedWarehouseFull => _hasNotifiedWarehouseFull;
 
+  // Veri yükleme / açılış ekranı esnasında bildirim ve toast baskılama bayrağı
+  bool _isLoadingStorage = false;
+  bool get isLoadingStorage => _isLoadingStorage;
+
   // Rozet sayaçları
   int get pendingIncomingOffersCount =>
       offers.where((o) => o.direction == OfferDirection.incoming && o.status == OfferStatus.pending).length;
@@ -577,13 +581,15 @@ class GameController extends ChangeNotifier {
     if (isFull) {
       if (!_hasNotifiedWarehouseFull) {
         _hasNotifiedWarehouseFull = true;
-        latestNotificationToast =
-            '📦 Deponuz tamamen doldu! Tesisler depoda yer açılmasını bekliyor.';
-        NotificationService().showWarehouseFullNotification(
-          currentWeight: currentWeight,
-          maxCapacity: maxCap,
-          force: false,
-        );
+        if (!_isLoadingStorage) {
+          latestNotificationToast =
+              '📦 Deponuz tamamen doldu! Tesisler depoda yer açılmasını bekliyor.';
+          NotificationService().showWarehouseFullNotification(
+            currentWeight: currentWeight,
+            maxCapacity: maxCap,
+            force: false,
+          );
+        }
       }
     } else if (currentWeight < maxCap * 0.98) {
       if (_hasNotifiedWarehouseFull) {
@@ -2486,7 +2492,9 @@ class GameController extends ChangeNotifier {
       return true;
     }
 
-    // 1. Yerel cihazdaki son kaydı oku
+    _isLoadingStorage = true;
+    try {
+      // 1. Yerel cihazdaki son kaydı oku
     final localData = await SaveService().getLocalSaveData(playerId: pid);
 
     // 2. Buluttaki oyuncu verisini oku
@@ -2598,6 +2606,9 @@ class GameController extends ChangeNotifier {
     _setupCloudMarketSync();
 
     return true;
+    } finally {
+      _isLoadingStorage = false;
+    }
   }
 
   void _setupCloudOffersSync() {
