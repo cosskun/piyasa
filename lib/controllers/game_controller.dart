@@ -1516,7 +1516,6 @@ class GameController extends ChangeNotifier {
       },
     );
 
-    latestNotificationToast = '🎉 $packageName başarıyla kuruldu! Tesisleriniz üretime başladı.';
     notifyListeners();
     saveState();
     return null;
@@ -1575,7 +1574,6 @@ class GameController extends ChangeNotifier {
       },
     );
 
-    latestNotificationToast = '💰 ${fac.emoji} ${fac.name} satıldı ve ${refund.toStringAsFixed(0)} ₺ nakite dönüştürüldü.';
     notifyListeners();
     saveState();
     return null;
@@ -1587,9 +1585,6 @@ class GameController extends ChangeNotifier {
     if (!fac.isProducing) {
       fac.progress = 0.0;
     }
-    latestNotificationToast = fac.isProducing
-        ? '🌿 ${fac.emoji} ${fac.name} üretimi başlatıldı.'
-        : '⏸️ ${fac.emoji} ${fac.name} üretimi durduruldu.';
     notifyListeners();
     saveState();
   }
@@ -1649,11 +1644,6 @@ class GameController extends ChangeNotifier {
       },
     );
 
-    if (store.level <= 5) {
-      latestNotificationToast = '🎉 ${store.name} Seviye ${store.level}\'e yükseldi! Yeni ürün rafı (${store.maxProductSlots} ürün) açıldı.';
-    } else {
-      latestNotificationToast = '🎉 ${store.name} Seviye ${store.level}\'e yükseldi! Satış hızı ve raf kapasitesi arttı.';
-    }
     notifyListeners();
     saveState();
     return null;
@@ -1696,7 +1686,6 @@ class GameController extends ChangeNotifier {
       slot.shelfStock = take;
     }
 
-    latestNotificationToast = '🛒 ${item.emoji} ${item.name} mağaza raflarına eklendi!';
     notifyListeners();
     saveState();
     return null;
@@ -1726,7 +1715,6 @@ class GameController extends ChangeNotifier {
     }
 
     store.productSlots.remove(slot);
-    latestNotificationToast = 'Ürün rafı kaldırıldı.';
     notifyListeners();
     saveState();
     return null;
@@ -1787,20 +1775,12 @@ class GameController extends ChangeNotifier {
   void toggleStoreSelling(RetailStore store, [bool? val]) {
     store.isSelling = val ?? !store.isSelling;
     store.statusMessage = store.isSelling ? 'Müşteri Bekleniyor' : 'Satışlar Durduruldu';
-    latestNotificationToast = store.isSelling
-        ? '🏪 ${store.emoji} ${store.name} satışları başlatıldı.'
-        : '⏸️ ${store.emoji} ${store.name} satışları durduruldu.';
     notifyListeners();
     saveState();
   }
 
   void toggleStoreSlotSelling(RetailStore store, StoreProductSlot slot, [bool? val]) {
     slot.isSelling = val ?? !slot.isSelling;
-    final item = ItemRegistry.get(slot.itemId);
-    final itemName = item?.name ?? slot.itemId;
-    latestNotificationToast = slot.isSelling
-        ? '🛒 $itemName satışı başlatıldı.'
-        : '⏸️ $itemName satışı durduruldu.';
     notifyListeners();
     saveState();
   }
@@ -1860,14 +1840,6 @@ class GameController extends ChangeNotifier {
       },
     );
 
-    String detail = '🏪 ${store.emoji} ${store.name} devredildi ve ${refund.toStringAsFixed(0)} ₺ nakit alındı.';
-    if (totalReturnedToWarehouse > 0) {
-      detail += ' Raflardaki $totalReturnedToWarehouse ürün depoya aktarıldı.';
-    }
-    if (totalLiquidatedStock > 0) {
-      detail += ' Depoya sığmayan $totalLiquidatedStock ürün ${totalLiquidatedEarnings.toStringAsFixed(0)} ₺ karşılığı toptan satıldı.';
-    }
-    latestNotificationToast = detail;
     notifyListeners();
     saveState();
     return null;

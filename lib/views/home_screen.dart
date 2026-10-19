@@ -159,6 +159,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
 
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: InkWell(
