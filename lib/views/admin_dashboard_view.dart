@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../services/firebase_service.dart';
 import '../models/audit_log.dart';
+import '../widgets/game_toast.dart';
 
 class AdminDashboardView extends StatefulWidget {
   const AdminDashboardView({super.key});
@@ -188,11 +189,11 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
                   reason: reasonController.text,
                 );
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(err ?? '$username başarıyla banlandı ve erişimi kesildi!'),
-                      backgroundColor: err != null ? Colors.red : Colors.green.shade700,
-                    ),
+                  GameToast.show(
+                    context,
+                    title: err != null ? 'İşlem Başarısız' : 'Oyuncu Banlandı',
+                    message: err ?? '$username başarıyla banlandı ve erişimi kesildi!',
+                    type: err != null ? GameToastType.error : GameToastType.success,
                   );
                 }
               },
@@ -230,11 +231,11 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
                 Navigator.pop(ctx);
                 final err = await FirebaseService().unbanPlayer(targetUid: targetUid);
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(err ?? '$username oyuncusunun banı kaldırıldı!'),
-                      backgroundColor: err != null ? Colors.red : Colors.green.shade700,
-                    ),
+                  GameToast.show(
+                    context,
+                    title: err != null ? 'İşlem Başarısız' : 'Ban Kaldırıldı',
+                    message: err ?? '$username oyuncusunun banı kaldırıldı!',
+                    type: err != null ? GameToastType.error : GameToastType.success,
                   );
                 }
               },
@@ -280,11 +281,11 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
                 Navigator.pop(ctx);
                 final err = await FirebaseService().deletePlayer(targetUid: targetUid);
                 if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(err ?? '$username başarıyla veritabanından silindi!'),
-                      backgroundColor: err != null ? Colors.red : Colors.green.shade700,
-                    ),
+                  GameToast.show(
+                    context,
+                    title: err != null ? 'İşlem Başarısız' : 'Oyuncu Silindi',
+                    message: err ?? '$username başarıyla veritabanından silindi!',
+                    type: err != null ? GameToastType.error : GameToastType.success,
                   );
                 }
               },
@@ -300,13 +301,13 @@ class _AdminDashboardViewState extends State<AdminDashboardView> with SingleTick
   void _runCleanupUnknownPlayers() async {
     final deleted = await FirebaseService().cleanupUnknownPlayers();
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(deleted > 0
-              ? '$deleted adet geçersiz/bilinmeyen kayıt veritabanından başarıyla temizlendi!'
-              : 'Veritabanında silinecek bilinmeyen kayıt bulunamadı.'),
-          backgroundColor: Colors.blueAccent.shade700,
-        ),
+      GameToast.show(
+        context,
+        title: 'Veritabanı Temizliği',
+        message: deleted > 0
+            ? '$deleted adet geçersiz/bilinmeyen kayıt veritabanından başarıyla temizlendi!'
+            : 'Veritabanında silinecek bilinmeyen kayıt bulunamadı.',
+        type: GameToastType.info,
       );
     }
   }

@@ -20,6 +20,7 @@ import 'session_terminated_dialog.dart';
 import 'leaderboard_view.dart';
 import 'home_dashboard_tab.dart';
 import 'profile_screen.dart';
+import '../widgets/game_toast.dart';
 
 class HomeScreen extends StatefulWidget {
   final GameController controller;
@@ -146,7 +147,6 @@ class _HomeScreenState extends State<HomeScreen> {
         final isClickable = isIncomingOffer || isOfferApproved || isOfferRejected || isLimitOrder;
 
         void navigateFromToast() {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
           setState(() {
             _currentTabIndex = 3; // Borsa & Pazar ana sekmesine geç
           });
@@ -159,89 +159,37 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         }
 
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: InkWell(
-              onTap: isClickable ? navigateFromToast : null,
-              borderRadius: BorderRadius.circular(10),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    Icon(
-                      isOfferApproved
-                          ? Icons.check_circle_outline
-                          : (isOfferRejected
-                              ? Icons.cancel_outlined
-                              : (isIncomingOffer
-                                  ? Icons.mark_email_unread_outlined
-                                  : (isLimitOrder ? Icons.track_changes : Icons.notifications_active))),
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            msg,
-                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5, color: Colors.white),
-                          ),
-                          if (isClickable) ...[
-                            const SizedBox(height: 3),
-                            Text(
-                              isIncomingOffer
-                                  ? '👆 Teklifi incelemek ve yanıtlamak için dokunun ›'
-                                  : (isOfferApproved
-                                      ? '👆 Satın alma ekranına gitmek için dokunun ›'
-                                      : (isLimitOrder
-                                          ? '👆 Emir detaylarına gitmek için dokunun ›'
-                                          : '👆 Teklifler sekmesine gitmek için dokunun ›')),
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.amberAccent,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    if (isClickable) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white38),
-                        ),
-                        child: const Text(
-                          'Git ›',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-            backgroundColor: isOfferApproved
-                ? const Color(0xFF059669)
+        final title = isIncomingOffer
+            ? 'Yeni Teklif Geldi'
+            : (isOfferApproved
+                ? 'Teklif Onaylandı'
                 : (isOfferRejected
-                    ? const Color(0xFFDC2626)
-                    : (isIncomingOffer ? const Color(0xFF1D4ED8) : const Color(0xFF2563EB))),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 5),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
+                    ? 'Teklif Reddedildi'
+                    : (isLimitOrder ? 'Alış Emri Tamamlandı' : 'Piyasa Bildirimi')));
+
+        final type = isOfferApproved
+            ? GameToastType.success
+            : (isOfferRejected
+                ? GameToastType.error
+                : (isIncomingOffer ? GameToastType.info : GameToastType.warning));
+
+        final icon = isOfferApproved
+            ? Icons.check_circle_rounded
+            : (isOfferRejected
+                ? Icons.cancel_rounded
+                : (isIncomingOffer
+                    ? Icons.mark_email_unread_rounded
+                    : (isLimitOrder ? Icons.track_changes : Icons.notifications_active_rounded)));
+
+        GameToast.show(
+          context,
+          title: title,
+          message: msg,
+          type: type,
+          icon: icon,
+          actionLabel: isClickable ? 'İncele' : null,
+          onTap: isClickable ? navigateFromToast : null,
+          duration: const Duration(seconds: 4),
         );
       });
     }

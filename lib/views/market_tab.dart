@@ -8,6 +8,7 @@ import '../models/market_listing.dart';
 import '../models/market_offer.dart';
 import '../models/limit_order.dart';
 import '../services/firebase_service.dart';
+import '../widgets/game_toast.dart';
 
 enum MarketFilter {
   all, // Tüm Borsa
@@ -2401,9 +2402,7 @@ class MarketTabState extends State<MarketTab> {
                         child: OutlinedButton.icon(
                           onPressed: () {
                             widget.controller.rejectIncomingOffer(offer);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(content: Text('Teklif reddedildi.')),
-                            );
+                            GameToast.showInfo(context, 'Teklif reddedildi.', title: 'Teklif Reddedildi');
                           },
                           icon: const Icon(Icons.close, size: 14),
                           label: const Text('Reddet'),
@@ -2419,17 +2418,12 @@ class MarketTabState extends State<MarketTab> {
                           onPressed: () {
                             final err = widget.controller.acceptIncomingOffer(offer);
                             if (err != null) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                              );
+                              GameToast.showError(context, err, title: 'Teklif Onaylanamadı');
                             } else {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    'Teklif onaylandı! Alıcıya (${offer.buyerName}) onay bildirimi iletildi.',
-                                  ),
-                                  backgroundColor: Colors.green[800],
-                                ),
+                              GameToast.showSuccess(
+                                context,
+                                'Teklif onaylandı! Alıcıya (${offer.buyerName}) bildirim iletildi.',
+                                title: 'Teklif Onaylandı',
                               );
                             }
                           },
@@ -2666,17 +2660,12 @@ class MarketTabState extends State<MarketTab> {
                             onPressed: () {
                               final err = widget.controller.buyAcceptedOffer(offer);
                               if (err != null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                                );
+                                GameToast.showError(context, err, title: 'Satın Alma Hatası');
                               } else {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      '${offer.quantity} adet ${offer.item.name} depoya alındı! (${currencyFmt.format(offer.totalOfferedPrice)} ₺ ödendi)',
-                                    ),
-                                    backgroundColor: Colors.green[800],
-                                  ),
+                                GameToast.showSuccess(
+                                  context,
+                                  '${offer.quantity} adet ${offer.item.name} depoya alındı! (${currencyFmt.format(offer.totalOfferedPrice)} ₺ ödendi) 📦',
+                                  title: 'Satın Alma Başarılı',
                                 );
                               }
                             },
@@ -3126,21 +3115,16 @@ class MarketTabState extends State<MarketTab> {
                     final err = widget.controller.makeOfferOnListing(listing, finalQty, finalPrice);
                     Navigator.pop(ctx);
                     if (err != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                      );
+                      GameToast.showError(context, err, title: 'Teklif Gönderilemedi');
                     } else {
                       setState(() {
                         _mainTab = 2;
                         _offerSubTab = 1;
                       });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Teklifiniz "${listing.sellerName}" satıcısına iletildi. Satıcı teklifinizi değerlendirdiğinde bildirim alacaksınız.',
-                          ),
-                          backgroundColor: Colors.blueGrey[800],
-                        ),
+                      GameToast.showSuccess(
+                        context,
+                        'Teklifiniz "${listing.sellerName}" satıcısına iletildi. Satıcı yanıtladığında bildirim alacaksınız.',
+                        title: 'Teklif Gönderildi',
                       );
                     }
                   },
@@ -3331,15 +3315,12 @@ class MarketTabState extends State<MarketTab> {
                     final err = widget.controller.buyFromCommunityListing(listing, finalQty);
                     Navigator.pop(ctx);
                     if (err != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                      );
+                      GameToast.showError(context, err, title: 'Satın Alma Hatası');
                     } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('$finalQty adet ${listing.item.name} satın alındı ve depoya eklendi!'),
-                          backgroundColor: Colors.green[800],
-                        ),
+                      GameToast.showSuccess(
+                        context,
+                        '$finalQty adet ${listing.item.name} satın alındı ve depoya eklendi! 📦',
+                        title: 'Satın Alma Başarılı',
                       );
                     }
                   },
@@ -3723,21 +3704,16 @@ class MarketTabState extends State<MarketTab> {
                     final err = widget.controller.createListing(mItem.itemId, finalQty, finalPrice);
                     Navigator.pop(ctx);
                     if (err != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                      );
+                      GameToast.showError(context, err, title: 'İlan Verilemedi');
                     } else {
                       setState(() {
                         _mainTab = 1;
                         _pazarSubTab = 1;
                       });
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            '$finalQty adet ${mItem.data.name} ${finalPrice.toStringAsFixed(2)} ₺ fiyattan pazara çıkarıldı!',
-                          ),
-                          backgroundColor: Colors.green[800],
-                        ),
+                      GameToast.showSuccess(
+                        context,
+                        '$finalQty adet ${mItem.data.name} ${finalPrice.toStringAsFixed(2)} ₺ fiyattan pazara çıkarıldı! 🏷️',
+                        title: 'İlan Pazara Çıkarıldı',
                       );
                     }
                   },
@@ -3776,15 +3752,12 @@ class MarketTabState extends State<MarketTab> {
               Navigator.pop(ctx);
               final err = widget.controller.cancelListing(listing);
               if (err != null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                );
+                GameToast.showError(context, err, title: 'İptal Edilemedi');
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${listing.item.name} ilanı iptal edildi ve mallar depoya döndü.'),
-                    backgroundColor: Colors.blueGrey[800],
-                  ),
+                GameToast.showInfo(
+                  context,
+                  '${listing.item.name} ilanı iptal edildi ve mallar depoya döndü.',
+                  title: 'İlan İptal Edildi',
                 );
               }
             },
@@ -4483,19 +4456,14 @@ class MarketTabState extends State<MarketTab> {
                     }
                     Navigator.pop(ctx);
                     if (err != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                      );
+                      GameToast.showError(context, err, title: 'İşlem Başarısız');
                     } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            isBuy
-                                ? '$finalQty adet ${mItem.data.name} depoya alındı!'
-                                : '$finalQty adet ${mItem.data.name} anında sisteme satıldı! (+${(unitPrice * finalQty).toStringAsFixed(0)} ₺)',
-                          ),
-                          backgroundColor: Colors.green[800],
-                        ),
+                      GameToast.showSuccess(
+                        context,
+                        isBuy
+                            ? '$finalQty adet ${mItem.data.name} depoya alındı! 📦'
+                            : '$finalQty adet ${mItem.data.name} anında satıldı! (+${(unitPrice * finalQty).toStringAsFixed(0)} ₺) 💰',
+                        title: isBuy ? 'Satın Alındı' : 'Hızlı Satış Yapıldı',
                       );
                     }
                   },
@@ -4779,11 +4747,10 @@ class MarketTabState extends State<MarketTab> {
                         OutlinedButton.icon(
                           onPressed: () {
                             c.cancelLimitBuyOrder(order);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('${order.item.name} alış emri iptal edildi, ${currencyFmt.format(order.totalReservedCost)} ₺ iade edildi.'),
-                                backgroundColor: Colors.blueGrey,
-                              ),
+                            GameToast.showInfo(
+                              context,
+                              '${order.item.name} alış emri iptal edildi, ${currencyFmt.format(order.totalReservedCost)} ₺ iade edildi.',
+                              title: 'Emir İptal Edildi',
                             );
                           },
                           icon: const Icon(Icons.cancel_outlined, size: 14),
@@ -5232,20 +5199,19 @@ class MarketTabState extends State<MarketTab> {
                           );
                           Navigator.pop(ctx);
                           if (err != null) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err), backgroundColor: Colors.red[800]));
+                            GameToast.showError(context, err, title: 'Emir Verilemedi');
                           } else {
                             final matchingOrder = widget.controller.limitBuyOrders.isNotEmpty
                                 ? widget.controller.limitBuyOrders.first
                                 : null;
                             final wasInstant = matchingOrder != null && matchingOrder.isCompleted;
 
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(wasInstant
-                                    ? '$quantity adet ${itemData.name} için emir verildi ve hemen satın alındı! 🎯'
-                                    : '$quantity adet ${itemData.name} için ${targetPrice.toStringAsFixed(2)} ₺ alış emri verildi! 🎯'),
-                                backgroundColor: const Color(0xFF059669),
-                              ),
+                            GameToast.showSuccess(
+                              context,
+                              wasInstant
+                                  ? '$quantity adet ${itemData.name} için emir verildi ve hemen satın alındı! 🎯'
+                                  : '$quantity adet ${itemData.name} için ${targetPrice.toStringAsFixed(2)} ₺ alış emri verildi! 🎯',
+                              title: wasInstant ? 'Alış Gerçekleşti' : 'Alış Emri Açıldı',
                             );
                           }
                         }

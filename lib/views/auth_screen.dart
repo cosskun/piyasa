@@ -5,6 +5,7 @@ import '../services/notification_service.dart';
 import '../controllers/game_controller.dart';
 import '../models/audit_log.dart';
 import 'banned_dialog.dart';
+import '../widgets/game_toast.dart';
 
 class AuthScreen extends StatefulWidget {
   final VoidCallback onAuthenticated;
@@ -187,25 +188,11 @@ class _AuthScreenState extends State<AuthScreen> {
           _errorMessage = null;
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.check_circle_rounded, color: Colors.white),
-                SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Kayıt başarılı! Lütfen belirlediğiniz şifrenizle giriş yapınız.',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: const Color(0xFF059669),
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 4),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
+        GameToast.show(
+          context,
+          title: 'Kayıt Başarılı',
+          message: 'Kayıt başarılı! Lütfen belirlediğiniz şifrenizle giriş yapınız.',
+          type: GameToastType.success,
         );
       }
     } catch (e) {

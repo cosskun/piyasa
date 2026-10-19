@@ -7,6 +7,7 @@ import 'services/audit_log_service.dart';
 import 'views/home_screen.dart';
 import 'views/auth_screen.dart';
 import 'views/game_loading_screen.dart';
+import 'widgets/game_toast.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -142,6 +143,7 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
       valueListenable: _controller.themeModeNotifier,
       builder: (context, isDarkTheme, _) {
         return MaterialApp(
+          navigatorKey: GameToast.navigatorKey,
           title: 'Piyasa - Ticaret & Borsa',
           debugShowCheckedModeBanner: false,
           themeMode: isDarkTheme ? ThemeMode.dark : ThemeMode.light,

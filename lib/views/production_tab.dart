@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../controllers/game_controller.dart';
 import '../models/facility.dart';
 import '../models/item.dart';
+import '../widgets/game_toast.dart';
 
 class ProductionTab extends StatefulWidget {
   final GameController controller;
@@ -1094,11 +1095,10 @@ class _ProductionTabState extends State<ProductionTab> {
                                 ? () {
                                     controller.buyFacility(bp, quantity: 1);
                                     Navigator.pop(ctx);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('${bp.name} satın alındı ve üretime başladı! 🎉'),
-                                        backgroundColor: const Color(0xFF059669),
-                                      ),
+                                    GameToast.showSuccess(
+                                      context,
+                                      '${bp.name} satın alındı ve üretime başladı! 🎉',
+                                      title: 'Tesis Kuruldu',
                                     );
                                   }
                                 : null,
@@ -1189,11 +1189,10 @@ class _ProductionTabState extends State<ProductionTab> {
                                         ? () {
                                             controller.buyFacility(bp, quantity: 1);
                                             Navigator.pop(ctx);
-                                            ScaffoldMessenger.of(context).showSnackBar(
-                                              SnackBar(
-                                                content: Text('${bp.name} satın alındı ve üretime başladı! 🎉'),
-                                                backgroundColor: const Color(0xFF059669),
-                                              ),
+                                            GameToast.showSuccess(
+                                              context,
+                                              '${bp.name} satın alındı ve üretime başladı! 🎉',
+                                              title: 'Tesis Kuruldu',
                                             );
                                           }
                                         : null,
@@ -1381,15 +1380,12 @@ class _ProductionTabState extends State<ProductionTab> {
                       Navigator.pop(ctx);
                       final err = controller.upgradeFacility(fac);
                       if (err != null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                        );
+                        GameToast.showError(context, err, title: 'Yükseltme Başarısız');
                       } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('${fac.name} Seviye $nextLevel seviyesine yükseltildi! 🚀'),
-                            backgroundColor: Colors.green[800],
-                          ),
+                        GameToast.showSuccess(
+                          context,
+                          '${fac.name} Seviye $nextLevel seviyesine yükseltildi! 🚀',
+                          title: 'Tesis Yükseltildi',
                         );
                       }
                     }
@@ -1562,15 +1558,12 @@ class _ProductionTabState extends State<ProductionTab> {
                 Navigator.pop(ctx);
                 final err = controller.sellFacility(fac);
                 if (err != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                  );
+                  GameToast.showError(context, err, title: 'Satış Başarısız');
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${fac.name} satıldı ve ${currencyFmt.format(refund)} ₺ kasanıza aktarıldı! 💰'),
-                      backgroundColor: const Color(0xFF059669),
-                    ),
+                  GameToast.showSuccess(
+                    context,
+                    '${fac.name} satıldı ve ${currencyFmt.format(refund)} ₺ kasanıza aktarıldı! 💰',
+                    title: 'Tesis Satıldı',
                   );
                 }
               },

@@ -5,6 +5,7 @@ import '../controllers/game_controller.dart';
 import '../models/facility.dart';
 import '../models/item.dart';
 import '../models/store.dart';
+import '../widgets/game_toast.dart';
 
 class RetailTab extends StatelessWidget {
   final GameController controller;
@@ -871,8 +872,12 @@ class RetailTab extends StatelessWidget {
                   onPressed: () {
                     final err = controller.restockStoreSlot(store, slot, 20);
                     if (err != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(err), backgroundColor: Colors.orange[800]),
+                      GameToast.showWarning(context, err, title: 'Raf Doldurulamadı');
+                    } else {
+                      GameToast.showSuccess(
+                        context,
+                        '${item?.name ?? slot.itemId} rafına +20 adet eklendi! 🛒',
+                        title: 'Rafa Eklendi',
                       );
                     }
                   },
@@ -1201,11 +1206,10 @@ class RetailTab extends StatelessWidget {
                     if (newPrice != null && newPrice > 0) {
                       controller.setStoreSlotRetailPrice(store, slot, newPrice);
                       Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${item?.name ?? slot.itemId} birim satış fiyatı ${newPrice.toStringAsFixed(0)} ₺ olarak güncellendi. (Talep: %$demandPercent)'),
-                          backgroundColor: const Color(0xFF059669),
-                        ),
+                      GameToast.showSuccess(
+                        context,
+                        '${item?.name ?? slot.itemId} birim satış fiyatı ${newPrice.toStringAsFixed(0)} ₺ olarak güncellendi. (Talep: %$demandPercent)',
+                        title: 'Fiyat Güncellendi',
                       );
                     }
                   },
@@ -2058,15 +2062,12 @@ class RetailTab extends StatelessWidget {
                                             onPressed: () {
                                               final err = controller.addProductSlotToStore(activeStore, itemId);
                                               if (err != null) {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                                                );
+                                                GameToast.showError(context, err, title: 'Raf Eklenemedi');
                                               } else {
-                                                ScaffoldMessenger.of(context).showSnackBar(
-                                                  SnackBar(
-                                                    content: Text('${item?.name ?? itemId} raflara eklendi! 🎉'),
-                                                    backgroundColor: const Color(0xFF059669),
-                                                  ),
+                                                GameToast.showSuccess(
+                                                  context,
+                                                  '${item?.name ?? itemId} raflara eklendi! 🎉',
+                                                  title: 'Rafa Eklendi',
                                                 );
                                               }
                                             },
@@ -2115,21 +2116,19 @@ class RetailTab extends StatelessWidget {
                         child: ElevatedButton.icon(
                           onPressed: () {
                             if (controller.cash < activeStore.purchaseCost) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Yetersiz nakit bakiye!'),
-                                  backgroundColor: Colors.redAccent,
-                                ),
+                              GameToast.showWarning(
+                                context,
+                                'Yetersiz nakit bakiye! Dükkan için ${currencyFmt.format(activeStore.purchaseCost)} ₺ gerekiyor.',
+                                title: 'Yetersiz Bakiye',
                               );
                               return;
                             }
                             controller.buyStore(activeStore);
                             Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('${activeStore.name} mağazası açıldı! 🎊'),
-                                backgroundColor: const Color(0xFF059669),
-                              ),
+                            GameToast.showSuccess(
+                              context,
+                              '${activeStore.name} mağazası açıldı! 🎊',
+                              title: 'Dükkan Açıldı',
                             );
                           },
                           icon: const Icon(Icons.storefront, size: 18),
@@ -2276,15 +2275,12 @@ class RetailTab extends StatelessWidget {
                                   Navigator.pop(ctx);
                                   final err = controller.addProductSlotToStore(store, itemId);
                                   if (err != null) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                                    );
+                                    GameToast.showError(context, err, title: 'Raf Eklenemedi');
                                   } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text('${item?.name ?? itemId} dükkan rafına eklendi! 🎉'),
-                                        backgroundColor: const Color(0xFF059669),
-                                      ),
+                                    GameToast.showSuccess(
+                                      context,
+                                      '${item?.name ?? itemId} dükkan rafına eklendi! 🎉',
+                                      title: 'Rafa Eklendi',
                                     );
                                   }
                                 },
@@ -2351,15 +2347,12 @@ class RetailTab extends StatelessWidget {
                 Navigator.pop(ctx);
                 final err = controller.removeProductSlotFromStore(store, slot);
                 if (err != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                  );
+                  GameToast.showError(context, err, title: 'Raf Kaldırılamadı');
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${item?.name ?? slot.itemId} rafı kaldırıldı.'),
-                      backgroundColor: const Color(0xFF334155),
-                    ),
+                  GameToast.showInfo(
+                    context,
+                    '${item?.name ?? slot.itemId} rafı dükkandan kaldırıldı.',
+                    title: 'Raf Kaldırıldı',
                   );
                 }
               },
@@ -2473,11 +2466,10 @@ class RetailTab extends StatelessWidget {
                                       ? () {
                                           controller.buyStore(bp);
                                           Navigator.pop(ctx);
-                                          ScaffoldMessenger.of(context).showSnackBar(
-                                            SnackBar(
-                                              content: Text('${bp.name} mağazası açıldı! 🎊'),
-                                              backgroundColor: const Color(0xFF059669),
-                                            ),
+                                          GameToast.showSuccess(
+                                            context,
+                                            '${bp.name} mağazası açıldı! 🎊',
+                                            title: 'Dükkan Açıldı',
                                           );
                                         }
                                       : null,
@@ -2735,15 +2727,12 @@ class RetailTab extends StatelessWidget {
                       Navigator.pop(ctx);
                       final err = controller.upgradeStore(store);
                       if (err != null) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                        );
+                        GameToast.showError(context, err, title: 'Yükseltme Başarısız');
                       } else {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('${store.name} Seviye $nextLevel seviyesine yükseltildi! 🏪'),
-                            backgroundColor: Colors.green[800],
-                          ),
+                        GameToast.showSuccess(
+                          context,
+                          '${store.name} Seviye $nextLevel seviyesine yükseltildi! 🏪',
+                          title: 'Dükkan Yükseltildi',
                         );
                       }
                     }
@@ -2977,15 +2966,12 @@ class RetailTab extends StatelessWidget {
                 Navigator.pop(ctx);
                 final err = controller.sellStore(store);
                 if (err != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                  );
+                  GameToast.showError(context, err, title: 'Devir Başarısız');
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${store.name} devredildi ve ${currencyFmt.format(refund)} ₺ kasanıza aktarıldı! 💰'),
-                      backgroundColor: const Color(0xFF059669),
-                    ),
+                  GameToast.showSuccess(
+                    context,
+                    '${store.name} devredildi ve ${currencyFmt.format(refund)} ₺ kasanıza aktarıldı! 💰',
+                    title: 'Dükkan Devredildi',
                   );
                 }
               },

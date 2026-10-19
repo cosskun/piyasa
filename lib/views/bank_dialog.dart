@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../controllers/game_controller.dart';
 import '../models/bank_loan.dart';
+import '../widgets/game_toast.dart';
 
 class BankDialog extends StatefulWidget {
   final GameController controller;
@@ -736,28 +737,37 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
             _buildCustomButton(
               onPressed: () {
                 if (_savingsAmount <= 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Lütfen yatırılacak tutarı girin.')),
+                  GameToast.show(
+                    context,
+                    title: 'Uyarı',
+                    message: 'Lütfen yatırılacak tutarı girin.',
+                    type: GameToastType.warning,
                   );
                   return;
                 }
                 if (c.cash < _savingsAmount) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Yetersiz nakit! Kasanızda ${currencyFmt.format(c.cash)} ₺ var.'),
-                    ),
+                  GameToast.show(
+                    context,
+                    title: 'Yetersiz Nakit',
+                    message: 'Kasanızda ${currencyFmt.format(c.cash)} ₺ var.',
+                    type: GameToastType.error,
                   );
                   return;
                 }
                 final err = c.depositToBank(_savingsAmount);
                 if (err != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+                  GameToast.show(
+                    context,
+                    title: 'İşlem Başarısız',
+                    message: err,
+                    type: GameToastType.error,
+                  );
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${currencyFmt.format(_savingsAmount)} ₺ vadeli hesaba yatırıldı!'),
-                      backgroundColor: const Color(0xFF059669),
-                    ),
+                  GameToast.show(
+                    context,
+                    title: 'Mevduat Yatırıldı',
+                    message: '${currencyFmt.format(_savingsAmount)} ₺ vadeli hesaba yatırıldı!',
+                    type: GameToastType.success,
                   );
                   setState(() {
                     _savingsAmount = min(1000.0, c.cash);
@@ -780,11 +790,11 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                   ? () {
                       final all = c.cash;
                       c.depositToBank(all);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Tüm kasanız (${currencyFmt.format(all)} ₺) faize yatırıldı!'),
-                          backgroundColor: const Color(0xFF059669),
-                        ),
+                      GameToast.show(
+                        context,
+                        title: 'Mevduat Yatırıldı',
+                        message: 'Tüm kasanız (${currencyFmt.format(all)} ₺) faize yatırıldı!',
+                        type: GameToastType.success,
                       );
                       setState(() {
                         _savingsAmount = 0.0;
@@ -803,28 +813,37 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
             _buildCustomButton(
               onPressed: () {
                 if (_savingsAmount <= 0) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Lütfen çekilecek tutarı girin.')),
+                  GameToast.show(
+                    context,
+                    title: 'Uyarı',
+                    message: 'Lütfen çekilecek tutarı girin.',
+                    type: GameToastType.warning,
                   );
                   return;
                 }
                 if (c.bankSavings < _savingsAmount) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Mevduatınızda bu kadar para yok! Mevcut: ${currencyFmt.format(c.bankSavings)} ₺'),
-                    ),
+                  GameToast.show(
+                    context,
+                    title: 'Yetersiz Mevduat',
+                    message: 'Mevduatınızda bu kadar para yok! Mevcut: ${currencyFmt.format(c.bankSavings)} ₺',
+                    type: GameToastType.error,
                   );
                   return;
                 }
                 final err = c.withdrawFromBank(_savingsAmount);
                 if (err != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+                  GameToast.show(
+                    context,
+                    title: 'İşlem Başarısız',
+                    message: err,
+                    type: GameToastType.error,
+                  );
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('${currencyFmt.format(_savingsAmount)} ₺ kasanıza aktarıldı!'),
-                      backgroundColor: const Color(0xFFD97706),
-                    ),
+                  GameToast.show(
+                    context,
+                    title: 'Para Çekildi',
+                    message: '${currencyFmt.format(_savingsAmount)} ₺ kasanıza aktarıldı!',
+                    type: GameToastType.success,
                   );
                   setState(() {
                     _savingsAmount = min(1000.0, c.bankSavings);
@@ -847,11 +866,11 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                   ? () {
                       final all = c.bankSavings;
                       c.withdrawFromBank(all);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Tüm mevduatınız (${currencyFmt.format(all)} ₺) kasanıza çekildi!'),
-                          backgroundColor: const Color(0xFFD97706),
-                        ),
+                      GameToast.show(
+                        context,
+                        title: 'Para Çekildi',
+                        message: 'Tüm mevduatınız (${currencyFmt.format(all)} ₺) kasanıza çekildi!',
+                        type: GameToastType.success,
                       );
                       setState(() {
                         _savingsAmount = 0.0;
@@ -1514,14 +1533,18 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
                             title: 'Özel İşletme Kredisi',
                           );
                           if (err != null) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+                            GameToast.show(
+                              context,
+                              title: 'Kredi Alınamadı',
+                              message: err,
+                              type: GameToastType.error,
+                            );
                           } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                    '${currencyFmt.format(_customLoanAmount)} ₺ kredi kasanıza aktarıldı!'),
-                                backgroundColor: const Color(0xFF059669),
-                              ),
+                            GameToast.show(
+                              context,
+                              title: 'Kredi Onaylandı',
+                              message: '${currencyFmt.format(_customLoanAmount)} ₺ kredi kasanıza aktarıldı!',
+                              type: GameToastType.success,
                             );
                           }
                         },
@@ -1922,13 +1945,18 @@ class _BankDialogState extends State<BankDialog> with SingleTickerProviderStateM
               onPressed: () {
                 final err = c.takeDetailedLoan(principal: amount, installments: days, title: title);
                 if (err != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+                  GameToast.show(
+                    context,
+                    title: 'Kredi Alınamadı',
+                    message: err,
+                    type: GameToastType.error,
+                  );
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('$title (${currencyFmt.format(amount)} ₺) kasanıza aktarıldı!'),
-                      backgroundColor: const Color(0xFF059669),
-                    ),
+                  GameToast.show(
+                    context,
+                    title: 'Kredi Onaylandı',
+                    message: '$title (${currencyFmt.format(amount)} ₺) kasanıza aktarıldı!',
+                    type: GameToastType.success,
                   );
                 }
               },

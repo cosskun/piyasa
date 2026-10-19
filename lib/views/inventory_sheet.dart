@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../controllers/game_controller.dart';
 import '../models/item.dart';
+import '../widgets/game_toast.dart';
 
 class InventorySheet extends StatelessWidget {
   final GameController controller;
@@ -67,7 +68,9 @@ class InventorySheet extends StatelessWidget {
                 onPressed: () {
                   final err = controller.expandWarehouse();
                   if (err != null) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
+                    GameToast.showWarning(context, err, title: 'Kapasite Alınamadı');
+                  } else {
+                    GameToast.showSuccess(context, 'Depo kapasitesi +500 kg artırıldı! 🏗️', title: 'Kapasite Artırıldı');
                   }
                 },
                 icon: const Icon(Icons.upgrade, size: 16),

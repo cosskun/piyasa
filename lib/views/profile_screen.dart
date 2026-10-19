@@ -5,6 +5,7 @@ import '../services/firebase_service.dart';
 import '../services/audit_log_service.dart';
 import '../models/audit_log.dart';
 import '../services/notification_service.dart';
+import '../widgets/game_toast.dart';
 import 'ledger_dialog.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -85,12 +86,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final hasPasswordChange = newPass.isNotEmpty;
 
     if (!hasUsernameChange && !hasCompanyChange && !hasPasswordChange) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Herhangi bir değişiklik yapılmadı.'),
-          backgroundColor: Color(0xFF64748B),
-          duration: Duration(seconds: 2),
-        ),
+      GameToast.show(
+        context,
+        title: 'Bilgi',
+        message: 'Herhangi bir değişiklik yapılmadı.',
+        type: GameToastType.info,
       );
       return;
     }
@@ -140,19 +140,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isSaving = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: const [
-              Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Expanded(child: Text('Profil bilgileriniz başarıyla güncellendi!')),
-            ],
-          ),
-          backgroundColor: const Color(0xFF10B981),
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
+      GameToast.show(
+        context,
+        title: 'Profil Güncellendi',
+        message: 'Profil bilgileriniz başarıyla güncellendi!',
+        type: GameToastType.success,
       );
     } catch (e) {
       if (mounted) {
@@ -755,31 +747,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onPressed: () async {
                     final granted = await NotificationService().requestNotificationPermissions();
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Row(
-                          children: [
-                            Icon(
-                              granted ? Icons.notifications_active_rounded : Icons.notifications_off_rounded,
-                              color: Colors.white,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                granted
-                                    ? 'Bildirim izinleri aktif! Teklifler ve borsa hareketleri anında iletilecek.'
-                                    : 'Bildirim izinleri kapalı veya reddedildi. Cihaz ayarlarından açabilirsiniz.',
-                                style: const TextStyle(fontWeight: FontWeight.bold),
-                              ),
-                            ),
-                          ],
-                        ),
-                        backgroundColor: granted ? const Color(0xFF059669) : const Color(0xFFD97706),
-                        behavior: SnackBarBehavior.floating,
-                        duration: const Duration(seconds: 3),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    );
+                    if (granted) {
+                      GameToast.show(
+                        context,
+                        title: 'Bildirimler Açık',
+                        message: 'Teklifler ve borsa hareketleri anında iletilecek.',
+                        type: GameToastType.success,
+                      );
+                    } else {
+                      GameToast.show(
+                        context,
+                        title: 'Bildirimler Kapalı',
+                        message: 'Bildirim izinleri kapalı. Cihaz ayarlarından açabilirsiniz.',
+                        type: GameToastType.warning,
+                      );
+                    }
                   },
                   icon: const Icon(Icons.notifications_active_outlined, size: 18),
                   label: const Text('Bildirim İzinlerini Kontrol Et'),

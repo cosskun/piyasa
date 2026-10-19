@@ -5,6 +5,7 @@ import '../controllers/game_controller.dart';
 import '../models/facility.dart';
 import '../models/item.dart';
 import '../models/store.dart';
+import '../widgets/game_toast.dart';
 
 class WarehouseTab extends StatefulWidget {
   final GameController controller;
@@ -130,25 +131,21 @@ class _WarehouseTabState extends State<WarehouseTab> {
                         onPressed: () {
                           final cost = c.maxWarehouseCapacity * 5.0;
                           if (c.cash < cost) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Yetersiz nakit! Kapasite için ${currencyFmt.format(cost)} ₺ gerekiyor.'),
-                                backgroundColor: Colors.red[800],
-                              ),
+                            GameToast.showWarning(
+                              context,
+                              'Yetersiz nakit! Kapasite için ${currencyFmt.format(cost)} ₺ gerekiyor.',
+                              title: 'Yetersiz Bakiye',
                             );
                             return;
                           }
                           final err = c.expandWarehouse();
                           if (err != null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                            );
+                            GameToast.showError(context, err, title: 'Genişletme Başarısız');
                           } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Depo kapasitesi +500 kg genişletildi! 🏗️'),
-                                backgroundColor: Color(0xFF059669),
-                              ),
+                            GameToast.showSuccess(
+                              context,
+                              'Depo kapasitesi +500 kg genişletildi! 🏗️',
+                              title: 'Depo Büyütüldü',
                             );
                           }
                         },
@@ -755,6 +752,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
   ) {
     final qtyCtrl = TextEditingController(text: maxStock.toString());
     final priceCtrl = TextEditingController(text: currentPrice.toStringAsFixed(2));
+    String? dialogError;
 
     showDialog(
       context: context,
@@ -796,7 +794,11 @@ class _WarehouseTabState extends State<WarehouseTab> {
                   TextField(
                     controller: qtyCtrl,
                     keyboardType: TextInputType.number,
-                    onChanged: (_) => setDialogState(() {}),
+                    onChanged: (_) {
+                      setDialogState(() {
+                        if (dialogError != null) dialogError = null;
+                      });
+                    },
                     decoration: InputDecoration(
                       labelText: 'Satılacak Miktar (Maks: $maxStock)',
                       prefixIcon: const Icon(Icons.numbers),
@@ -812,7 +814,9 @@ class _WarehouseTabState extends State<WarehouseTab> {
                         label: const Text('%50', style: TextStyle(fontSize: 11)),
                         onPressed: () {
                           qtyCtrl.text = (maxStock ~/ 2).clamp(1, maxStock).toString();
-                          setDialogState(() {});
+                          setDialogState(() {
+                            if (dialogError != null) dialogError = null;
+                          });
                         },
                       ),
                       const SizedBox(width: 4),
@@ -820,7 +824,9 @@ class _WarehouseTabState extends State<WarehouseTab> {
                         label: const Text('Tümü', style: TextStyle(fontSize: 11)),
                         onPressed: () {
                           qtyCtrl.text = maxStock.toString();
-                          setDialogState(() {});
+                          setDialogState(() {
+                            if (dialogError != null) dialogError = null;
+                          });
                         },
                       ),
                     ],
@@ -829,7 +835,11 @@ class _WarehouseTabState extends State<WarehouseTab> {
                   TextField(
                     controller: priceCtrl,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    onChanged: (_) => setDialogState(() {}),
+                    onChanged: (_) {
+                      setDialogState(() {
+                        if (dialogError != null) dialogError = null;
+                      });
+                    },
                     decoration: InputDecoration(
                       labelText: 'Birim Satış Fiyatı (₺)',
                       prefixIcon: const Icon(Icons.attach_money),
@@ -859,6 +869,13 @@ class _WarehouseTabState extends State<WarehouseTab> {
                       ],
                     ),
                   ),
+                  if (dialogError != null) ...[
+                    const SizedBox(height: 10),
+                    DialogWarningBubble(
+                      message: dialogError!,
+                      onDismiss: () => setDialogState(() => dialogError = null),
+                    ),
+                  ],
                 ],
               ),
               actions: [
@@ -870,24 +887,31 @@ class _WarehouseTabState extends State<WarehouseTab> {
                   onPressed: () {
                     final q = int.tryParse(qtyCtrl.text) ?? 0;
                     final p = double.tryParse(priceCtrl.text) ?? 0.0;
-                    if (q <= 0 || q > maxStock || p <= 0) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Lütfen geçerli miktar ve fiyat girin.')),
-                      );
+                    final currentStock = widget.controller.warehouse[item.id] ?? 0;
+                    if (currentStock <= 0) {
+                      final msg = 'Deponuzda satılacak ${item.name} kalmadı!';
+                      setDialogState(() => dialogError = msg);
+                      GameToast.showWarning(context, msg, title: 'Yetersiz Stok');
+                      return;
+                    }
+                    if (q <= 0 || q > currentStock || p <= 0) {
+                      final msg = q > currentStock
+                          ? 'Depoda sadece $currentStock adet var, $q adet çıkaramazsınız.'
+                          : 'Lütfen geçerli bir miktar ve birim fiyat girin.';
+                      setDialogState(() => dialogError = msg);
+                      GameToast.showWarning(context, msg, title: 'Geçersiz Giriş');
                       return;
                     }
                     final err = widget.controller.createListing(item.id, q, p);
                     if (err != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                      );
+                      setDialogState(() => dialogError = err);
+                      GameToast.showWarning(context, err, title: 'İlan Verilemedi');
                     } else {
                       Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('$q adet ${item.name} pazara çıkarıldı! 🏷️'),
-                          backgroundColor: const Color(0xFF059669),
-                        ),
+                      GameToast.showSuccess(
+                        context,
+                        '$q adet ${item.name} pazara çıkarıldı! 🏷️',
+                        title: 'İlan Yayınlandı',
                       );
                     }
                   },
@@ -913,9 +937,11 @@ class _WarehouseTabState extends State<WarehouseTab> {
     double quickPrice,
     bool isDark,
   ) {
-    int sellQty = maxStock;
+    int sellQty = maxStock > 0 ? maxStock : 0;
     final mItem = widget.controller.marketItems[item.id];
     final marketPrice = mItem?.currentPrice ?? item.basePrice;
+    final effectiveMax = maxStock > 0 ? maxStock : 1;
+    String? dialogError = maxStock <= 0 ? 'Deponuzda satılacak ${item.name} kalmadı!' : null;
 
     showDialog(
       context: context,
@@ -1011,16 +1037,19 @@ class _WarehouseTabState extends State<WarehouseTab> {
                     ],
                   ),
                   Slider(
-                    value: sellQty.toDouble(),
+                    value: sellQty.clamp(1, effectiveMax).toDouble(),
                     min: 1,
-                    max: maxStock.toDouble(),
-                    divisions: maxStock > 1 ? maxStock - 1 : 1,
+                    max: effectiveMax.toDouble(),
+                    divisions: effectiveMax > 1 ? effectiveMax - 1 : 1,
                     activeColor: Colors.orangeAccent,
-                    onChanged: (val) {
-                      setDialogState(() {
-                        sellQty = val.toInt();
-                      });
-                    },
+                    onChanged: maxStock <= 0
+                        ? null
+                        : (val) {
+                            setDialogState(() {
+                              sellQty = val.toInt();
+                              if (dialogError != null) dialogError = null;
+                            });
+                          },
                   ),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
@@ -1028,9 +1057,14 @@ class _WarehouseTabState extends State<WarehouseTab> {
                       ActionChip(
                         label: const Text('1 Adet', style: TextStyle(fontSize: 11)),
                         visualDensity: VisualDensity.compact,
-                        onPressed: () {
-                          setDialogState(() => sellQty = 1);
-                        },
+                        onPressed: maxStock <= 0
+                            ? null
+                            : () {
+                                setDialogState(() {
+                                  sellQty = 1;
+                                  if (dialogError != null) dialogError = null;
+                                });
+                              },
                       ),
                       if (maxStock >= 4) ...[
                         const SizedBox(width: 4),
@@ -1038,7 +1072,10 @@ class _WarehouseTabState extends State<WarehouseTab> {
                           label: const Text('%50', style: TextStyle(fontSize: 11)),
                           visualDensity: VisualDensity.compact,
                           onPressed: () {
-                            setDialogState(() => sellQty = (maxStock ~/ 2).clamp(1, maxStock));
+                            setDialogState(() {
+                              sellQty = (maxStock ~/ 2).clamp(1, maxStock);
+                              if (dialogError != null) dialogError = null;
+                            });
                           },
                         ),
                       ],
@@ -1046,9 +1083,14 @@ class _WarehouseTabState extends State<WarehouseTab> {
                       ActionChip(
                         label: const Text('Tümü', style: TextStyle(fontSize: 11)),
                         visualDensity: VisualDensity.compact,
-                        onPressed: () {
-                          setDialogState(() => sellQty = maxStock);
-                        },
+                        onPressed: maxStock <= 0
+                            ? null
+                            : () {
+                                setDialogState(() {
+                                  sellQty = maxStock;
+                                  if (dialogError != null) dialogError = null;
+                                });
+                              },
                       ),
                     ],
                   ),
@@ -1086,6 +1128,13 @@ class _WarehouseTabState extends State<WarehouseTab> {
                       ],
                     ),
                   ),
+                  if (dialogError != null) ...[
+                    const SizedBox(height: 10),
+                    DialogWarningBubble(
+                      message: dialogError!,
+                      onDismiss: () => setDialogState(() => dialogError = null),
+                    ),
+                  ],
                 ],
               ),
               actions: [
@@ -1094,22 +1143,45 @@ class _WarehouseTabState extends State<WarehouseTab> {
                   child: Text('Vazgeç', style: TextStyle(color: isDark ? Colors.grey : const Color(0xFF64748B))),
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    final err = widget.controller.sellToMarket(item.id, sellQty);
-                    if (err != null) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                      );
-                    } else {
-                      Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('$sellQty adet ${item.name} satıldı ve +${totalEarn.toStringAsFixed(0)} ₺ alındı! 💰'),
-                          backgroundColor: const Color(0xFF059669),
-                        ),
-                      );
-                    }
-                  },
+                  onPressed: maxStock <= 0
+                      ? null
+                      : () {
+                          final currentStock = widget.controller.warehouse[item.id] ?? 0;
+                          if (currentStock <= 0) {
+                            final msg = 'Deponuzda hiç ${item.name} bulunmuyor! 📦';
+                            setDialogState(() => dialogError = msg);
+                            GameToast.showWarning(context, msg, title: 'Yetersiz Stok');
+                            return;
+                          }
+                          if (sellQty <= 0) {
+                            final msg = 'Lütfen satılacak miktarı belirleyin.';
+                            setDialogState(() => dialogError = msg);
+                            GameToast.showWarning(context, msg, title: 'Geçersiz Miktar');
+                            return;
+                          }
+                          if (sellQty > currentStock) {
+                            final msg = 'Depoda yeterli stok yok! (Mevcut: $currentStock adet)';
+                            setDialogState(() {
+                              dialogError = msg;
+                              sellQty = currentStock;
+                            });
+                            GameToast.showWarning(context, msg, title: 'Yetersiz Stok');
+                            return;
+                          }
+
+                          final err = widget.controller.sellToMarket(item.id, sellQty);
+                          if (err != null) {
+                            setDialogState(() => dialogError = err);
+                            GameToast.showWarning(context, err, title: 'Satış Uyarısı');
+                          } else {
+                            Navigator.pop(ctx);
+                            GameToast.showSuccess(
+                              context,
+                              '$sellQty adet ${item.name} satıldı ve +${totalEarn.toStringAsFixed(0)} ₺ kasaya eklendi! 💰',
+                              title: 'Hızlı Satış Yapıldı',
+                            );
+                          }
+                        },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange[800],
                     foregroundColor: Colors.white,
@@ -1186,18 +1258,19 @@ class _WarehouseTabState extends State<WarehouseTab> {
                             onPressed: () {
                               final needed = slot.shelfCapacity - slot.shelfStock;
                               if (needed <= 0) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Bu mağazada bu ürünün rafı zaten dolu!')),
+                                GameToast.showWarning(
+                                  context,
+                                  'Bu mağazada bu ürünün rafı zaten dolu!',
+                                  title: 'Raf Dolu',
                                 );
                                 return;
                               }
                               widget.controller.restockStoreSlot(store, slot, min(stock, needed));
                               Navigator.pop(ctx);
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('${store.name} raflarına ${item.name} aktarıldı! 🛒'),
-                                  backgroundColor: const Color(0xFF059669),
-                                ),
+                              GameToast.showSuccess(
+                                context,
+                                '${store.name} raflarına ${item.name} aktarıldı! 🛒',
+                                title: 'Raflara Eklendi',
                               );
                             },
                             child: const Text('Rafa Ekle', style: TextStyle(fontSize: 11)),
@@ -1207,11 +1280,10 @@ class _WarehouseTabState extends State<WarehouseTab> {
                                 onPressed: () {
                                   widget.controller.addProductSlotToStore(store, item.id);
                                   Navigator.pop(ctx);
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text('${store.name} mağazasına ${item.name} yeni raf olarak eklendi! 🎉'),
-                                      backgroundColor: const Color(0xFF059669),
-                                    ),
+                                  GameToast.showSuccess(
+                                    context,
+                                    '${store.name} mağazasına ${item.name} yeni raf olarak eklendi! 🎉',
+                                    title: 'Yeni Raf Açıldı',
                                   );
                                 },
                                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF059669)),
@@ -1237,6 +1309,7 @@ class _WarehouseTabState extends State<WarehouseTab> {
   ) {
     final c = widget.controller;
     final qtyCtrl = TextEditingController(text: '20');
+    String? dialogError;
 
     showDialog(
       context: context,
@@ -1278,7 +1351,11 @@ class _WarehouseTabState extends State<WarehouseTab> {
                   TextField(
                     controller: qtyCtrl,
                     keyboardType: TextInputType.number,
-                    onChanged: (_) => setDialogState(() {}),
+                    onChanged: (_) {
+                      setDialogState(() {
+                        if (dialogError != null) dialogError = null;
+                      });
+                    },
                     decoration: InputDecoration(
                       labelText: 'Satın Alınacak Miktar',
                       prefixIcon: const Icon(Icons.shopping_basket_outlined),
@@ -1310,6 +1387,13 @@ class _WarehouseTabState extends State<WarehouseTab> {
                       ],
                     ),
                   ),
+                  if (dialogError != null) ...[
+                    const SizedBox(height: 10),
+                    DialogWarningBubble(
+                      message: dialogError!,
+                      onDismiss: () => setDialogState(() => dialogError = null),
+                    ),
+                  ],
                 ],
               ),
               actions: [
@@ -1322,16 +1406,14 @@ class _WarehouseTabState extends State<WarehouseTab> {
                       ? () {
                           final err = c.buyFromMarket(item.id, qty);
                           if (err != null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(err), backgroundColor: Colors.red[800]),
-                            );
+                            setDialogState(() => dialogError = err);
+                            GameToast.showWarning(context, err, title: 'Satın Alma Uyarısı');
                           } else {
                             Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('$qty adet ${item.name} satın alındı ve depoya aktarıldı! 📦'),
-                                backgroundColor: const Color(0xFF059669),
-                              ),
+                            GameToast.showSuccess(
+                              context,
+                              '$qty adet ${item.name} satın alındı ve depoya aktarıldı! 📦',
+                              title: 'Satın Alındı',
                             );
                           }
                         }
