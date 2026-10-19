@@ -50,4 +50,4 @@ jobs:
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           file: build/app/outputs/flutter-apk/app-release.apk
           testers: furkanc28@gmail.com, rumeysa1166metin@gmail.com, mtn.rumeysa@gmail.com
-          releaseNotes: "Piyasa v1.0.0+20: Arayüz sadeleştirmeleri, mükerrer panel temizliği, borsa kaydırma performansı ve kalıcı oturum optimizasyonları"
+          releaseNotes: "Piyasa v1.0.0+23: Üretim sekmesi akordeon & tedarik zinciri görünümleri, modern GameToast bildirimleri ve kararlılık iyileştirmeleri"
