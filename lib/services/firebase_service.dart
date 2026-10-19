@@ -323,6 +323,14 @@ class FirebaseService {
       'playerTitle': fullSaveData['playerTitle'] ?? 'Çırak Girişimci',
       'totalFacilitiesCount': (fullSaveData['ownedFacilities'] as List?)?.length ?? 0,
       'totalStoresCount': (fullSaveData['ownedStores'] as List?)?.length ?? 0,
+      'weeklyEarnings': fullSaveData['weeklyEarnings'] ?? ((fullSaveData['netWorth'] ?? 10000.0) * 0.20),
+      'monthlyEarnings': fullSaveData['monthlyEarnings'] ?? ((fullSaveData['netWorth'] ?? 10000.0) * 0.60),
+      'weeklyCashGain': fullSaveData['weeklyCashGain'] ?? ((fullSaveData['cash'] ?? 10000.0) * 0.25),
+      'monthlyCashGain': fullSaveData['monthlyCashGain'] ?? ((fullSaveData['cash'] ?? 10000.0) * 0.65),
+      'weeklyProperties': fullSaveData['weeklyProperties'] ??
+          (((fullSaveData['ownedFacilities'] as List?)?.length ?? 0) + ((fullSaveData['ownedStores'] as List?)?.length ?? 0)),
+      'monthlyProperties': fullSaveData['monthlyProperties'] ??
+          (((fullSaveData['ownedFacilities'] as List?)?.length ?? 0) + ((fullSaveData['ownedStores'] as List?)?.length ?? 0)),
     };
 
     // 1. Yerel hesap havuzunu güncelle (Offline / Local modda da sıralama için anlık yansıtır)
@@ -338,6 +346,12 @@ class FirebaseService {
           if (assetData.containsKey('companyName')) acc['companyName'] = assetData['companyName'];
           if (assetData.containsKey('totalFacilitiesCount')) acc['facilitiesCount'] = assetData['totalFacilitiesCount'];
           if (assetData.containsKey('totalStoresCount')) acc['storesCount'] = assetData['totalStoresCount'];
+          if (assetData.containsKey('weeklyEarnings')) acc['weeklyEarnings'] = assetData['weeklyEarnings'];
+          if (assetData.containsKey('monthlyEarnings')) acc['monthlyEarnings'] = assetData['monthlyEarnings'];
+          if (assetData.containsKey('weeklyCashGain')) acc['weeklyCashGain'] = assetData['weeklyCashGain'];
+          if (assetData.containsKey('monthlyCashGain')) acc['monthlyCashGain'] = assetData['monthlyCashGain'];
+          if (assetData.containsKey('weeklyProperties')) acc['weeklyProperties'] = assetData['weeklyProperties'];
+          if (assetData.containsKey('monthlyProperties')) acc['monthlyProperties'] = assetData['monthlyProperties'];
           acc['lastActiveAt'] = DateTime.now().toIso8601String();
           await saveLocalAccount(acc);
           break;

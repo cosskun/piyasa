@@ -28,6 +28,7 @@ class _LeaderboardViewState extends State<LeaderboardView> {
   final DateFormat _dateFormat = DateFormat('dd.MM.yyyy HH:mm');
   final TextEditingController _searchController = TextEditingController();
 
+  LeaderboardPeriod _period = LeaderboardPeriod.weekly;
   LeaderboardSortMode _sortMode = LeaderboardSortMode.netWorth;
   String _searchQuery = '';
   late Stream<List<LeaderboardEntry>> _leaderboardStream;
@@ -41,6 +42,7 @@ class _LeaderboardViewState extends State<LeaderboardView> {
   void _initStream() {
     _leaderboardStream = LeaderboardService().streamLeaderboard(
       controller: widget.controller,
+      period: _period,
       sortMode: _sortMode,
     );
   }
@@ -49,6 +51,14 @@ class _LeaderboardViewState extends State<LeaderboardView> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _changePeriod(LeaderboardPeriod period) {
+    if (_period == period) return;
+    setState(() {
+      _period = period;
+      _initStream();
+    });
   }
 
   void _changeSortMode(LeaderboardSortMode mode) {
@@ -92,6 +102,7 @@ class _LeaderboardViewState extends State<LeaderboardView> {
           final currentUserTarget = LeaderboardService().getNextRankTarget(
             rankedList: allEntries,
             sortMode: _sortMode,
+            period: _period,
           );
 
           LeaderboardEntry? currentUserEntry;
@@ -188,25 +199,102 @@ class _LeaderboardViewState extends State<LeaderboardView> {
                 ),
               ),
 
-              // Sıralama Kriteri Seçim Sekmeleri (Tabs)
+              // =========================================================================
+              // 1. ANA BAŞLIK: DÖNEM SEÇİMİ (Haftanın En Çok Kazananı, Ayın En Çok Kazananı, Tüm Zamanlar)
+              // =========================================================================
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF1E293B) : const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isDark ? Colors.white10 : const Color(0xFFCBD5E1),
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  children: LeaderboardPeriod.values.map((p) {
+                    final isSelected = _period == p;
+                    return Expanded(
+                      child: InkWell(
+                        onTap: () => _changePeriod(p),
+                        borderRadius: BorderRadius.circular(12),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                          decoration: BoxDecoration(
+                            gradient: isSelected
+                                ? const LinearGradient(
+                                    colors: [Color(0xFFF59E0B), Color(0xFFD97706)],
+                                  )
+                                : null,
+                            color: isSelected ? null : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: isSelected
+                                ? [
+                                    BoxShadow(
+                                      color: Colors.amber.withValues(alpha: 0.35),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                : null,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(p.icon, style: const TextStyle(fontSize: 12)),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  p.title,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: isSelected ? FontWeight.w900 : FontWeight.w600,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : (isDark ? Colors.grey.shade400 : const Color(0xFF475569)),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+
+              // =========================================================================
+              // 2. İÇERİK KRİTERLERİ (Mal Varlığı, Nakti, Mülk Sayısı)
+              // =========================================================================
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                 child: Row(
-                  children: LeaderboardSortMode.values.map((mode) {
+                  children: [
+                    LeaderboardSortMode.netWorth,
+                    LeaderboardSortMode.cash,
+                    LeaderboardSortMode.properties,
+                  ].map((mode) {
                     final isSelected = _sortMode == mode;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: ChoiceChip(
                         showCheckmark: false,
-                        avatar: Text(mode.icon, style: const TextStyle(fontSize: 14)),
+                        avatar: Text(mode.icon, style: const TextStyle(fontSize: 13)),
                         label: Text(mode.shortLabel),
                         selected: isSelected,
                         onSelected: (_) => _changeSortMode(mode),
-                        selectedColor: isDark ? const Color(0xFFD97706) : const Color(0xFFF59E0B),
+                        selectedColor: isDark ? const Color(0xFF0D9488) : const Color(0xFF0F766E),
                         backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
                         labelStyle: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11.5,
                           fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                           color: isSelected
                               ? Colors.white
@@ -216,8 +304,8 @@ class _LeaderboardViewState extends State<LeaderboardView> {
                           borderRadius: BorderRadius.circular(12),
                           side: BorderSide(
                             color: isSelected
-                                ? Colors.amber
-                                : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                                ? (isDark ? Colors.tealAccent : const Color(0xFF0D9488))
+                                : (isDark ? Colors.white10 : const Color(0xFFCBD5E1)),
                           ),
                         ),
                       ),
@@ -386,7 +474,11 @@ class _LeaderboardViewState extends State<LeaderboardView> {
               const Text('✨', style: TextStyle(fontSize: 14)),
               const SizedBox(width: 4),
               Text(
-                'TİCARETİN ZİRVE LİDERLERİ',
+                _period == LeaderboardPeriod.weekly
+                    ? 'HAFTANIN EN ÇOK KAZANANLARI'
+                    : (_period == LeaderboardPeriod.monthly
+                        ? 'AYIN EN ÇOK KAZANANLARI'
+                        : 'TİCARETİN ZİRVE LİDERLERİ'),
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -457,7 +549,7 @@ class _LeaderboardViewState extends State<LeaderboardView> {
     required bool isDark,
     bool isFirst = false,
   }) {
-    final sortVal = entry.getSortValue(_sortMode);
+    final sortVal = entry.getSortValue(_sortMode, _period);
 
     return InkWell(
       onTap: () => _showPlayerPortfolioSheet(context, entry),
@@ -591,7 +683,7 @@ class _LeaderboardViewState extends State<LeaderboardView> {
   // OYUNCU SIRALAMA KARTI (LİSTE ELEMANI)
   // ==========================================
   Widget _buildPlayerRankCard(LeaderboardEntry entry, {required bool isDark}) {
-    final sortVal = entry.getSortValue(_sortMode);
+    final sortVal = entry.getSortValue(_sortMode, _period);
     final isMe = entry.isCurrentUser;
 
     return Container(
@@ -723,7 +815,7 @@ class _LeaderboardViewState extends State<LeaderboardView> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 5),
                           Text(
                             '•',
                             style: TextStyle(
@@ -731,27 +823,20 @@ class _LeaderboardViewState extends State<LeaderboardView> {
                               color: isDark ? Colors.white24 : const Color(0xFFCBD5E1),
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 5),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                             decoration: BoxDecoration(
                               color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(entry.levelIcon, style: const TextStyle(fontSize: 9.5)),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'Sv. ${entry.level}',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold,
-                                    color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              '${entry.levelIcon} Sv.${entry.level}',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                              ),
                             ),
                           ),
                         ],
@@ -774,17 +859,17 @@ class _LeaderboardViewState extends State<LeaderboardView> {
                         color: isDark ? Colors.greenAccent : const Color(0xFF059669),
                       ),
                     ),
-                    if (_sortMode == LeaderboardSortMode.netWorth)
+                    if (_sortMode == LeaderboardSortMode.properties)
                       Text(
-                        'Kasa: ~${_currencyFormat.format(entry.cash)} ₺',
+                        '${entry.facilitiesCount} Tesis • ${entry.storesCount} Dükkan',
                         style: TextStyle(
                           fontSize: 10,
                           color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
                         ),
                       )
-                    else if (_sortMode == LeaderboardSortMode.properties)
+                    else if (_sortMode == LeaderboardSortMode.netWorth)
                       Text(
-                        '${entry.facilitiesCount} Tesis • ${entry.storesCount} Dükkan',
+                        'Kasa: ~${_currencyFormat.format(entry.cash)} ₺',
                         style: TextStyle(
                           fontSize: 10,
                           color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
@@ -911,7 +996,7 @@ class _LeaderboardViewState extends State<LeaderboardView> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        '(${_formatMetricValue(userEntry.getSortValue(_sortMode), _sortMode)})',
+                        '(${_formatMetricValue(userEntry.getSortValue(_sortMode, _period), _sortMode)})',
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w900,
@@ -935,7 +1020,7 @@ class _LeaderboardViewState extends State<LeaderboardView> {
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        '🚀 Sonraki Sıra: ${ahead.companyName} için +${_currencyFormat.format(diff)} ₺ gerekiyor',
+                        '🚀 Sonraki Sıra: ${ahead.companyName} için +${_formatMetricValue(diff, _sortMode)} gerekiyor',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
@@ -1164,6 +1249,30 @@ class _LeaderboardViewState extends State<LeaderboardView> {
                         value: '${entry.storesCount} Mağaza / Kiosk',
                         icon: Icons.storefront_rounded,
                         color: Colors.orangeAccent,
+                        isDark: isDark,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildPortfolioItem(
+                        title: 'Haftalık Kazanç',
+                        value: '+${_currencyFormat.format(entry.weeklyEarnings)} ₺',
+                        icon: Icons.calendar_view_week_rounded,
+                        color: Colors.tealAccent,
+                        isDark: isDark,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _buildPortfolioItem(
+                        title: 'Aylık Kazanç',
+                        value: '+${_currencyFormat.format(entry.monthlyEarnings)} ₺',
+                        icon: Icons.calendar_month_rounded,
+                        color: Colors.indigoAccent,
                         isDark: isDark,
                       ),
                     ),

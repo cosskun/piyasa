@@ -1959,10 +1959,23 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // Verify Title and Subtitle elements
+    // Verify Title and Period Tabs
     expect(find.text('PİYASA LİDERLİK TABLOSU'), findsOneWidget);
+    expect(find.text('Haftanın En Çok Kazananı'), findsOneWidget);
+    expect(find.text('Ayın En Çok Kazananı'), findsOneWidget);
+    expect(find.text('Tüm Zamanlar'), findsWidgets);
+
+    // Verify Criteria Chips (Sub-categories)
     expect(find.text('Mal Varlığı'), findsWidgets);
-    expect(find.text('Kasa Nakdi'), findsOneWidget);
+    expect(find.text('Nakti'), findsOneWidget);
+    expect(find.text('Mülk Sayısı'), findsOneWidget);
+
+    // Initial default period is weekly
+    expect(find.text('HAFTANIN EN ÇOK KAZANANLARI'), findsOneWidget);
+
+    // Switch to Tüm Zamanlar
+    await tester.tap(find.text('Tüm Zamanlar').first);
+    await tester.pumpAndSettle();
     expect(find.text('TİCARETİN ZİRVE LİDERLERİ'), findsOneWidget);
 
     // Podium ranks
@@ -1973,11 +1986,11 @@ void main() {
     // Sticky bottom bar
     expect(find.textContaining('Şirketiniz:'), findsOneWidget);
 
-    // Test filter chip switching
-    await tester.ensureVisible(find.text('Kasa Nakdi'));
-    await tester.tap(find.text('Kasa Nakdi'), warnIfMissed: false);
+    // Test filter chip switching to Nakti
+    await tester.ensureVisible(find.text('Nakti'));
+    await tester.tap(find.text('Nakti'), warnIfMissed: false);
     await tester.pumpAndSettle();
-    expect(find.text('Kasa Nakdi'), findsWidgets);
+    expect(find.text('Nakti'), findsWidgets);
 
     // Test search field filtering
     final searchField = find.byType(TextField);
@@ -1998,6 +2011,8 @@ void main() {
     expect(find.text('Net Mal Varlığı'), findsOneWidget);
     expect(find.text('Zirve Servet'), findsWidgets);
     expect(find.text('Kasadaki Nakit'), findsOneWidget);
+    expect(find.text('Haftalık Kazanç'), findsOneWidget);
+    expect(find.text('Aylık Kazanç'), findsOneWidget);
 
     controller.dispose();
   });

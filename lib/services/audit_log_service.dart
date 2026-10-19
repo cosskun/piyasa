@@ -179,6 +179,26 @@ class AuditLogService extends ChangeNotifier {
   /// Net finansal akış (Gelir - Gider)
   double get netFlow => totalIncome - totalExpense;
 
+  /// Belirli bir zamandan sonraki toplam pozitif gelir (nakit kazancı)
+  double getIncomeSince(DateTime since) {
+    return _logs.where((l) => l.timestamp.isAfter(since)).fold(0.0, (sum, log) {
+      if (log.amountChange != null && log.amountChange! > 0) {
+        return sum + log.amountChange!;
+      }
+      return sum;
+    });
+  }
+
+  /// Belirli bir zamandan sonraki net finansal akış / kâr
+  double getNetProfitSince(DateTime since) {
+    return _logs.where((l) => l.timestamp.isAfter(since)).fold(0.0, (sum, log) {
+      if (log.amountChange != null) {
+        return sum + log.amountChange!;
+      }
+      return sum;
+    });
+  }
+
   /// Belirli bir oyuncuya ait kaydedilmiş yerel logları getirir
   Future<List<AuditLog>> getLogsForPlayer(String playerId) async {
     if (playerId == _currentPlayerId && _logs.isNotEmpty) {

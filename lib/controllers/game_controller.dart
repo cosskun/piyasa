@@ -2737,6 +2737,15 @@ class GameController extends ChangeNotifier {
   }
 
   Map<String, dynamic> toSaveJson() {
+    final now = DateTime.now();
+    final sevenDaysAgo = now.subtract(const Duration(days: 7));
+    final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+    final auditService = AuditLogService();
+    final userWeeklyEarnings = auditService.getIncomeSince(sevenDaysAgo);
+    final userMonthlyEarnings = auditService.getIncomeSince(thirtyDaysAgo);
+    final userWeeklyCashGain = auditService.getNetProfitSince(sevenDaysAgo);
+    final userMonthlyCashGain = auditService.getNetProfitSince(thirtyDaysAgo);
+
     return {
       'version': 1,
       'savedAt': DateTime.now().toIso8601String(),
@@ -2760,6 +2769,12 @@ class GameController extends ChangeNotifier {
       'playerTitle': playerTitle,
       'totalFacilitiesCount': ownedFacilities.length,
       'totalStoresCount': ownedStores.length,
+      'weeklyEarnings': userWeeklyEarnings > 0 ? userWeeklyEarnings : (netWorth * 0.20).roundToDouble(),
+      'monthlyEarnings': userMonthlyEarnings > 0 ? userMonthlyEarnings : (netWorth * 0.60).roundToDouble(),
+      'weeklyCashGain': userWeeklyCashGain > 0 ? userWeeklyCashGain : (cash * 0.25).roundToDouble(),
+      'monthlyCashGain': userMonthlyCashGain > 0 ? userMonthlyCashGain : (cash * 0.65).roundToDouble(),
+      'weeklyProperties': ownedFacilities.length + ownedStores.length,
+      'monthlyProperties': ownedFacilities.length + ownedStores.length,
     };
   }
 

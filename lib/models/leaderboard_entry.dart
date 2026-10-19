@@ -1,5 +1,57 @@
 import 'player_level.dart';
 
+enum LeaderboardPeriod {
+  weekly,   // Haftanın En Çok Kazananı
+  monthly,  // Ayın En Çok Kazananı
+  allTime,  // Tüm Zamanlar
+}
+
+extension LeaderboardPeriodExtension on LeaderboardPeriod {
+  String get title {
+    switch (this) {
+      case LeaderboardPeriod.weekly:
+        return 'Haftanın En Çok Kazananı';
+      case LeaderboardPeriod.monthly:
+        return 'Ayın En Çok Kazananı';
+      case LeaderboardPeriod.allTime:
+        return 'Tüm Zamanlar';
+    }
+  }
+
+  String get shortLabel {
+    switch (this) {
+      case LeaderboardPeriod.weekly:
+        return 'Haftalık';
+      case LeaderboardPeriod.monthly:
+        return 'Aylık';
+      case LeaderboardPeriod.allTime:
+        return 'Tüm Zamanlar';
+    }
+  }
+
+  String get icon {
+    switch (this) {
+      case LeaderboardPeriod.weekly:
+        return '🗓️';
+      case LeaderboardPeriod.monthly:
+        return '📅';
+      case LeaderboardPeriod.allTime:
+        return '👑';
+    }
+  }
+
+  String get badgeText {
+    switch (this) {
+      case LeaderboardPeriod.weekly:
+        return 'Haftanın En Çok Kazananları';
+      case LeaderboardPeriod.monthly:
+        return 'Ayın En Çok Kazananları';
+      case LeaderboardPeriod.allTime:
+        return 'Tüm Zamanların Zirve Liderleri';
+    }
+  }
+}
+
 enum LeaderboardSortMode {
   netWorth,
   highestNetWorth,
@@ -11,13 +63,13 @@ extension LeaderboardSortModeExtension on LeaderboardSortMode {
   String get title {
     switch (this) {
       case LeaderboardSortMode.netWorth:
-        return 'Toplam Mal Varlığı';
+        return 'Mal Varlığı';
       case LeaderboardSortMode.highestNetWorth:
         return 'Zirve Servet';
       case LeaderboardSortMode.cash:
-        return 'Kasadaki Nakit';
+        return 'Nakti';
       case LeaderboardSortMode.properties:
-        return 'Tesis & Dükkan';
+        return 'Mülk Sayısı';
     }
   }
 
@@ -28,7 +80,7 @@ extension LeaderboardSortModeExtension on LeaderboardSortMode {
       case LeaderboardSortMode.highestNetWorth:
         return 'Zirve Servet';
       case LeaderboardSortMode.cash:
-        return 'Kasa Nakdi';
+        return 'Nakti';
       case LeaderboardSortMode.properties:
         return 'Mülk Sayısı';
     }
@@ -68,6 +120,14 @@ class LeaderboardEntry {
   final bool isNpc;
   final int rank;
 
+  // DÖNEMSEL KAZANÇLAR (Haftalık & Aylık)
+  final double weeklyEarnings;
+  final double monthlyEarnings;
+  final double weeklyCashGain;
+  final double monthlyCashGain;
+  final int weeklyProperties;
+  final int monthlyProperties;
+
   const LeaderboardEntry({
     required this.uid,
     required this.username,
@@ -87,6 +147,12 @@ class LeaderboardEntry {
     this.isCurrentUser = false,
     this.isNpc = false,
     this.rank = 0,
+    this.weeklyEarnings = 0.0,
+    this.monthlyEarnings = 0.0,
+    this.weeklyCashGain = 0.0,
+    this.monthlyCashGain = 0.0,
+    this.weeklyProperties = 0,
+    this.monthlyProperties = 0,
   });
 
   LeaderboardEntry copyWithRank(int newRank) {
@@ -109,19 +175,50 @@ class LeaderboardEntry {
       isCurrentUser: isCurrentUser,
       isNpc: isNpc,
       rank: newRank,
+      weeklyEarnings: weeklyEarnings,
+      monthlyEarnings: monthlyEarnings,
+      weeklyCashGain: weeklyCashGain,
+      monthlyCashGain: monthlyCashGain,
+      weeklyProperties: weeklyProperties,
+      monthlyProperties: monthlyProperties,
     );
   }
 
-  double getSortValue(LeaderboardSortMode mode) {
-    switch (mode) {
-      case LeaderboardSortMode.netWorth:
-        return netWorth;
-      case LeaderboardSortMode.highestNetWorth:
-        return highestNetWorth;
-      case LeaderboardSortMode.cash:
-        return cash;
-      case LeaderboardSortMode.properties:
-        return (facilitiesCount + storesCount).toDouble();
+  double getSortValue(LeaderboardSortMode mode, [LeaderboardPeriod period = LeaderboardPeriod.allTime]) {
+    switch (period) {
+      case LeaderboardPeriod.allTime:
+        switch (mode) {
+          case LeaderboardSortMode.netWorth:
+            return netWorth;
+          case LeaderboardSortMode.highestNetWorth:
+            return highestNetWorth;
+          case LeaderboardSortMode.cash:
+            return cash;
+          case LeaderboardSortMode.properties:
+            return (facilitiesCount + storesCount).toDouble();
+        }
+      case LeaderboardPeriod.weekly:
+        switch (mode) {
+          case LeaderboardSortMode.netWorth:
+            return weeklyEarnings > 0 ? weeklyEarnings : (netWorth * 0.18).roundToDouble();
+          case LeaderboardSortMode.highestNetWorth:
+            return weeklyEarnings > 0 ? weeklyEarnings : (netWorth * 0.18).roundToDouble();
+          case LeaderboardSortMode.cash:
+            return weeklyCashGain > 0 ? weeklyCashGain : (cash * 0.22).roundToDouble();
+          case LeaderboardSortMode.properties:
+            return (weeklyProperties > 0 ? weeklyProperties : (facilitiesCount + storesCount)).toDouble();
+        }
+      case LeaderboardPeriod.monthly:
+        switch (mode) {
+          case LeaderboardSortMode.netWorth:
+            return monthlyEarnings > 0 ? monthlyEarnings : (netWorth * 0.55).roundToDouble();
+          case LeaderboardSortMode.highestNetWorth:
+            return monthlyEarnings > 0 ? monthlyEarnings : (netWorth * 0.55).roundToDouble();
+          case LeaderboardSortMode.cash:
+            return monthlyCashGain > 0 ? monthlyCashGain : (cash * 0.60).roundToDouble();
+          case LeaderboardSortMode.properties:
+            return (monthlyProperties > 0 ? monthlyProperties : (facilitiesCount + storesCount)).toDouble();
+        }
     }
   }
 
@@ -174,6 +271,15 @@ class LeaderboardEntry {
       }
     }
 
+    final weeklyEarnings = (data['weeklyEarnings'] as num?)?.toDouble() ??
+        ((data['weeklyNetWorthGain'] as num?)?.toDouble() ?? (netWorth * 0.18).roundToDouble());
+    final monthlyEarnings = (data['monthlyEarnings'] as num?)?.toDouble() ??
+        ((data['monthlyNetWorthGain'] as num?)?.toDouble() ?? (netWorth * 0.55).roundToDouble());
+    final weeklyCashGain = (data['weeklyCashGain'] as num?)?.toDouble() ?? (cash * 0.22).roundToDouble();
+    final monthlyCashGain = (data['monthlyCashGain'] as num?)?.toDouble() ?? (cash * 0.60).roundToDouble();
+    final weeklyProperties = (data['weeklyProperties'] as num?)?.toInt() ?? (facilities + stores);
+    final monthlyProperties = (data['monthlyProperties'] as num?)?.toInt() ?? (facilities + stores);
+
     return LeaderboardEntry(
       uid: uid,
       username: username,
@@ -193,6 +299,12 @@ class LeaderboardEntry {
       isCurrentUser: currentUid != null && currentUid.isNotEmpty && uid == currentUid,
       isNpc: data['isNpc'] == true,
       rank: 0,
+      weeklyEarnings: weeklyEarnings,
+      monthlyEarnings: monthlyEarnings,
+      weeklyCashGain: weeklyCashGain,
+      monthlyCashGain: monthlyCashGain,
+      weeklyProperties: weeklyProperties,
+      monthlyProperties: monthlyProperties,
     );
   }
 

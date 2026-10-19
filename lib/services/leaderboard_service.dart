@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../models/leaderboard_entry.dart';
 import '../controllers/game_controller.dart';
+import 'audit_log_service.dart';
 import 'firebase_service.dart';
 
 class LeaderboardService {
@@ -9,10 +10,11 @@ class LeaderboardService {
   factory LeaderboardService() => _instance;
   LeaderboardService._internal();
 
-  /// Sistemdeki tüm oyuncuları dinler, yerel controller verisi ve benchmark rakipleriyle harmanlayarak
-  /// seçilen sıralama kriterine göre sıralanmış listeyi bir Stream olarak döndürür.
+  /// Sistemdeki tüm oyuncuları dinler, yerel controller verisi ve dönemsel kazançlarla harmanlayarak
+  /// seçilen sıralama kriteri ve dönemine göre sıralanmış listeyi bir Stream olarak döndürür.
   Stream<List<LeaderboardEntry>> streamLeaderboard({
     required GameController controller,
+    LeaderboardPeriod period = LeaderboardPeriod.allTime,
     LeaderboardSortMode sortMode = LeaderboardSortMode.netWorth,
   }) {
     final fb = FirebaseService();
@@ -48,6 +50,16 @@ class LeaderboardService {
           currentUid.startsWith('ply_guest_');
 
       if (!isCurrentGuest) {
+        final now = DateTime.now();
+        final sevenDaysAgo = now.subtract(const Duration(days: 7));
+        final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+
+        final auditService = AuditLogService();
+        final userWeeklyEarnings = auditService.getIncomeSince(sevenDaysAgo);
+        final userMonthlyEarnings = auditService.getIncomeSince(thirtyDaysAgo);
+        final userWeeklyCashGain = auditService.getNetProfitSince(sevenDaysAgo);
+        final userMonthlyCashGain = auditService.getNetProfitSince(thirtyDaysAgo);
+
         final liveCurrentUserEntry = LeaderboardEntry(
           uid: currentUid,
           username: cleanCurrentUsername,
@@ -66,6 +78,12 @@ class LeaderboardService {
           isBanned: fb.isBanned,
           isCurrentUser: true,
           isNpc: false,
+          weeklyEarnings: userWeeklyEarnings > 0 ? userWeeklyEarnings : (controller.netWorth * 0.20).roundToDouble(),
+          monthlyEarnings: userMonthlyEarnings > 0 ? userMonthlyEarnings : (controller.netWorth * 0.60).roundToDouble(),
+          weeklyCashGain: userWeeklyCashGain > 0 ? userWeeklyCashGain : (controller.cash * 0.25).roundToDouble(),
+          monthlyCashGain: userMonthlyCashGain > 0 ? userMonthlyCashGain : (controller.cash * 0.65).roundToDouble(),
+          weeklyProperties: controller.ownedFacilities.length + controller.ownedStores.length,
+          monthlyProperties: controller.ownedFacilities.length + controller.ownedStores.length,
         );
         entryMap[currentUid] = liveCurrentUserEntry;
       }
@@ -73,10 +91,10 @@ class LeaderboardService {
       // 3. Kesinlikle bot/benchmark rakipleri eklenmez. Yalnızca veritabanındaki gerçek kayıtlı kullanıcılar.
       final List<LeaderboardEntry> list = entryMap.values.toList();
 
-      // 4. Kriter bazında azalan sıralama (En yüksek değer en üstte)
+      // 4. Dönem ve Kriter bazında azalan sıralama (En yüksek değer en üstte)
       list.sort((a, b) {
-        final valA = a.getSortValue(sortMode);
-        final valB = b.getSortValue(sortMode);
+        final valA = a.getSortValue(sortMode, period);
+        final valB = b.getSortValue(sortMode, period);
         final cmp = valB.compareTo(valA);
         if (cmp != 0) return cmp;
         return a.username.compareTo(b.username);
@@ -96,6 +114,7 @@ class LeaderboardService {
   ({LeaderboardEntry? aheadPlayer, double difference}) getNextRankTarget({
     required List<LeaderboardEntry> rankedList,
     required LeaderboardSortMode sortMode,
+    LeaderboardPeriod period = LeaderboardPeriod.allTime,
   }) {
     final myIndex = rankedList.indexWhere((e) => e.isCurrentUser);
     if (myIndex <= 0) {
@@ -105,7 +124,7 @@ class LeaderboardService {
 
     final ahead = rankedList[myIndex - 1];
     final me = rankedList[myIndex];
-    final diff = ahead.getSortValue(sortMode) - me.getSortValue(sortMode);
+    final diff = ahead.getSortValue(sortMode, period) - me.getSortValue(sortMode, period);
     return (aheadPlayer: ahead, difference: diff > 0 ? diff : 0.0);
   }
 }
