@@ -582,7 +582,7 @@ class GameController extends ChangeNotifier {
         NotificationService().showWarehouseFullNotification(
           currentWeight: currentWeight,
           maxCapacity: maxCap,
-          force: true,
+          force: false,
         );
       }
     } else if (currentWeight < maxCap * 0.98) {

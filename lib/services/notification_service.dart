@@ -43,6 +43,7 @@ class NotificationService {
 
     try {
       tz.initializeTimeZones();
+      _configureLocalTimezone();
     } catch (e) {
       debugPrint('NotificationService: timezone init error: $e');
     }
@@ -76,6 +77,35 @@ class NotificationService {
       _isInitialized = true;
     } catch (e) {
       debugPrint('NotificationService init error (platform may not support): $e');
+    }
+  }
+
+  /// Cihazın yerel saat dilimini tespit edip `timezone` kütüphanesine tanıtır
+  void _configureLocalTimezone() {
+    try {
+      final offset = DateTime.now().timeZoneOffset;
+      final now = DateTime.now();
+
+      tz.Location? matched;
+      for (final loc in tz.timeZoneDatabase.locations.values) {
+        if (tz.TZDateTime.from(now, loc).timeZoneOffset == offset) {
+          if (loc.name.contains('Istanbul') ||
+              loc.name.contains('London') ||
+              loc.name.contains('New_York') ||
+              loc.name.contains('Tokyo')) {
+            matched = loc;
+            break;
+          }
+          matched ??= loc;
+        }
+      }
+
+      if (matched != null) {
+        tz.setLocalLocation(matched);
+        debugPrint('NotificationService: Yerel saat dilimi ayarlandı: ${matched.name}');
+      }
+    } catch (e) {
+      debugPrint('NotificationService: Saat dilimi eşleme hatası: $e');
     }
   }
 
@@ -302,7 +332,6 @@ class NotificationService {
     if (currentSeq != _scheduleSequence) return;
 
     try {
-      await _notificationsPlugin.cancel(id: warehouseFullNotificationId);
       if (currentSeq != _scheduleSequence) return;
 
       const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
@@ -322,6 +351,8 @@ class NotificationService {
         presentSound: true,
         presentBanner: true,
         presentList: true,
+        sound: '',
+        interruptionLevel: InterruptionLevel.timeSensitive,
       );
 
       const NotificationDetails details = NotificationDetails(
@@ -329,7 +360,20 @@ class NotificationService {
         iOS: iosDetails,
       );
 
-      final tz.TZDateTime scheduledDate = tz.TZDateTime.now(tz.local).add(delay);
+      // Cihazın yerel saat dilimi sapmasını teyit et
+      final now = DateTime.now();
+      tz.Location location = tz.local;
+      if (tz.TZDateTime.now(location).timeZoneOffset != now.timeZoneOffset) {
+        for (final loc in tz.timeZoneDatabase.locations.values) {
+          if (tz.TZDateTime.from(now, loc).timeZoneOffset == now.timeZoneOffset) {
+            location = loc;
+            tz.setLocalLocation(loc);
+            break;
+          }
+        }
+      }
+
+      final tz.TZDateTime scheduledDate = tz.TZDateTime.now(location).add(delay);
 
       await _notificationsPlugin.zonedSchedule(
         id: warehouseFullNotificationId,
