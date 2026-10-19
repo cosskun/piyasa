@@ -7,7 +7,6 @@ import 'production_tab.dart';
 import 'market_tab.dart';
 import 'retail_tab.dart';
 import 'bank_dialog.dart';
-import 'inventory_sheet.dart';
 import 'warehouse_tab.dart';
 import '../models/player_level.dart';
 import 'offline_summary_dialog.dart';
@@ -417,7 +416,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final c = widget.controller;
-    final currencyFmt = NumberFormat("#,##0", "tr_TR");
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -432,6 +430,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 final c = widget.controller;
                 final isDark = Theme.of(context).brightness == Brightness.dark;
                 final currencyFmt = NumberFormat("#,##0", "tr_TR");
+                final fb = FirebaseService();
 
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -453,214 +452,90 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               child: Column(
                 children: [
-                  // 1. Satır: Logo & Hızlı İşlem Butonları (Banka, Depo, Tema)
+                  // 1. Satır: Kullanıcı & Şirket Profili (Sol) ve Hızlı Eylemler (Sağ)
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Logo & İsim (FittedBox ile her ekranda kusursuz ölçeklenir)
-                      Expanded(
-                        flex: 3,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.amber.withOpacity(0.2) : const Color(0xFFFEF3C7),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text('💰', style: TextStyle(fontSize: 18)),
-                              ),
-                              const SizedBox(width: 6),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'PİYASA',
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1.0,
-                                      color: isDark ? Colors.amberAccent : const Color(0xFF0F766E),
-                                    ),
-                                  ),
-                                  Text(
-                                    'Ticaret & Borsa',
-                                    maxLines: 1,
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w600,
-                                      color: isDark ? Colors.grey : const Color(0xFF64748B),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-
-                      // Hızlı İşlem Butonları (FittedBox ile dar ekranlarda taşma yapmadan ölçeklenir)
-                      Expanded(
-                        flex: 5,
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerRight,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                            // Depo Butonu
-                            InkWell(
-                              onTap: () => setState(() => _currentTabIndex = 2),
-                              borderRadius: BorderRadius.circular(8),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.blueGrey[800] : const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: isDark ? Colors.transparent : const Color(0xFFCBD5E1),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.inventory_2_outlined,
-                                      size: 14,
-                                      color: isDark ? Colors.white : const Color(0xFF334155),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${c.currentWarehouseWeight.toInt()} kg',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.white : const Color(0xFF1E293B),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-
-                            // Şirket Defteri & İşlem Geçmişi Butonu
-                            InkWell(
-                              onTap: () => LedgerDialog.show(context),
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: BoxDecoration(
-                                  color: isDark ? const Color(0xFF0F766E).withOpacity(0.6) : const Color(0xFFD1FAE5),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.history_edu,
-                                  size: 16,
-                                  color: isDark ? Colors.tealAccent : const Color(0xFF065F46),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-
-                            // Tema Butonu
-                            InkWell(
-                              onTap: () => c.toggleTheme(),
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  isDark ? Icons.light_mode : Icons.dark_mode,
-                                  size: 16,
-                                  color: isDark ? Colors.amberAccent : const Color(0xFF475569),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-
-                            // Profil / Hesap Butonu
-                            InkWell(
-                              onTap: () => _showAccountSheet(context),
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.person_outline,
-                                  size: 16,
-                                  color: isDark ? Colors.amberAccent : const Color(0xFF475569),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  ),
-                  const SizedBox(height: 8),
-
-                  // 2. Satır: Nakit & Net Servet Finansal Kartları (Dokununca Şirket Defteri Açılır)
-                  Row(
-                    children: [
-                      // Nakit Göstergesi
+                      // Sol: Kullanıcı Profili & Şirket Bilgisi (Dokununca Hesap Menüsü Açılır)
                       Expanded(
                         child: InkWell(
-                          onTap: () => LedgerDialog.show(context),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF0D121D) : const Color(0xFFECFDF5),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isDark
-                                    ? Colors.greenAccent.withOpacity(0.4)
-                                    : const Color(0xFF10B981).withOpacity(0.4),
-                              ),
-                            ),
+                          onTap: () => _showAccountSheet(context),
+                          borderRadius: BorderRadius.circular(12),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
                             child: Row(
+                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(
-                                  Icons.account_balance_wallet_outlined,
-                                  size: 18,
-                                  color: isDark ? Colors.greenAccent : const Color(0xFF059669),
+                                CircleAvatar(
+                                  radius: 17,
+                                  backgroundColor: isDark ? const Color(0xFF0F766E) : const Color(0xFFD1FAE5),
+                                  child: Text(
+                                    (fb.username != null && fb.username!.isNotEmpty)
+                                        ? fb.username![0].toUpperCase()
+                                        : 'P',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : const Color(0xFF065F46),
+                                    ),
+                                  ),
                                 ),
-                                const SizedBox(width: 6),
-                                 Expanded(
+                                const SizedBox(width: 8),
+                                Flexible(
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
+                                    mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Text(
-                                        'Kasadaki Nakit',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: isDark ? Colors.grey : const Color(0xFF047857),
-                                        ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Flexible(
+                                            child: Text(
+                                              (fb.username != null && fb.username!.isNotEmpty)
+                                                  ? fb.username!
+                                                  : 'Piyasa Taciri',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w800,
+                                                letterSpacing: 0.2,
+                                                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 5),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: isDark ? Colors.amber.withValues(alpha: 0.2) : const Color(0xFFFEF3C7),
+                                              borderRadius: BorderRadius.circular(5),
+                                              border: Border.all(
+                                                color: isDark
+                                                    ? Colors.amber.withValues(alpha: 0.4)
+                                                    : const Color(0xFFF59E0B).withValues(alpha: 0.4),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Text(
+                                              'Lv.${c.playerLevel}',
+                                              style: TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.w900,
+                                                color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                       Text(
-                                        '${currencyFmt.format(c.cash)} ₺',
+                                        fb.companyName.isNotEmpty ? fb.companyName : 'Piyasa Holding',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.bold,
-                                          color: isDark ? Colors.greenAccent : const Color(0xFF065F46),
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w500,
+                                          color: isDark ? Colors.grey.shade400 : const Color(0xFF64748B),
                                         ),
                                       ),
                                     ],
@@ -673,85 +548,227 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(width: 8),
 
-                      // Net Servet Göstergesi (Dokununca Liderlik Tablosu & Sıralama Açılır)
-                      Expanded(
-                        child: InkWell(
-                          onTap: () => LeaderboardView.show(context, controller: c),
-                          borderRadius: BorderRadius.circular(10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: isDark ? const Color(0xFF0D121D) : const Color(0xFFFFFBEB),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: isDark
-                                    ? Colors.amber.withOpacity(0.4)
-                                    : const Color(0xFFF59E0B).withOpacity(0.4),
+                      // Sağ: Hızlı İşlem Butonları (Liderlik Tablosu, Tema, Profil)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Liderlik Tablosu
+                          InkWell(
+                            onTap: () => LeaderboardView.show(context, controller: c),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.amber.withValues(alpha: 0.15) : const Color(0xFFFEF3C7),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.emoji_events_rounded,
+                                size: 16,
+                                color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
                               ),
                             ),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.trending_up,
-                                  size: 18,
-                                  color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                          ),
+                          const SizedBox(width: 5),
+
+                          // Tema Butonu
+                          InkWell(
+                            onTap: () => c.toggleTheme(),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+                                size: 16,
+                                color: isDark ? Colors.amberAccent : const Color(0xFF475569),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+
+                          // Profil / Hesap Butonu
+                          InkWell(
+                            onTap: () => _showAccountSheet(context),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.person_outline_rounded,
+                                size: 16,
+                                color: isDark ? Colors.white70 : const Color(0xFF475569),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // 2. Satır: Nakit & Net Servet Finansal Kartları (Side-by-Side Glassmorphic)
+                  Row(
+                    children: [
+                      // Nakit Göstergesi (Dokununca Şirket Defteri Açılır)
+                      Expanded(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => LedgerDialog.show(context),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFF0FDF4),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isDark
+                                      ? const Color(0xFF10B981).withValues(alpha: 0.35)
+                                      : const Color(0xFF10B981).withValues(alpha: 0.45),
+                                  width: 1.1,
                                 ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              'Net Servet',
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 10,
-                                                color: isDark ? Colors.grey : const Color(0xFFB45309),
-                                              ),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '🏆',
-                                            style: TextStyle(
-                                              fontSize: 9.5,
-                                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      Text(
-                                        '${currencyFmt.format(c.netWorth)} ₺',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: FontWeight.bold,
-                                          color: isDark ? Colors.amberAccent : const Color(0xFF92400E),
-                                        ),
-                                      ),
-                                    ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF10B981).withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.account_balance_wallet_rounded,
+                                      size: 17,
+                                      color: isDark ? Colors.greenAccent : const Color(0xFF059669),
+                                    ),
                                   ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Kasadaki Nakit',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.grey.shade400 : const Color(0xFF047857),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 1),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            '${currencyFmt.format(c.cash)} ₺',
+                                            style: TextStyle(
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w900,
+                                              color: isDark ? Colors.greenAccent : const Color(0xFF065F46),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+
+                      // Net Servet Göstergesi (Dokununca Liderlik Tablosu & Sıralama Açılır)
+                      Expanded(
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => LeaderboardView.show(context, controller: c),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFF0F172A) : const Color(0xFFFFFBEB),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: isDark
+                                      ? Colors.amber.withValues(alpha: 0.35)
+                                      : const Color(0xFFF59E0B).withValues(alpha: 0.45),
+                                  width: 1.1,
                                 ),
-                              ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.amber.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.trending_up_rounded,
+                                      size: 17,
+                                      color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          'Net Servet',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: isDark ? Colors.grey.shade400 : const Color(0xFFB45309),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 1),
+                                        FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          alignment: Alignment.centerLeft,
+                                          child: Text(
+                                            '${currencyFmt.format(c.netWorth)} ₺',
+                                            style: TextStyle(
+                                              fontSize: 14.5,
+                                              fontWeight: FontWeight.w900,
+                                              color: isDark ? Colors.amberAccent : const Color(0xFF92400E),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
 
                   // 3. Satır: Oyuncu Seviyesi, Ünvan & İlerleme Çubuğu
                   InkWell(
                     borderRadius: BorderRadius.circular(10),
                     onTap: () => _showLevelProgressionDialog(context, c, isDark),
                     child: Container(
-                      margin: const EdgeInsets.only(top: 7),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
@@ -761,10 +778,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: isDark ? Colors.amber.withOpacity(0.3) : const Color(0xFFE2E8F0),
+                          color: isDark ? Colors.amber.withValues(alpha: 0.3) : const Color(0xFFE2E8F0),
                         ),
                       ),
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           Row(
                             children: [
@@ -777,7 +795,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   borderRadius: BorderRadius.circular(5),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.amber.withOpacity(0.3),
+                                      color: Colors.amber.withValues(alpha: 0.3),
                                       blurRadius: 4,
                                       offset: const Offset(0, 1),
                                     ),
