@@ -614,6 +614,14 @@ class GameController extends ChangeNotifier {
     final Map<String, int> simWarehouse = Map<String, int>.from(warehouse);
     final List<double> simFacProgress = activeFacilities.map((f) => f.progress).toList();
 
+    // Mağazaların raf stokları ve satış ilerlemelerinin simülasyon kopyaları
+    final List<List<int>> simStoreShelfStocks = ownedStores
+        .map((s) => s.productSlots.map((slot) => slot.shelfStock).toList())
+        .toList();
+    final List<List<double>> simStoreSaleProgress = ownedStores
+        .map((s) => s.productSlots.map((slot) => slot.saleTimerProgress).toList())
+        .toList();
+
     double calcSimWeight() {
       double total = 0.0;
       simWarehouse.forEach((itemId, count) {
@@ -632,6 +640,7 @@ class GameController extends ChangeNotifier {
       elapsedSeconds += dt.toInt();
       bool anyProduced = false;
 
+      // 1. Tesislerin Üretimi
       for (int i = 0; i < activeFacilities.length; i++) {
         final fac = activeFacilities[i];
         bool canProceed = true;
@@ -672,6 +681,40 @@ class GameController extends ChangeNotifier {
 
           if (calcSimWeight() >= maxCap) {
             return elapsedSeconds;
+          }
+        }
+      }
+
+      // 2. Perakende Mağazalar & Müşteri Satışları (Depodan Ürün Çekme)
+      for (int sIdx = 0; sIdx < ownedStores.length; sIdx++) {
+        final store = ownedStores[sIdx];
+        if (!store.isSelling) continue;
+
+        for (int pIdx = 0; pIdx < store.productSlots.length; pIdx++) {
+          final slot = store.productSlots[pIdx];
+          if (!slot.isSelling) continue;
+
+          // Raf eksildiyse depodan otomatik çekme
+          if (slot.autoRestock && simStoreShelfStocks[sIdx][pIdx] < slot.shelfCapacity) {
+            int need = slot.shelfCapacity - simStoreShelfStocks[sIdx][pIdx];
+            int inWh = simWarehouse[slot.itemId] ?? 0;
+            if (inWh > 0) {
+              int take = min(need, inWh);
+              simWarehouse[slot.itemId] = inWh - take;
+              if (simWarehouse[slot.itemId]! <= 0) simWarehouse.remove(slot.itemId);
+              simStoreShelfStocks[sIdx][pIdx] += take;
+            }
+          }
+
+          // Müşteri satışı (Raflar satıldıkça depodan daha çok çekilecek)
+          if (simStoreShelfStocks[sIdx][pIdx] > 0) {
+            final demandRatio = getProductDemandRatio(slot.itemId, slot.retailPrice);
+            final slotInterval = max(0.4, store.effectiveInterval / demandRatio);
+            simStoreSaleProgress[sIdx][pIdx] += dt / slotInterval;
+            while (simStoreSaleProgress[sIdx][pIdx] >= 1.0 && simStoreShelfStocks[sIdx][pIdx] > 0) {
+              simStoreSaleProgress[sIdx][pIdx] -= 1.0;
+              simStoreShelfStocks[sIdx][pIdx]--;
+            }
           }
         }
       }
