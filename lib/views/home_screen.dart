@@ -106,6 +106,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _handlePhoneNotificationTap(String payload) {
     if (!mounted) return;
+    if (payload == 'warehouse_full') {
+      setState(() {
+        _currentTabIndex = 2; // Depo sekmesine geç (Ana Sayfa: 0, Tesisler: 1, Depo: 2, Borsa: 3)
+      });
+      return;
+    }
     setState(() {
       _currentTabIndex = 3; // Borsa & Pazar sekmesine geç (Ana Sayfa: 0, Tesisler: 1, Depo: 2, Borsa: 3)
     });

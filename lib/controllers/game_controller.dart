@@ -83,6 +83,10 @@ class GameController extends ChangeNotifier {
     latestNotificationToast = null;
   }
 
+  // Depo Doluluk Bildirimi Takip Bayrağı (Tekrar tekrar bildirim basılmasını önler)
+  bool _hasNotifiedWarehouseFull = false;
+  bool get hasNotifiedWarehouseFull => _hasNotifiedWarehouseFull;
+
   // Rozet sayaçları
   int get pendingIncomingOffersCount =>
       offers.where((o) => o.direction == OfferDirection.incoming && o.status == OfferStatus.pending).length;
@@ -193,20 +197,42 @@ class GameController extends ChangeNotifier {
     });
   }
 
-  /// Oyun arka plana alındığında aktif döngüyü duraklatır ve son aktiflik zamanını kilitler
+  /// Oyun arka plana alındığında aktif döngüyü duraklatır, durumu kaydeder ve depo doluluk bildirimini planlar
   void pauseGameLoop() {
     if (_isGameLoopPaused) return;
     _isGameLoopPaused = true;
     _gameLoopTimer?.cancel();
     _gameLoopTimer = null;
     saveState();
+
+    // Depo durumuna göre arka plan / OS bildirimini planla
+    final currentWeight = currentWarehouseWeight;
+    final maxCap = maxWarehouseCapacity;
+
+    if (currentWeight >= maxCap) {
+      NotificationService().showWarehouseFullNotification(
+        currentWeight: currentWeight,
+        maxCapacity: maxCap,
+        force: true,
+      );
+    } else {
+      final secondsUntilFull = estimateSecondsUntilWarehouseFull();
+      if (secondsUntilFull != null && secondsUntilFull > 0) {
+        NotificationService().scheduleWarehouseFullNotification(
+          delay: Duration(seconds: secondsUntilFull),
+          maxCapacity: maxCap,
+        );
+      }
+    }
   }
 
-  /// Oyuna geri dönüldüğünde çevrimdışı süreci tamamlar ve döngüyü yeniden başlatır
+  /// Oyuna geri dönüldüğünde bekleyen planlı bildirimi temizler, çevrimdışı süreci tamamlar ve döngüyü yeniden başlatır
   Future<void> resumeGameLoop() async {
     if (!_isGameLoopPaused && _gameLoopTimer != null) return;
     _isGameLoopPaused = false;
+    NotificationService().cancelWarehouseFullNotification();
     await onAppResumed();
+    _checkWarehouseFullStatus();
     _startGameLoop();
   }
 
@@ -501,6 +527,8 @@ class GameController extends ChangeNotifier {
       }
     }
 
+    _checkWarehouseFullStatus();
+
     _autoSaveTickTimer += dt;
     if (_autoSaveTickTimer >= 45.0) {
       _autoSaveTickTimer = 0.0;
@@ -530,6 +558,140 @@ class GameController extends ChangeNotifier {
       }
     });
     return total;
+  }
+
+  /// Depo tam dolu mu (veya üretim yapan tesisler depoda yer olmadığı için bekliyor mu)
+  bool get isWarehouseFull =>
+      currentWarehouseWeight >= maxWarehouseCapacity ||
+      ownedFacilities.any((f) => f.isProducing && f.statusMessage == 'Depo Dolu! Ürün Bekliyor');
+
+  /// Test amaçlı dışarıdan tetikleme
+  void checkWarehouseFullStatusForTesting() => _checkWarehouseFullStatus();
+
+  /// Depo doluluk geçişini kontrol eder, gerekirse anlık OS bildirimini tetikler
+  void _checkWarehouseFullStatus() {
+    final currentWeight = currentWarehouseWeight;
+    final maxCap = maxWarehouseCapacity;
+    final isFull = isWarehouseFull;
+
+    if (isFull) {
+      if (!_hasNotifiedWarehouseFull) {
+        _hasNotifiedWarehouseFull = true;
+        latestNotificationToast =
+            '📦 Deponuz tamamen doldu! Tesisler depoda yer açılmasını bekliyor.';
+        NotificationService().showWarehouseFullNotification(
+          currentWeight: currentWeight,
+          maxCapacity: maxCap,
+          force: true,
+        );
+      }
+    } else if (currentWeight < maxCap * 0.98) {
+      if (_hasNotifiedWarehouseFull) {
+        _hasNotifiedWarehouseFull = false;
+        NotificationService().cancelWarehouseFullNotification();
+      }
+    }
+  }
+
+  /// Deponun tamamen dolmasına tahmini kaç saniye kaldığını simüle ederek hesaplar.
+  /// Depo zaten doluysa: 0 döner.
+  /// Üretim yoksa veya depo dolmayacaksa: null döner.
+  /// Dolacaksa: Kalan saniye sayısını döner.
+  int? estimateSecondsUntilWarehouseFull({int maxHorizonSeconds = 86400}) {
+    final currentWeight = currentWarehouseWeight;
+    final maxCap = maxWarehouseCapacity;
+
+    if (currentWeight >= maxCap) {
+      return 0;
+    }
+
+    final activeFacilities = ownedFacilities.where((f) => f.isProducing).toList();
+    if (activeFacilities.isEmpty) {
+      return null;
+    }
+
+    // Geçici depo ve ilerleme simülasyonu
+    final Map<String, int> simWarehouse = Map<String, int>.from(warehouse);
+    final List<double> simFacProgress = activeFacilities.map((f) => f.progress).toList();
+
+    double calcSimWeight() {
+      double total = 0.0;
+      simWarehouse.forEach((itemId, count) {
+        if (count > 0) {
+          final it = ItemRegistry.get(itemId);
+          total += count * (it?.weight ?? 1.0);
+        }
+      });
+      return total;
+    }
+
+    const double dt = 5.0;
+    int elapsedSeconds = 0;
+
+    while (elapsedSeconds < maxHorizonSeconds) {
+      elapsedSeconds += dt.toInt();
+      bool anyProduced = false;
+
+      for (int i = 0; i < activeFacilities.length; i++) {
+        final fac = activeFacilities[i];
+        bool canProceed = true;
+        fac.recipe.inputs.forEach((inItemId, inCount) {
+          int inWarehouse = simWarehouse[inItemId] ?? 0;
+          if (inWarehouse < inCount) {
+            canProceed = false;
+          }
+        });
+
+        if (!canProceed) continue;
+
+        simFacProgress[i] += dt / fac.effectiveDuration;
+        while (simFacProgress[i] >= 1.0) {
+          bool hasInputs = true;
+          fac.recipe.inputs.forEach((inItemId, inCount) {
+            int inWarehouse = simWarehouse[inItemId] ?? 0;
+            if (inWarehouse < inCount) {
+              hasInputs = false;
+            }
+          });
+
+          if (!hasInputs) {
+            simFacProgress[i] = min(0.99, simFacProgress[i]);
+            break;
+          }
+
+          fac.recipe.inputs.forEach((inItemId, inCount) {
+            simWarehouse[inItemId] = (simWarehouse[inItemId] ?? 0) - inCount;
+            if (simWarehouse[inItemId]! <= 0) simWarehouse.remove(inItemId);
+          });
+
+          int outCount = fac.effectiveOutput;
+          simWarehouse[fac.recipe.outputItemId] =
+              (simWarehouse[fac.recipe.outputItemId] ?? 0) + outCount;
+          simFacProgress[i] -= 1.0;
+          anyProduced = true;
+
+          if (calcSimWeight() >= maxCap) {
+            return elapsedSeconds;
+          }
+        }
+      }
+
+      if (!anyProduced) {
+        bool canAnyProduceInFuture = activeFacilities.any((f) {
+          if (f.recipe.inputs.isEmpty) return true;
+          bool hasInputs = true;
+          f.recipe.inputs.forEach((inItemId, inCount) {
+            if ((simWarehouse[inItemId] ?? 0) < inCount) hasInputs = false;
+          });
+          return hasInputs;
+        });
+        if (!canAnyProduceInFuture) {
+          return null;
+        }
+      }
+    }
+
+    return null;
   }
 
   double get netWorth {
@@ -630,6 +792,7 @@ class GameController extends ChangeNotifier {
 
     cash -= totalCost;
     warehouse[itemId] = (warehouse[itemId] ?? 0) + qty;
+    _checkWarehouseFullStatus();
     mItem.updatePrice(bias: 0.02, rnd: _random);
 
     AuditLogService().log(
@@ -669,6 +832,7 @@ class GameController extends ChangeNotifier {
     if (warehouse[itemId]! <= 0) warehouse.remove(itemId);
 
     cash += totalEarnings;
+    _checkWarehouseFullStatus();
     mItem.updatePrice(bias: -0.02, rnd: _random);
 
     AuditLogService().log(
@@ -919,6 +1083,7 @@ class GameController extends ChangeNotifier {
           price: execPrice,
         );
         hasChanges = true;
+        _checkWarehouseFullStatus();
       }
     }
     if (hasChanges) {
@@ -941,6 +1106,7 @@ class GameController extends ChangeNotifier {
 
     cash -= totalCost;
     warehouse[listing.itemId] = (warehouse[listing.itemId] ?? 0) + qty;
+    _checkWarehouseFullStatus();
     listing.remainingQuantity -= qty;
     if (listing.remainingQuantity <= 0) {
       communityListings.remove(listing);
@@ -1049,6 +1215,7 @@ class GameController extends ChangeNotifier {
 
     cash -= totalCost;
     warehouse[offer.itemId] = (warehouse[offer.itemId] ?? 0) + offer.quantity;
+    _checkWarehouseFullStatus();
     offer.status = OfferStatus.completed;
 
     // İlgili ilanın stokunu da düş
@@ -1931,6 +2098,7 @@ class GameController extends ChangeNotifier {
 
     cash -= cost;
     maxWarehouseCapacity += 500; // +500 kg kapasite
+    _checkWarehouseFullStatus();
 
     AuditLogService().log(
       category: LogCategory.facility,
@@ -2240,6 +2408,7 @@ class GameController extends ChangeNotifier {
       }
     }
 
+    _checkWarehouseFullStatus();
     notifyListeners();
     saveState();
     return report;
@@ -2278,6 +2447,8 @@ class GameController extends ChangeNotifier {
     lastActiveAt = DateTime.now();
     latestOfflineReport = null;
     latestNotificationToast = null;
+    _hasNotifiedWarehouseFull = false;
+    NotificationService().cancelWarehouseFullNotification();
     warehouse.clear();
     ownedFacilities.clear();
     ownedStores.clear();

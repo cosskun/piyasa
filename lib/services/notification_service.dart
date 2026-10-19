@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -10,6 +12,8 @@ class NotificationService {
 
   static const String _prefKeyNotificationPermissionRequested =
       'has_requested_notification_permission';
+
+  static const int warehouseFullNotificationId = 301;
 
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -20,6 +24,13 @@ class NotificationService {
 
   bool _isInitialized = false;
 
+  /// Test ve izleme değişkenleri
+  int? lastShownNotificationId;
+  String? lastShownTitle;
+  String? lastShownBody;
+  Duration? lastScheduledDelay;
+  bool hasScheduledWarehouseFullNotification = false;
+
   /// Kullanıcı oyun içindeyken (foreground) telefon bildirim çubuğunu rahatsız etmeme bayrağı
   bool isAppInForeground = true;
 
@@ -29,6 +40,12 @@ class NotificationService {
 
   Future<void> initialize() async {
     if (_isInitialized) return;
+
+    try {
+      tz.initializeTimeZones();
+    } catch (e) {
+      debugPrint('NotificationService: timezone init error: $e');
+    }
 
     try {
       // Android ayarları
@@ -243,15 +260,119 @@ class NotificationService {
     );
   }
 
+  // 7. Depo Tamamen Doldu Bildirimi (Anlık / Kritik Bildirim)
+  Future<void> showWarehouseFullNotification({
+    required double currentWeight,
+    required double maxCapacity,
+    bool force = true,
+  }) async {
+    await _showNotification(
+      id: warehouseFullNotificationId,
+      title: '📦 Deponuz Tamamen Doldu!',
+      body:
+          'Tarlalarınız ve fabrikalarınız üretim yapabilmek için depoda yer açılmasını bekliyor. Ürünlerinizi satın veya depoyu genişletin.',
+      payload: 'warehouse_full',
+      force: force,
+    );
+  }
+
+  int _scheduleSequence = 0;
+
+  /// Uygulama arka plana alındığında, deponun dolacağı tahmini zamana OS bildirimi kurar.
+  Future<void> scheduleWarehouseFullNotification({
+    required Duration delay,
+    required double maxCapacity,
+  }) async {
+    final currentSeq = ++_scheduleSequence;
+    lastScheduledDelay = delay;
+    hasScheduledWarehouseFullNotification = true;
+
+    if (delay <= Duration.zero) {
+      await showWarehouseFullNotification(
+        currentWeight: maxCapacity,
+        maxCapacity: maxCapacity,
+        force: true,
+      );
+      return;
+    }
+
+    if (!_isInitialized) {
+      await initialize();
+    }
+    if (currentSeq != _scheduleSequence) return;
+
+    try {
+      await _notificationsPlugin.cancel(id: warehouseFullNotificationId);
+      if (currentSeq != _scheduleSequence) return;
+
+      const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+        'piyasa_warehouse_notifications',
+        'Piyasa Depo Bildirimleri',
+        channelDescription: 'Depo kapasite ve lojistik bildirimleri',
+        importance: Importance.max,
+        priority: Priority.high,
+        showWhen: true,
+        enableVibration: true,
+        playSound: true,
+      );
+
+      const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+        presentBanner: true,
+        presentList: true,
+      );
+
+      const NotificationDetails details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      final tz.TZDateTime scheduledDate = tz.TZDateTime.now(tz.local).add(delay);
+
+      await _notificationsPlugin.zonedSchedule(
+        id: warehouseFullNotificationId,
+        title: '📦 Deponuz Tamamen Doldu!',
+        body:
+            'Tarlalarınız ve fabrikalarınız üretim yapabilmek için depoda yer açılmasını bekliyor. Ürünlerinizi satın veya depoyu genişletin.',
+        scheduledDate: scheduledDate,
+        notificationDetails: details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        payload: 'warehouse_full',
+      );
+      debugPrint('NotificationService: Depo doluluk bildirimi ${delay.inSeconds} sn sonrasına planlandı ($scheduledDate).');
+    } catch (e) {
+      debugPrint('NotificationService scheduleWarehouseFullNotification hatası: $e');
+    }
+  }
+
+  /// Bekleyen veya planlanmış depo doluluk bildirimini iptal eder.
+  Future<void> cancelWarehouseFullNotification() async {
+    _scheduleSequence++;
+    hasScheduledWarehouseFullNotification = false;
+    try {
+      await _notificationsPlugin.cancel(id: warehouseFullNotificationId);
+    } catch (e) {
+      debugPrint('NotificationService cancelWarehouseFullNotification hatası: $e');
+    }
+  }
+
   Future<void> _showNotification({
     required int id,
     required String title,
     required String body,
     required String payload,
+    bool force = false,
   }) async {
-    // Kullanıcı oyunun içindeyse bildirim telefon çubuğuna düşürülmez.
-    // Oyun içi banner ve toast zaten GameController tarafından anlık gösterilir.
-    if (isAppInForeground) {
+    lastShownNotificationId = id;
+    lastShownTitle = title;
+    lastShownBody = body;
+
+    // Kullanıcı oyunun içindeyse standart bildirimler telefon çubuğuna düşürülmez.
+    // Ancak force == true ise (örneğin deponun tamamen dolması gibi kritik bildirimler)
+    // iOS banner veya Android başlık bildirimi olarak ekranda gösterilir.
+    if (isAppInForeground && !force) {
       return;
     }
 

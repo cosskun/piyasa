@@ -3033,6 +3033,66 @@ void main() {
     expect(authenticated, isTrue);
     expect(await notif.hasRequestedPermissionsBefore(), isTrue);
   });
+
+  testWidgets('Warehouse Full Notifications: In-game trigger, background scheduling, and cancellation on empty/upgrade', (WidgetTester tester) async {
+    final controller = GameController(autoLoad: false);
+    final notif = NotificationService();
+    notif.lastShownNotificationId = null;
+    notif.lastShownTitle = null;
+    notif.lastScheduledDelay = null;
+    notif.hasScheduledWarehouseFullNotification = false;
+
+    // 1. Initially warehouse is empty
+    expect(controller.currentWarehouseWeight, 0.0);
+    expect(controller.isWarehouseFull, isFalse);
+    expect(controller.hasNotifiedWarehouseFull, isFalse);
+
+    // 2. Add an active wheat farm
+    final wheatFacility = ProductionFacility.getBlueprints().first.copy(newId: 'wheat_farm_1');
+    controller.ownedFacilities.add(wheatFacility);
+    expect(wheatFacility.isProducing, isTrue);
+
+    // 3. Estimate time until warehouse full:
+    // Capacity = 5000 kg. Wheat farm outputs 5 kg every 10 sec (0.5 kg/sec).
+    // Should take approximately 10000 seconds to reach 5000 kg.
+    final estimatedSeconds = controller.estimateSecondsUntilWarehouseFull();
+    expect(estimatedSeconds, isNotNull);
+    expect(estimatedSeconds, greaterThan(0));
+
+    // 4. Backgrounding app when warehouse is not yet full schedules future notification
+    controller.pauseGameLoop();
+    expect(notif.hasScheduledWarehouseFullNotification, isTrue);
+    expect(notif.lastScheduledDelay, isNotNull);
+
+    // 5. Resuming app cancels scheduled background notification
+    await controller.resumeGameLoop();
+    expect(notif.hasScheduledWarehouseFullNotification, isFalse);
+
+    // 6. Fill warehouse to 100% capacity
+    controller.warehouse['wheat'] = 5000;
+    expect(controller.currentWarehouseWeight, 5000.0);
+    expect(controller.isWarehouseFull, isTrue);
+
+    // Trigger tick/check
+    controller.checkWarehouseFullStatusForTesting();
+    expect(controller.hasNotifiedWarehouseFull, isTrue);
+    expect(notif.lastShownNotificationId, NotificationService.warehouseFullNotificationId);
+    expect(notif.lastShownTitle, '📦 Deponuz Tamamen Doldu!');
+    expect(controller.latestNotificationToast, contains('Deponuz tamamen doldu'));
+
+    // 7. Selling items from warehouse drops weight below threshold and resets notification state
+    controller.sellToMarket('wheat', 500);
+    expect(controller.currentWarehouseWeight, 4500.0);
+    expect(controller.hasNotifiedWarehouseFull, isFalse);
+    expect(controller.isWarehouseFull, isFalse);
+
+    // 8. Backgrounding when already full triggers immediate notification
+    controller.warehouse['wheat'] = 5000;
+    controller.pauseGameLoop();
+    expect(notif.lastShownNotificationId, NotificationService.warehouseFullNotificationId);
+
+    controller.dispose();
+  });
 }
 
 
