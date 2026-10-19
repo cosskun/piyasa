@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
   NotificationService._internal();
+
+  static const String _prefKeyNotificationPermissionRequested =
+      'has_requested_notification_permission';
 
   final FlutterLocalNotificationsPlugin _notificationsPlugin =
       FlutterLocalNotificationsPlugin();
@@ -31,14 +35,14 @@ class NotificationService {
       const AndroidInitializationSettings androidSettings =
           AndroidInitializationSettings('@mipmap/launcher_icon');
 
-      // iOS / Darwin ayarları
-      final DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
-        requestAlertPermission: true,
-        requestBadgePermission: true,
-        requestSoundPermission: true,
+      // iOS / Darwin ayarları (Başlangıçta kullanıcıyı boğmamak ve cold launch hatasını önlemek için otomatik izin kapalı)
+      const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
       );
 
-      final InitializationSettings initSettings = InitializationSettings(
+      const InitializationSettings initSettings = InitializationSettings(
         android: androidSettings,
         iOS: iosSettings,
       );
@@ -52,27 +56,87 @@ class NotificationService {
         },
       );
 
-      // Android 13+ bildirim izni
+      _isInitialized = true;
+    } catch (e) {
+      debugPrint('NotificationService init error (platform may not support): $e');
+    }
+  }
+
+  /// Android (13+) ve iOS sistem bildirim izinlerini kullanıcıdan ister.
+  Future<bool> requestNotificationPermissions() async {
+    try {
+      if (!_isInitialized) {
+        await initialize();
+      }
+
+      bool? androidGranted = false;
+      bool? iosGranted = false;
+
+      // Android 13+ bildirim izni (POST_NOTIFICATIONS)
       final androidPlugin = _notificationsPlugin
           .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       if (androidPlugin != null) {
-        await androidPlugin.requestNotificationsPermission();
+        androidGranted = await androidPlugin.requestNotificationsPermission();
+        debugPrint('NotificationService: Android bildirim izni sonucu: $androidGranted');
       }
 
-      // iOS bildirim izni
+      // iOS bildirim izni (Alert, Badge, Sound)
       final iosPlugin = _notificationsPlugin
           .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
       if (iosPlugin != null) {
-        await iosPlugin.requestPermissions(
+        iosGranted = await iosPlugin.requestPermissions(
           alert: true,
           badge: true,
           sound: true,
         );
+        debugPrint('NotificationService: iOS bildirim izni sonucu: $iosGranted');
       }
 
-      _isInitialized = true;
+      return (androidGranted ?? false) || (iosGranted ?? false);
     } catch (e) {
-      debugPrint('NotificationService init error (platform may not support): $e');
+      debugPrint('NotificationService requestNotificationPermissions hatası: $e');
+      return false;
+    }
+  }
+
+  /// Sadece yeni kullanıcı kaydolduğunda veya yeni indirip ilk kez giriş yapıldığında çağrılır.
+  /// Daha önce bu cihazda izin istenmişse kullanıcıyı tekrar rahatsız etmez.
+  Future<bool> requestPermissionsOnFirstAuth({bool force = false}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final alreadyRequested = prefs.getBool(_prefKeyNotificationPermissionRequested) ?? false;
+      if (alreadyRequested && !force) {
+        debugPrint('NotificationService: Bildirim izni bu cihazda daha önce istendi, atlanıyor.');
+        return false;
+      }
+
+      debugPrint('NotificationService: İlk giriş/kayıt tespit edildi, bildirim izinleri isteniyor...');
+      final result = await requestNotificationPermissions();
+      await prefs.setBool(_prefKeyNotificationPermissionRequested, true);
+      return result;
+    } catch (e) {
+      debugPrint('NotificationService requestPermissionsOnFirstAuth hatası: $e');
+      return false;
+    }
+  }
+
+  /// Yeni kullanıcı kaydı açıldığında izin bayrağını sıfırlamak için
+  Future<void> resetPermissionRequestState() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_prefKeyNotificationPermissionRequested);
+    } catch (e) {
+      debugPrint('NotificationService resetPermissionRequestState hatası: $e');
+    }
+  }
+
+  /// Bu cihazda daha önce bildirim izni sorulup sorulmadığını döner
+  Future<bool> hasRequestedPermissionsBefore() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_prefKeyNotificationPermissionRequested) ?? false;
+    } catch (e) {
+      return false;
     }
   }
 

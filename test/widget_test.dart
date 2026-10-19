@@ -2995,6 +2995,44 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('Notification Permissions on First Auth: Requested only once upon initial user creation/login and persists state', (WidgetTester tester) async {
+    final notif = NotificationService();
+    await notif.resetPermissionRequestState();
+
+    // 1. Initial state: Not requested yet
+    expect(await notif.hasRequestedPermissionsBefore(), isFalse);
+
+    // 2. First request triggers and marks requested state as true
+    await notif.requestPermissionsOnFirstAuth();
+    expect(await notif.hasRequestedPermissionsBefore(), isTrue);
+
+    // 3. Second call skips and returns false
+    final secondAttempt = await notif.requestPermissionsOnFirstAuth();
+    expect(secondAttempt, isFalse);
+
+    // 4. Reset on new registration clears state
+    await notif.resetPermissionRequestState();
+    expect(await notif.hasRequestedPermissionsBefore(), isFalse);
+
+    // 5. AuthScreen guest login invokes requestPermissionsOnFirstAuth
+    bool authenticated = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthScreen(
+          onAuthenticated: () {
+            authenticated = true;
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Hesapsız Hızlı Başla (Misafir Modu)'));
+    await tester.pumpAndSettle();
+
+    expect(authenticated, isTrue);
+    expect(await notif.hasRequestedPermissionsBefore(), isTrue);
+  });
 }
 
 

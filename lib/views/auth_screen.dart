@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/firebase_service.dart';
 import '../services/audit_log_service.dart';
+import '../services/notification_service.dart';
 import '../controllers/game_controller.dart';
 import '../models/audit_log.dart';
 import 'banned_dialog.dart';
@@ -104,6 +105,14 @@ class _AuthScreenState extends State<AuthScreen> {
         setState(() {
           _isLoading = false;
         });
+
+        // Yeni kullanıcı kaydı sonrası veya yeni indirilip giriş yapıldığında bildirim izni iste
+        try {
+          await NotificationService().requestPermissionsOnFirstAuth();
+        } catch (e) {
+          debugPrint('AuthScreen: Notification permission request error: $e');
+        }
+
         AuditLogService().log(
           category: LogCategory.auth,
           action: 'AUTH_LOGIN',
@@ -162,6 +171,11 @@ class _AuthScreenState extends State<AuthScreen> {
       } else {
         // Kayıt başarılı: Otomatik giriş YAPILMAZ!
         // Bilgiler giriş formuna aktarılır ve kullanıcı şifresiyle giriş yapmaya yönlendirilir.
+        // Yeni kullanıcı kaydı açıldığı için bildirim izin bayrağını sıfırlıyoruz ki giriş yapınca sorsun
+        try {
+          await NotificationService().resetPermissionRequestState();
+        } catch (_) {}
+
         _loginIdentifierController.text = username;
         _loginPasswordController.text = '';
         _regPasswordController.text = '';
@@ -225,6 +239,14 @@ class _AuthScreenState extends State<AuthScreen> {
       description: 'Misafir oyuncu moduyla oyuna başlandı.',
       cashAfter: widget.controller?.cash ?? 10000.0,
     );
+
+    // Misafir olarak ilk kez başlandığında bildirim izni iste
+    try {
+      await NotificationService().requestPermissionsOnFirstAuth();
+    } catch (e) {
+      debugPrint('AuthScreen: Guest notification permission request error: $e');
+    }
+
     widget.onAuthenticated();
   }
 
