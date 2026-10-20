@@ -3,12 +3,14 @@ import 'dart:math';
 enum FacilityType { agriculture, factory }
 
 class FacilityRecipe {
+  final String? name;            // Reçete Adı (Örn: 'Pamuklu Tişört Dikimi')
   final Map<String, int> inputs; // Girdiler (Örn: {'wheat': 2})
   final String outputItemId;     // Çıktı (Örn: 'flour')
   final int outputAmount;        // Kaç adet çıkıyor
   final double durationSeconds;  // Kaç saniyede bir
 
   const FacilityRecipe({
+    this.name,
     required this.inputs,
     required this.outputItemId,
     required this.outputAmount,
@@ -26,7 +28,9 @@ class ProductionFacility {
   final String emoji;
   final String description;
   final FacilityType type;
-  final FacilityRecipe recipe;
+  FacilityRecipe recipe;
+  final List<FacilityRecipe> availableRecipes;
+  int activeRecipeIndex;
   final double purchaseCost;
   final double baseUpgradeCost;
 
@@ -42,14 +46,31 @@ class ProductionFacility {
     required this.emoji,
     required this.description,
     required this.type,
-    required this.recipe,
+    required FacilityRecipe recipe,
+    List<FacilityRecipe>? availableRecipes,
+    this.activeRecipeIndex = 0,
     required this.purchaseCost,
     required this.baseUpgradeCost,
     this.level = 1,
     this.progress = 0.0,
     this.isProducing = true,
     this.statusMessage = 'Üretim Hazır',
-  }) : blueprintId = blueprintId ?? id;
+  })  : blueprintId = blueprintId ?? id,
+        availableRecipes = (availableRecipes != null && availableRecipes.isNotEmpty)
+            ? availableRecipes
+            : [recipe],
+        recipe = (availableRecipes != null && availableRecipes.isNotEmpty)
+            ? availableRecipes[activeRecipeIndex.clamp(0, availableRecipes.length - 1)]
+            : recipe;
+
+  void setRecipeIndex(int index) {
+    if (index >= 0 && index < availableRecipes.length) {
+      activeRecipeIndex = index;
+      recipe = availableRecipes[index];
+      progress = 0.0;
+      statusMessage = 'Reçete Değiştirildi';
+    }
+  }
 
   double get upgradeCost => baseUpgradeCost * pow(1.5, level - 1);
   double get effectiveDuration => max(2.0, recipe.durationSeconds * (1.0 - (level - 1) * 0.08));
@@ -82,11 +103,14 @@ class ProductionFacility {
       description: description,
       type: type,
       recipe: recipe,
+      availableRecipes: availableRecipes,
+      activeRecipeIndex: activeRecipeIndex,
       purchaseCost: purchaseCost,
       baseUpgradeCost: baseUpgradeCost,
       level: level,
       progress: progress,
       isProducing: isProducing,
+      statusMessage: statusMessage,
     );
   }
 
@@ -96,6 +120,7 @@ class ProductionFacility {
     'level': level,
     'progress': progress,
     'isProducing': isProducing,
+    'activeRecipeIndex': activeRecipeIndex,
   };
 
   static ProductionFacility? fromJson(Map<String, dynamic> json) {
@@ -109,6 +134,8 @@ class ProductionFacility {
     fac.level = (json['level'] as num?)?.toInt() ?? 1;
     fac.progress = (json['progress'] as num?)?.toDouble() ?? 0.0;
     fac.isProducing = json['isProducing'] as bool? ?? true;
+    final rIndex = (json['activeRecipeIndex'] as num?)?.toInt() ?? 0;
+    fac.setRecipeIndex(rIndex);
     return fac;
   }
 
@@ -181,14 +208,31 @@ class ProductionFacility {
         id: 'dairy_farm',
         name: 'Mandıra Çiftliği',
         emoji: '🐄',
-        description: 'Sağmal inek çiftliği. Peynir ve çikolata üretimi için çiğ süt sağlar.',
+        description: 'Çiğ süt sağımı yapar veya besicilikle ham deri üretir.',
         type: FacilityType.agriculture,
         recipe: const FacilityRecipe(
+          name: 'Çiğ Süt Sağımı',
           inputs: {},
           outputItemId: 'milk',
           outputAmount: 6,
           durationSeconds: 7.5,
         ),
+        availableRecipes: const [
+          FacilityRecipe(
+            name: 'Çiğ Süt Sağımı',
+            inputs: {},
+            outputItemId: 'milk',
+            outputAmount: 6,
+            durationSeconds: 7.5,
+          ),
+          FacilityRecipe(
+            name: 'Ham Deri Hasadı',
+            inputs: {},
+            outputItemId: 'raw_leather',
+            outputAmount: 4,
+            durationSeconds: 8.0,
+          ),
+        ],
         purchaseCost: 8000.0,
         baseUpgradeCost: 4000.0,
       ),
@@ -288,16 +332,40 @@ class ProductionFacility {
       ),
       ProductionFacility(
         id: 'bakery_facility',
-        name: 'Endüstriyel Ekmek Fırını',
+        name: 'Endüstriyel Fırın & Pastane',
         emoji: '🥖',
-        description: '1 çuval Unu işleyip 2 somun taze Ekmek pişirir. Büfelerin ana tedarikçisi.',
+        description: 'Ekmek, tereyağlı kruvasan ve çikolatalı yaş pasta pişirir.',
         type: FacilityType.factory,
         recipe: const FacilityRecipe(
+          name: 'Somun Ekmek Pişirme',
           inputs: {'flour': 1},
           outputItemId: 'bread',
           outputAmount: 2,
           durationSeconds: 4.5,
         ),
+        availableRecipes: const [
+          FacilityRecipe(
+            name: 'Somun Ekmek Pişirme',
+            inputs: {'flour': 1},
+            outputItemId: 'bread',
+            outputAmount: 2,
+            durationSeconds: 4.5,
+          ),
+          FacilityRecipe(
+            name: 'Tereyağlı Kruvasan',
+            inputs: {'flour': 1, 'milk': 1},
+            outputItemId: 'croissant',
+            outputAmount: 2,
+            durationSeconds: 5.5,
+          ),
+          FacilityRecipe(
+            name: 'Çikolatalı Yaş Pasta',
+            inputs: {'flour': 2, 'cocoa': 1},
+            outputItemId: 'pastry_cake',
+            outputAmount: 1,
+            durationSeconds: 7.0,
+          ),
+        ],
         purchaseCost: 14000.0,
         baseUpgradeCost: 7000.0,
       ),
@@ -348,16 +416,33 @@ class ProductionFacility {
       ),
       ProductionFacility(
         id: 'coffee_brewery',
-        name: 'Kahve Demleme & Dolum Tesisi',
+        name: 'Kahve Demleme & İçecek Tesisi',
         emoji: '☕',
-        description: '1 adet Kavrulmuş Kahveyi endüstriyel filtreleme ile demleyip 2 bardak Sıcak Filtre Kahve üretir.',
+        description: 'Kavrulmuş kahveden filtre kahve ve kremalı sütlü latte hazırlar.',
         type: FacilityType.factory,
         recipe: const FacilityRecipe(
+          name: 'Sıcak Filtre Kahve Demleme',
           inputs: {'roasted_coffee': 1},
           outputItemId: 'coffee_cup',
           outputAmount: 2,
           durationSeconds: 5.5,
         ),
+        availableRecipes: const [
+          FacilityRecipe(
+            name: 'Sıcak Filtre Kahve Demleme',
+            inputs: {'roasted_coffee': 1},
+            outputItemId: 'coffee_cup',
+            outputAmount: 2,
+            durationSeconds: 5.5,
+          ),
+          FacilityRecipe(
+            name: 'Kremalı Sütlü Cafe Latte',
+            inputs: {'roasted_coffee': 1, 'milk': 1},
+            outputItemId: 'coffee_latte',
+            outputAmount: 2,
+            durationSeconds: 6.0,
+          ),
+        ],
         purchaseCost: 55000.0,
         baseUpgradeCost: 27500.0,
       ),
@@ -368,6 +453,7 @@ class ProductionFacility {
         description: '2 adet Ham Pamuğu işleyip 1 rulo Dokuma Kumaş üretir.',
         type: FacilityType.factory,
         recipe: const FacilityRecipe(
+          name: 'Dokuma Kumaş Üretimi',
           inputs: {'cotton': 2},
           outputItemId: 'fabric',
           outputAmount: 1,
@@ -377,17 +463,57 @@ class ProductionFacility {
         baseUpgradeCost: 25000.0,
       ),
       ProductionFacility(
-        id: 'cheese_factory',
-        name: 'Peynir Mandırası',
-        emoji: '🧀',
-        description: '2 litre Çiğ Sütü mayalayarak 1 kalıp sofralık taze Peynir üretir.',
+        id: 'leather_tannery',
+        name: 'Deri İşleme & Tabakhane',
+        emoji: '🧳',
+        description: 'Ham deriyi kimyasallarla tabaklayıp 1 rulo lüks İşlenmiş Deri üretir.',
         type: FacilityType.factory,
         recipe: const FacilityRecipe(
+          name: 'Deri Tabaklama',
+          inputs: {'raw_leather': 1},
+          outputItemId: 'processed_leather',
+          outputAmount: 1,
+          durationSeconds: 6.0,
+        ),
+        purchaseCost: 45000.0,
+        baseUpgradeCost: 22500.0,
+      ),
+      ProductionFacility(
+        id: 'cheese_factory',
+        name: 'Süt Ürünleri & Mandıra Tesisi',
+        emoji: '🧀',
+        description: 'Sütü mayalayarak peynir, tereyağı ve süzme yoğurt üretir.',
+        type: FacilityType.factory,
+        recipe: const FacilityRecipe(
+          name: 'Kalıp Peynir Mayalama',
           inputs: {'milk': 2},
           outputItemId: 'cheese',
           outputAmount: 1,
           durationSeconds: 5.5,
         ),
+        availableRecipes: const [
+          FacilityRecipe(
+            name: 'Kalıp Peynir Mayalama',
+            inputs: {'milk': 2},
+            outputItemId: 'cheese',
+            outputAmount: 1,
+            durationSeconds: 5.5,
+          ),
+          FacilityRecipe(
+            name: 'Köy Tereyağı Çalkalama',
+            inputs: {'milk': 2},
+            outputItemId: 'butter',
+            outputAmount: 1,
+            durationSeconds: 5.0,
+          ),
+          FacilityRecipe(
+            name: 'Süzme Yoğurt Fermantasyonu',
+            inputs: {'milk': 1},
+            outputItemId: 'yogurt',
+            outputAmount: 1,
+            durationSeconds: 4.5,
+          ),
+        ],
         purchaseCost: 11000.0,
         baseUpgradeCost: 5500.0,
       ),
@@ -398,6 +524,7 @@ class ProductionFacility {
         description: '2 adet Ham Tomruğu hızardan geçirip 1 adet İşlenmiş Kereste yapar.',
         type: FacilityType.factory,
         recipe: const FacilityRecipe(
+          name: 'Kereste Biçme',
           inputs: {'wood_log': 2},
           outputItemId: 'plank',
           outputAmount: 1,
@@ -408,16 +535,61 @@ class ProductionFacility {
       ),
       ProductionFacility(
         id: 'garment_atelier',
-        name: 'Konfeksiyon & Dikim Atölyesi',
+        name: 'Konfeksiyon & Terzi Fabrikası',
         emoji: '👗',
-        description: '2 rulo Kumaşı dikip 1 adet şık Hazır Giyim kıyafeti üretir.',
+        description: 'Kumaş ve deriyi işleyerek tişört, kazak, hırka, deri ceket ve abiye elbiseler diker.',
         type: FacilityType.factory,
         recipe: const FacilityRecipe(
-          inputs: {'fabric': 2},
-          outputItemId: 'clothes',
-          outputAmount: 1,
-          durationSeconds: 7.0,
+          name: 'Pamuklu Tişört Dikimi',
+          inputs: {'fabric': 1},
+          outputItemId: 'cotton_tshirt',
+          outputAmount: 2,
+          durationSeconds: 5.5,
         ),
+        availableRecipes: const [
+          FacilityRecipe(
+            name: 'Pamuklu Tişört Dikimi',
+            inputs: {'fabric': 1},
+            outputItemId: 'cotton_tshirt',
+            outputAmount: 2,
+            durationSeconds: 5.5,
+          ),
+          FacilityRecipe(
+            name: 'Triko Kazak Örme',
+            inputs: {'fabric': 2},
+            outputItemId: 'wool_sweater',
+            outputAmount: 1,
+            durationSeconds: 6.5,
+          ),
+          FacilityRecipe(
+            name: 'Düğmeli Hırka Dikimi',
+            inputs: {'fabric': 2},
+            outputItemId: 'cardigan',
+            outputAmount: 1,
+            durationSeconds: 7.0,
+          ),
+          FacilityRecipe(
+            name: 'Hakiki Deri Ceket Dikimi',
+            inputs: {'processed_leather': 2},
+            outputItemId: 'leather_jacket',
+            outputAmount: 1,
+            durationSeconds: 8.0,
+          ),
+          FacilityRecipe(
+            name: 'Lüks Gece Elbisesi',
+            inputs: {'fabric': 3},
+            outputItemId: 'designer_dress',
+            outputAmount: 1,
+            durationSeconds: 8.5,
+          ),
+          FacilityRecipe(
+            name: 'Hazır Giyim (Klasik)',
+            inputs: {'fabric': 2},
+            outputItemId: 'clothes',
+            outputAmount: 1,
+            durationSeconds: 7.0,
+          ),
+        ],
         purchaseCost: 68000.0,
         baseUpgradeCost: 34000.0,
       ),
@@ -428,6 +600,7 @@ class ProductionFacility {
         description: '2 Kakao ve 1 Çiğ Sütü harmanlayarak 1 kutu Gurme Çikolata üretir.',
         type: FacilityType.factory,
         recipe: const FacilityRecipe(
+          name: 'Gurme Kutu Çikolata',
           inputs: {'cocoa': 2, 'milk': 1},
           outputItemId: 'gourmet_chocolate',
           outputAmount: 1,
@@ -440,14 +613,38 @@ class ProductionFacility {
         id: 'furniture_factory',
         name: 'Mobilya & Marangozluk Fabrikası',
         emoji: '🪑',
-        description: '2 adet İşlenmiş Keresteden 1 adet Tasarım Ahşap Sandalye imal eder.',
+        description: 'Keresteyi işleyip sandalye, yemek masası ve masif gardırop üretir.',
         type: FacilityType.factory,
         recipe: const FacilityRecipe(
+          name: 'Tasarım Ahşap Sandalye',
           inputs: {'plank': 2},
           outputItemId: 'furniture_chair',
           outputAmount: 1,
           durationSeconds: 8.0,
         ),
+        availableRecipes: const [
+          FacilityRecipe(
+            name: 'Tasarım Ahşap Sandalye',
+            inputs: {'plank': 2},
+            outputItemId: 'furniture_chair',
+            outputAmount: 1,
+            durationSeconds: 8.0,
+          ),
+          FacilityRecipe(
+            name: 'Masif Yemek Masası',
+            inputs: {'plank': 4},
+            outputItemId: 'furniture_table',
+            outputAmount: 1,
+            durationSeconds: 9.5,
+          ),
+          FacilityRecipe(
+            name: 'Masif Elbise Dolabı',
+            inputs: {'plank': 6},
+            outputItemId: 'furniture_wardrobe',
+            outputAmount: 1,
+            durationSeconds: 11.0,
+          ),
+        ],
         purchaseCost: 98000.0,
         baseUpgradeCost: 49000.0,
       ),
@@ -485,14 +682,38 @@ class ProductionFacility {
         id: 'electronics_factory',
         name: 'Yüksek Teknoloji & Çip Fabrikası',
         emoji: '🔬',
-        description: '1 Çelik Külçe ve 1 Sanayi Plastiğini mikro çiplerle birleştirip 1 Akıllı Telefon üretir.',
+        description: 'Çelik ve plastiği mikroçiplerle birleştirip telefon, laptop ve akıllı saat üretir.',
         type: FacilityType.factory,
         recipe: const FacilityRecipe(
+          name: 'Akıllı Telefon Montajı',
           inputs: {'steel_ingot': 1, 'plastic_pellet': 1},
           outputItemId: 'smartphone',
           outputAmount: 1,
           durationSeconds: 10.0,
         ),
+        availableRecipes: const [
+          FacilityRecipe(
+            name: 'Akıllı Telefon Montajı',
+            inputs: {'steel_ingot': 1, 'plastic_pellet': 1},
+            outputItemId: 'smartphone',
+            outputAmount: 1,
+            durationSeconds: 10.0,
+          ),
+          FacilityRecipe(
+            name: 'Dizüstü Bilgisayar (Laptop)',
+            inputs: {'steel_ingot': 2, 'plastic_pellet': 2},
+            outputItemId: 'laptop',
+            outputAmount: 1,
+            durationSeconds: 14.0,
+          ),
+          FacilityRecipe(
+            name: 'Akıllı Kol Saati',
+            inputs: {'steel_ingot': 1, 'plastic_pellet': 1},
+            outputItemId: 'smartwatch',
+            outputAmount: 2,
+            durationSeconds: 8.0,
+          ),
+        ],
         purchaseCost: 240000.0,
         baseUpgradeCost: 120000.0,
       ),

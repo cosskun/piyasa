@@ -3108,6 +3108,75 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('Facility Dynamic Recipe Switching: Switch recipe on the fly, UI sheet selection, and persistence', (WidgetTester tester) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+
+    final controller = GameController();
+
+    // 1. Clear default facilities and add a Garment Atelier (Konfeksiyon Fabrikası)
+    controller.ownedFacilities.clear();
+    controller.cash = 500000.0;
+    final allBlueprints = ProductionFacility.getBlueprints();
+    final garmentBp = allBlueprints.firstWhere((b) => b.id == 'garment_atelier');
+    controller.buyFacility(garmentBp);
+
+    final atelier = controller.ownedFacilities.first;
+    expect(atelier.availableRecipes.length, greaterThanOrEqualTo(5));
+    expect(atelier.activeRecipeIndex, 0);
+    expect(atelier.recipe.outputItemId, 'cotton_tshirt');
+
+    // 2. Switch recipe directly via controller to Hakiki Deri Ceket (index 3)
+    final leatherJacketIdx = atelier.availableRecipes.indexWhere((r) => r.outputItemId == 'leather_jacket');
+    expect(leatherJacketIdx, isNonNegative);
+    controller.setFacilityRecipe(atelier, leatherJacketIdx);
+
+    expect(atelier.activeRecipeIndex, leatherJacketIdx);
+    expect(atelier.recipe.outputItemId, 'leather_jacket');
+    expect(atelier.recipe.name, 'Hakiki Deri Ceket Dikimi');
+
+    // 3. Verify JSON serialization preserves activeRecipeIndex
+    final json = atelier.toJson();
+    expect(json['activeRecipeIndex'], leatherJacketIdx);
+    final restored = ProductionFacility.fromJson(json);
+    expect(restored?.activeRecipeIndex, leatherJacketIdx);
+    expect(restored?.recipe.outputItemId, 'leather_jacket');
+
+    // 4. UI interaction: Render ProductionTab and test modal recipe selection
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProductionTab(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify active recipe name is displayed in UI
+    expect(find.text('Hakiki Deri Ceket Dikimi'), findsWidgets);
+    expect(find.text('Reçete Seç ▾'), findsOneWidget);
+
+    // Tap 'Reçete Seç ▾' to open bottom sheet
+    await tester.tap(find.text('Reçete Seç ▾'));
+    await tester.pumpAndSettle();
+
+    // Verify modal sheet opened with facility title and available recipes
+    expect(find.textContaining('Üretim Reçetesi'), findsWidgets);
+    expect(find.text('Triko Kazak Örme'), findsOneWidget);
+
+    // Tap on Triko Kazak Örme's switch button
+    // It should switch recipe to wool_sweater
+    final switchButtons = find.widgetWithText(ElevatedButton, 'Bu Reçeteye Geç');
+    expect(switchButtons, findsWidgets);
+    await tester.tap(switchButtons.first);
+    await tester.pumpAndSettle();
+
+    // Verify recipe was switched
+    expect(atelier.recipe.outputItemId, isNot('leather_jacket'));
+
+    controller.dispose();
+  });
 }
 
 

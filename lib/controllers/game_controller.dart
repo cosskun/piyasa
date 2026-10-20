@@ -1595,6 +1595,13 @@ class GameController extends ChangeNotifier {
     saveState();
   }
 
+  void setFacilityRecipe(ProductionFacility fac, int recipeIndex) {
+    if (recipeIndex < 0 || recipeIndex >= fac.availableRecipes.length) return;
+    fac.setRecipeIndex(recipeIndex);
+    notifyListeners();
+    saveState();
+  }
+
   String? buyStore(RetailStore bp) {
     if (cash < bp.purchaseCost) {
       return 'Yetersiz nakit! (${bp.purchaseCost.toStringAsFixed(0)} ₺ gerekiyor)';

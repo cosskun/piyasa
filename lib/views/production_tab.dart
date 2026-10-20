@@ -66,6 +66,13 @@ const List<FacilitySupplyChain> kDefaultSupplyChains = [
     stepsBlueprintIds: ['cotton_field', 'weaving_factory', 'garment_atelier'],
   ),
   FacilitySupplyChain(
+    id: 'leather_fashion',
+    title: 'Deri Sanayisi & Moda Zinciri',
+    emoji: '🐄 ➡️ 🧳 ➡️ 🧥',
+    description: 'Mandıradan ham deri, tabakhaneden işlenmiş deri ve konfeksiyonda deri ceket',
+    stepsBlueprintIds: ['dairy_farm', 'leather_tannery', 'garment_atelier'],
+  ),
+  FacilitySupplyChain(
     id: 'cocoa_chocolate',
     title: 'Kakao & Gurme Çikolata',
     emoji: '🍫 + 🥛 ➡️ 🎁',
@@ -588,6 +595,7 @@ class _ProductionTabState extends State<ProductionTab> {
     if (name.contains('Meyve Suyu')) return 'Meyve Suyu Tesisleri';
     if (name.contains('Kahve Kavurma')) return 'Kahve Kavurma Tesisleri';
     if (name.contains('Dokuma')) return 'Dokuma & İplik Fabrikaları';
+    if (name.contains('Tabakhane')) return 'Deri Tabakhaneleri';
     if (name.contains('Peynir Mandırası')) return 'Peynir Mandıraları';
     if (name.contains('Mobilya')) return 'Mobilya İmalathaneleri';
     if (name.contains('Çikolata Fabrikası')) return 'Çikolata Fabrikaları';
@@ -620,6 +628,7 @@ class _ProductionTabState extends State<ProductionTab> {
     if (name.contains('Sondaj') || name.contains('Kule')) return '($count kule)';
     if (name.contains('Orman') || name.contains('Kereste')) return '($count kamp)';
     if (name.contains('Mandıra')) return '($count mandıra)';
+    if (name.contains('Tabakhane')) return '($count tabakhane)';
     return '($count tesis)';
   }
 
@@ -1002,6 +1011,47 @@ class _ProductionTabState extends State<ProductionTab> {
                                 ),
                               ],
                             ),
+                            if (firstFac.availableRecipes.length > 1) ...[
+                              const SizedBox(height: 3),
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF),
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE),
+                                          width: 0.6,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(Icons.tune_rounded, size: 10, color: Color(0xFF3B82F6)),
+                                          const SizedBox(width: 3),
+                                          Flexible(
+                                            child: Text(
+                                              isMultiple
+                                                  ? '${group.map((f) => f.recipe.outputItemId).toSet().length} Farklı Üretim Bandı'
+                                                  : 'Reçete: ${firstFac.recipe.name ?? (ItemRegistry.get(firstFac.recipe.outputItemId)?.name ?? firstFac.recipe.outputItemId)}',
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 9.5,
+                                                fontWeight: FontWeight.bold,
+                                                color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -1108,6 +1158,26 @@ class _ProductionTabState extends State<ProductionTab> {
                               ),
                             ),
                           ),
+                          if (firstFac.availableRecipes.length > 1) ...[
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () => _showRecipeSelectionSheet(context, firstFac, batchGroup: group),
+                                icon: const Icon(Icons.tune_rounded, size: 14),
+                                label: const Text(
+                                  'Toplu Reçete',
+                                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 8),
+                                  foregroundColor: isDark ? const Color(0xFF60A5FA) : const Color(0xFF2563EB),
+                                  side: BorderSide(
+                                    color: isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.5) : const Color(0xFF93C5FD),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(width: 8),
                           Expanded(
                             child: ElevatedButton.icon(
@@ -1294,6 +1364,140 @@ class _ProductionTabState extends State<ProductionTab> {
             ],
           ),
           const SizedBox(height: 8),
+
+          // Aktif Reçete & Çıktı Çubuğu
+          Builder(
+            builder: (ctx) {
+              final activeRecipe = fac.recipe;
+              final outItem = ItemRegistry.get(activeRecipe.outputItemId);
+              final hasMultipleRecipes = fac.availableRecipes.length > 1;
+
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF141C2B) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: hasMultipleRecipes
+                        ? (isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.35) : const Color(0xFF93C5FD))
+                        : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                    width: 0.8,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.black26 : Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isDark ? Colors.white12 : const Color(0xFFCBD5E1),
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(outItem?.emoji ?? '📦', style: const TextStyle(fontSize: 18)),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  activeRecipe.name ?? (outItem?.name ?? activeRecipe.outputItemId),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                  ),
+                                ),
+                              ),
+                              if (hasMultipleRecipes) ...[
+                                const SizedBox(width: 5),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? const Color(0xFF1E3A8A) : const Color(0xFFDBEAFE),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '${fac.availableRecipes.length} Reçete',
+                                    style: TextStyle(
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            activeRecipe.inputs.isEmpty
+                                ? '🌱 Doğal Üretim: +${fac.effectiveOutput} adet / ${fac.effectiveDuration.toStringAsFixed(1)}s'
+                                : 'Girdi: ${activeRecipe.inputs.entries.map((e) => "${e.value}x ${ItemRegistry.get(e.key)?.emoji ?? ''}${ItemRegistry.get(e.key)?.name ?? e.key}").join(', ')} ➔ +${fac.effectiveOutput} ${outItem?.emoji ?? ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w500,
+                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (hasMultipleRecipes) ...[
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: () => _showRecipeSelectionSheet(context, fac),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4.5),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                            ),
+                            borderRadius: BorderRadius.circular(7),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF2563EB).withValues(alpha: 0.3),
+                                blurRadius: 4,
+                                offset: const Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.swap_horiz_rounded, size: 13, color: Colors.white),
+                              SizedBox(width: 3),
+                              Text(
+                                'Reçete Seç ▾',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              );
+            },
+          ),
 
           // İlerleme Çubuğu
           ClipRRect(
@@ -2042,6 +2246,35 @@ class _ProductionTabState extends State<ProductionTab> {
                                             color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
                                           ),
                                         ),
+                                        if (bp.availableRecipes.length > 1) ...[
+                                          const SizedBox(height: 3),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.3) : const Color(0xFFEFF6FF),
+                                              borderRadius: BorderRadius.circular(5),
+                                              border: Border.all(
+                                                color: isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE),
+                                                width: 0.6,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.tune_rounded, size: 10, color: Color(0xFF3B82F6)),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '✨ ${bp.availableRecipes.length} Farklı Reçete Desteği',
+                                                  style: TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                         const SizedBox(height: 4),
                                         // Üretim Reçetesi
                                         if (bp.recipe.inputs.isNotEmpty) ...[
@@ -2144,6 +2377,422 @@ class _ProductionTabState extends State<ProductionTab> {
     );
   }
 
+  void _showRecipeSelectionSheet(
+    BuildContext context,
+    ProductionFacility facility, {
+    List<ProductionFacility>? batchGroup,
+  }) {
+    final controller = widget.controller;
+    final currencyFmt = NumberFormat("#,##0", "tr_TR");
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final recipes = facility.availableRecipes;
+
+    // Eğer birden fazla aynı tür tesis varsa toplu uygulama seçeneği
+    final matchingFacilities = batchGroup ??
+        controller.ownedFacilities.where((f) => f.blueprintId == facility.blueprintId).toList();
+    final bool canBatch = matchingFacilities.length > 1;
+    bool applyToAll = batchGroup != null && batchGroup.length > 1;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF141926) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.82,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Sürükleme Tutamacı
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : const Color(0xFFCBD5E1),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+
+                  // Başlık Satırı
+                  Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(facility.emoji, style: const TextStyle(fontSize: 24)),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${facility.name} - Üretim Reçetesi',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.white : const Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Üretim hattını değiştirmek istediğiniz ürünü seçin.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        icon: Icon(Icons.close, color: isDark ? Colors.white70 : const Color(0xFF64748B)),
+                        onPressed: () => Navigator.pop(ctx),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+
+                  // Toplu Uygulama Onay Kutusu
+                  if (canBatch) ...[
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                        ),
+                      ),
+                      child: InkWell(
+                        onTap: () {
+                          setSheetState(() => applyToAll = !applyToAll);
+                        },
+                        child: Row(
+                          children: [
+                            Checkbox(
+                              value: applyToAll,
+                              onChanged: (val) {
+                                setSheetState(() => applyToAll = val ?? false);
+                              },
+                              activeColor: const Color(0xFF2563EB),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Bu seçimi gruptaki tüm (${matchingFacilities.length}) tesise uygula',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark ? Colors.white : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // Reçete Listesi
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: recipes.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (ctx, i) {
+                        final recipe = recipes[i];
+                        final isCurrent = facility.activeRecipeIndex == i;
+                        final outItem = ItemRegistry.get(recipe.outputItemId);
+
+                        // Girdi bilgileri
+                        final List<Widget> inputWidgets = [];
+
+                        if (recipe.inputs.isEmpty) {
+                          inputWidgets.add(
+                            Text(
+                              '🌱 Doğal Hammadde (Girdi gerektirmez)',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.tealAccent : const Color(0xFF0D9488),
+                              ),
+                            ),
+                          );
+                        } else {
+                          for (final entry in recipe.inputs.entries) {
+                            final inItem = ItemRegistry.get(entry.key);
+                            final currentStock = controller.warehouse[entry.key] ?? 0;
+                            final needed = entry.value;
+                            final isEnough = currentStock >= needed;
+
+                            inputWidgets.add(
+                              Container(
+                                margin: const EdgeInsets.only(right: 6, bottom: 4),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isEnough
+                                      ? (isDark ? const Color(0xFF064E3B) : const Color(0xFFD1FAE5))
+                                      : (isDark ? const Color(0xFF78350F) : const Color(0xFFFEF3C7)),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isEnough
+                                        ? (isDark ? const Color(0xFF10B981) : const Color(0xFF34D399))
+                                        : (isDark ? const Color(0xFFF59E0B) : const Color(0xFFFBBF24)),
+                                    width: 0.7,
+                                  ),
+                                ),
+                                child: Text(
+                                  '${inItem?.emoji ?? ''} ${inItem?.name ?? entry.key}: $needed (Depo: $currentStock)',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: isEnough
+                                        ? (isDark ? const Color(0xFF6EE7B7) : const Color(0xFF065F46))
+                                        : (isDark ? const Color(0xFFFCD34D) : const Color(0xFF92400E)),
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                        }
+
+                        final retailPotential = (outItem?.retailSuggestedPrice ?? outItem?.basePrice ?? 0.0) * recipe.outputAmount;
+
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isCurrent
+                                ? (isDark ? const Color(0xFF1E3A8A).withValues(alpha: 0.25) : const Color(0xFFEFF6FF))
+                                : (isDark ? const Color(0xFF1E283C) : const Color(0xFFF8FAFC)),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isCurrent
+                                  ? const Color(0xFF3B82F6)
+                                  : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                              width: isCurrent ? 1.5 : 1.0,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Üst Başlık & Aktif Rozeti
+                              Row(
+                                children: [
+                                  Text(
+                                    outItem?.emoji ?? '📦',
+                                    style: const TextStyle(fontSize: 22),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          recipe.name ?? (outItem?.name ?? recipe.outputItemId),
+                                          style: TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                        Text(
+                                          outItem?.description ?? '',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (isCurrent)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF10B981).withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: const Color(0xFF10B981), width: 1),
+                                      ),
+                                      child: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF10B981)),
+                                          SizedBox(width: 3),
+                                          Text(
+                                            'AKTİF BAND',
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w800,
+                                              color: Color(0xFF10B981),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+
+                              // Girdiler
+                              Wrap(
+                                children: inputWidgets,
+                              ),
+                              const SizedBox(height: 6),
+
+                              // Çıktı & Hız & Piyasa Getirisi
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: isDark ? Colors.black26 : Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Çıktı & Hız',
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 1),
+                                          Text(
+                                            '+${recipe.outputAmount}x ${outItem?.name ?? ''} (${recipe.durationSeconds.toStringAsFixed(1)}s)',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDark ? Colors.greenAccent : const Color(0xFF059669),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      width: 1,
+                                      height: 24,
+                                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Perakende Değeri',
+                                            style: TextStyle(
+                                              fontSize: 9.5,
+                                              fontWeight: FontWeight.w600,
+                                              color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 1),
+                                          Text(
+                                            '~${currencyFmt.format(retailPotential)} ₺ / döngü',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+
+                              // Reçeteyi Uygula Butonu
+                              if (!isCurrent)
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () {
+                                      if (applyToAll && canBatch) {
+                                        for (final f in matchingFacilities) {
+                                          controller.setFacilityRecipe(f, i);
+                                        }
+                                        Navigator.pop(ctx);
+                                        GameToast.showSuccess(
+                                          context,
+                                          '${matchingFacilities.length} tesis ${recipe.name ?? outItem?.name} üretimine ayarlandı!',
+                                          title: 'Toplu Reçete Güncellendi',
+                                        );
+                                      } else {
+                                        controller.setFacilityRecipe(facility, i);
+                                        Navigator.pop(ctx);
+                                        GameToast.showSuccess(
+                                          context,
+                                          '${facility.name} artık ${recipe.name ?? outItem?.name} üretiyor!',
+                                          title: 'Reçete Değiştirildi',
+                                        );
+                                      }
+                                    },
+                                    icon: const Icon(Icons.flash_on_rounded, size: 14),
+                                    label: Text(
+                                      applyToAll && canBatch
+                                          ? 'Tüm ${facility.name} Tesislerini Bu Reçeteye Ayarla'
+                                          : 'Bu Reçeteye Geç',
+                                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                                    ),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF2563EB),
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
 
   void _showUpgradeConfirmation(
     BuildContext context,
