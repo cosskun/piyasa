@@ -1857,6 +1857,88 @@ class GameController extends ChangeNotifier {
     saveState();
   }
 
+  /// Depodaki mevcut malları tüm dükkanlardaki boş raflara tek dokunuşla aktarır
+  int refillAllStoreShelves() {
+    int totalRefilled = 0;
+    for (final store in ownedStores) {
+      for (final slot in store.productSlots) {
+        if (slot.shelfStock < slot.shelfCapacity) {
+          final inWh = warehouse[slot.itemId] ?? 0;
+          if (inWh > 0) {
+            final need = slot.shelfCapacity - slot.shelfStock;
+            final take = min(need, inWh);
+            warehouse[slot.itemId] = inWh - take;
+            slot.shelfStock += take;
+            totalRefilled += take;
+          }
+        }
+      }
+    }
+    if (totalRefilled > 0) {
+      notifyListeners();
+      saveState();
+    }
+    return totalRefilled;
+  }
+
+  /// Tüm dükkanların satışını topluca başlatır veya durdurur
+  void toggleAllStoresSelling(bool isSelling) {
+    for (final store in ownedStores) {
+      store.isSelling = isSelling;
+      store.statusMessage = isSelling ? 'Müşteri Bekleniyor' : 'Satışlar Durduruldu';
+    }
+    notifyListeners();
+    saveState();
+  }
+
+  /// Tüm dükkan raflarının otomatik ikmalini açar veya kapatır
+  void setAllStoresAutoRestock(bool autoRestock) {
+    for (final store in ownedStores) {
+      for (final slot in store.productSlots) {
+        slot.autoRestock = autoRestock;
+      }
+    }
+    notifyListeners();
+    saveState();
+  }
+
+  /// Tüm aktif dükkanların tahmini toplam dakika başı cirosunu hesaplar
+  double getTotalRetailRevenuePerMinute() {
+    double total = 0.0;
+    for (final store in ownedStores) {
+      if (!store.isSelling) continue;
+      for (final slot in store.productSlots) {
+        if (!slot.isSelling || slot.shelfStock <= 0) continue;
+        final demandRatio = getProductDemandRatio(slot.itemId, slot.retailPrice);
+        final interval = max(0.5, store.effectiveInterval / demandRatio);
+        final salesPerMin = 60.0 / interval;
+        total += salesPerMin * slot.retailPrice;
+      }
+    }
+    return total;
+  }
+
+  /// Rafları boşalan veya depoda stoğu tükenen kritik dükkanları tespit eder
+  List<Map<String, dynamic>> getRetailBottlenecks() {
+    final List<Map<String, dynamic>> bottlenecks = [];
+    for (final store in ownedStores) {
+      for (final slot in store.productSlots) {
+        if (slot.shelfStock == 0) {
+          final inWh = warehouse[slot.itemId] ?? 0;
+          final item = ItemRegistry.get(slot.itemId);
+          bottlenecks.add({
+            'store': store,
+            'slot': slot,
+            'item': item,
+            'inWarehouse': inWh,
+            'hasInWarehouse': inWh > 0,
+          });
+        }
+      }
+    }
+    return bottlenecks;
+  }
+
   // === BANKA İŞLEMLERİ ===
   String? depositToBank(double amount) {
     if (amount <= 0 || cash < amount) return 'Yetersiz nakit.';

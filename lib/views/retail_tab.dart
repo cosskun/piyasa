@@ -7,10 +7,35 @@ import '../models/item.dart';
 import '../models/store.dart';
 import '../widgets/game_toast.dart';
 
-class RetailTab extends StatelessWidget {
+class RetailTab extends StatefulWidget {
   final GameController controller;
 
   const RetailTab({super.key, required this.controller});
+
+  @override
+  State<RetailTab> createState() => _RetailTabState();
+}
+
+class _RetailTabState extends State<RetailTab> {
+  GameController get controller => widget.controller;
+
+  int _selectedFilterIndex = 0; // 0: Tümü, 1: Stoğu Bitenler, 2: Satışta, 3: Durdurulanlar
+  int _selectedViewMode = 0; // 0: Dükkanlarım (Akordeon), 1: Hızlı Raf Matrisi
+  final Set<String> _collapsedStoreIds = {};
+
+  List<RetailStore> _getFilteredStores() {
+    final stores = controller.ownedStores;
+    switch (_selectedFilterIndex) {
+      case 1: // Stoğu Bitenler
+        return stores.where((s) => s.productSlots.any((slot) => slot.shelfStock == 0)).toList();
+      case 2: // Satışta
+        return stores.where((s) => s.isSelling).toList();
+      case 3: // Durdurulanlar
+        return stores.where((s) => !s.isSelling).toList();
+      default:
+        return stores;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -22,323 +47,1284 @@ class RetailTab extends StatelessWidget {
       builder: (context, _) => Scaffold(
         backgroundColor: Colors.transparent,
         body: controller.ownedStores.isEmpty
-          ? Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('🏪', style: TextStyle(fontSize: 54)),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Henüz bir perakende dükkanınız yok!',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white70 : const Color(0xFF334155),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        'İster sadece toptan pazarda ticaret yapın, isterseniz dükkan açıp müşterilere perakende kârla satın.\nDükkanlarınızı geliştirdikçe aynı anda 5 farklı ürüne kadar satabilirsiniz.',
-                        textAlign: TextAlign.center,
+            ? _buildEmptyState(context, isDark)
+            : ListView(
+                physics: const BouncingScrollPhysics(),
+                cacheExtent: 600,
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // Dükkanlarım Başlığı & Yeni Dükkan Aç Butonu
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 10,
+                    runSpacing: 8,
+                    children: [
+                      Text(
+                        'Dükkanlarım (${controller.ownedStores.length})',
                         style: TextStyle(
-                          fontSize: 12,
-                          color: isDark ? Colors.grey : const Color(0xFF64748B),
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        onPressed: () => _showBuyStoreSheet(context),
+                        icon: const Icon(Icons.add_shopping_cart, size: 18),
+                        label: const Text('Yeni Dükkan Aç'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isDark ? Colors.amber[700] : const Color(0xFFD97706),
+                          foregroundColor: isDark ? Colors.black : Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 1. Yönetici Komuta & KPI Paneli
+                  _buildExecutiveCommandBar(context, isDark, currencyFmt),
+                  const SizedBox(height: 12),
+
+                  // 2. Acil Müdahale Radarı (Tükenen Raflar)
+                  _buildBottleneckRadar(context, isDark),
+
+                  // 3. Filtreler & Görünüm Modu Değiştirici
+                  _buildFilterAndModeRow(context, isDark),
+                  const SizedBox(height: 12),
+
+                  // 4. İçerik (Görünüm Moduna Göre)
+                  if (_selectedViewMode == 0) ...[
+                    // Dükkan Kartları (Akordeon)
+                    if (_getFilteredStores().isEmpty)
+                      _buildNoFilteredStoresNotice(isDark)
+                    else
+                      ..._getFilteredStores().map(
+                        (store) => _buildStoreCard(context, store, isDark, currencyFmt),
+                      ),
+                  ] else ...[
+                    // Hızlı Raf & Fiyat Matrisi
+                    _buildShelfMatrixView(context, isDark, currencyFmt),
+                  ],
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context, bool isDark) {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('🏪', style: TextStyle(fontSize: 54)),
+            const SizedBox(height: 12),
+            Text(
+              'Henüz bir perakende dükkanınız yok!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white70 : const Color(0xFF334155),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'İster sadece toptan pazarda ticaret yapın, isterseniz dükkan açıp müşterilere perakende kârla satın.\nDükkanlarınızı geliştirdikçe aynı anda 5 farklı ürüne kadar satabilirsiniz.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDark ? Colors.grey : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () => _showBuyStoreSheet(context),
+              icon: const Icon(Icons.storefront),
+              label: const Text('İlk Dükkanını Aç'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: isDark ? Colors.amber[700] : const Color(0xFFD97706),
+                foregroundColor: isDark ? Colors.black : Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExecutiveCommandBar(BuildContext context, bool isDark, NumberFormat currencyFmt) {
+    final totalRevPerMin = controller.getTotalRetailRevenuePerMinute();
+    final activeStores = controller.ownedStores.where((s) => s.isSelling).length;
+    int totalSlots = 0;
+    int filledSlots = 0;
+    for (final s in controller.ownedStores) {
+      totalSlots += s.productSlots.length;
+      filledSlots += s.productSlots.where((slot) => slot.shelfStock > 0).length;
+    }
+
+    final anySelling = controller.ownedStores.any((s) => s.isSelling);
+    final allAutoRestock = controller.ownedStores.isNotEmpty &&
+        controller.ownedStores.every((s) => s.productSlots.every((slot) => slot.autoRestock));
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isDark
+              ? [const Color(0xFF1E2638), const Color(0xFF131A2A)]
+              : [const Color(0xFF1E293B), const Color(0xFF0F172A)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 3 KPI Kutusu (Kompakt tek satır)
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '⚡ Ciro',
+                        style: TextStyle(fontSize: 9.5, color: Colors.white60),
+                      ),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '${currencyFmt.format(totalRevPerMin.round())} ₺/dk',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFFBBF24),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '🏪 Dükkan',
+                        style: TextStyle(fontSize: 9.5, color: Colors.white60),
+                      ),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '$activeStores/${controller.ownedStores.length}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF34D399),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '📦 Dolu Raf',
+                        style: TextStyle(fontSize: 9.5, color: Colors.white60),
+                      ),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '$filledSlots/$totalSlots',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: filledSlots < totalSlots ? const Color(0xFFFB923C) : const Color(0xFF60A5FA),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Toplu Aksiyon Butonları
+          Wrap(
+            spacing: 6,
+            runSpacing: 5,
+            children: [
+              // Tüm Rafları Doldur Butonu
+              InkWell(
+                onTap: () {
+                  final refilled = controller.refillAllStoreShelves();
+                  if (refilled > 0) {
+                    GameToast.showSuccess(context, 'Toplam $refilled adet ürün depodan dükkan raflarına dolduruldu!');
+                  } else {
+                    GameToast.showWarning(context, 'Doldurulacak boş raf bulunamadı veya depoda ürün kalmadı!');
+                  }
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF059669),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.inventory_2_rounded, size: 13, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text(
+                        'Tüm Rafları Doldur',
+                        style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Tümünü Başlat / Durdur Butonu
+              InkWell(
+                onTap: () {
+                  controller.toggleAllStoresSelling(!anySelling);
+                  if (!anySelling) {
+                    GameToast.showSuccess(context, 'Tüm dükkanlarda satışlar başlatıldı!');
+                  } else {
+                    GameToast.showInfo(context, 'Tüm dükkanlarda satışlar durduruldu!');
+                  }
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: anySelling ? const Color(0xFFDC2626).withOpacity(0.85) : const Color(0xFF2563EB),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        anySelling ? Icons.pause_circle_rounded : Icons.play_circle_rounded,
+                        size: 13,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        anySelling ? 'Tümünü Durdur' : 'Tümünü Başlat',
+                        style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Otomatik İkmal (Tümü) Butonu
+              InkWell(
+                onTap: () {
+                  controller.setAllStoresAutoRestock(!allAutoRestock);
+                  if (!allAutoRestock) {
+                    GameToast.showSuccess(context, 'Tüm dükkan raflarında otomatik ikmal açıldı!');
+                  } else {
+                    GameToast.showInfo(context, 'Tüm dükkan raflarında otomatik ikmal kapatıldı!');
+                  }
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        allAutoRestock ? Icons.sync_rounded : Icons.sync_disabled_rounded,
+                        size: 13,
+                        color: allAutoRestock ? const Color(0xFF34D399) : Colors.white70,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        allAutoRestock ? 'Oto-İkmal: Açık' : 'Oto-İkmal: Kapalı',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: allAutoRestock ? const Color(0xFF34D399) : Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottleneckRadar(BuildContext context, bool isDark) {
+    final bottlenecks = controller.getRetailBottlenecks();
+    if (bottlenecks.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF3B1219) : const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isDark ? const Color(0xFFE11D48).withOpacity(0.5) : const Color(0xFFFCA5A5),
+          width: 1.0,
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFE11D48)),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              '⚠️ ${bottlenecks.length} rafta stok tükendi!',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.redAccent : const Color(0xFFB91C1C),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          InkWell(
+            onTap: () {
+              final refilled = controller.refillAllStoreShelves();
+              if (refilled > 0) {
+                GameToast.showSuccess(context, '$refilled adet ürün acil olarak raflara dolduruldu!');
+              } else {
+                GameToast.showWarning(context, 'Bu ürünler deponuzda kalmamış! Fabrikalarınızda üretin veya toptan pazardan alın.');
+              }
+            },
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE11D48),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Text(
+                'Depodan Doldur',
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilterAndModeRow(BuildContext context, bool isDark) {
+    final stores = controller.ownedStores;
+    final emptyCount = stores.where((s) => s.productSlots.any((slot) => slot.shelfStock == 0)).length;
+    final sellingCount = stores.where((s) => s.isSelling).length;
+    final pausedCount = stores.where((s) => !s.isSelling).length;
+
+    return Row(
+      children: [
+        // Filtre Sekmeleri (Yatay Kaydırılabilir)
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _buildFilterChip('Tümü (${stores.length})', 0, isDark),
+                const SizedBox(width: 5),
+                _buildFilterChip('⚠️ Stoğu Bitenler ($emptyCount)', 1, isDark),
+                const SizedBox(width: 5),
+                _buildFilterChip('🟢 Satışta ($sellingCount)', 2, isDark),
+                const SizedBox(width: 5),
+                _buildFilterChip('⏸️ Durdurulanlar ($pausedCount)', 3, isDark),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Görünüm Modu Değiştirici
+        Container(
+          decoration: BoxDecoration(
+            color: isDark ? const Color(0xFF1E2638) : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(
+              color: isDark ? Colors.white10 : const Color(0xFFCBD5E1),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildViewModeToggleBtn(0, Icons.view_agenda_rounded, 'Dükkan', isDark),
+              _buildViewModeToggleBtn(1, Icons.table_chart_rounded, 'Matris', isDark),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilterChip(String label, int index, bool isDark) {
+    final isSelected = _selectedFilterIndex == index;
+    return InkWell(
+      onTap: () => setState(() => _selectedFilterIndex = index),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark ? Colors.amber[700] : const Color(0xFFD97706))
+              : (isDark ? const Color(0xFF1E2638) : const Color(0xFFF1F5F9)),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected
+                ? Colors.transparent
+                : (isDark ? Colors.white12 : const Color(0xFFCBD5E1)),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+            color: isSelected
+                ? (isDark ? Colors.black : Colors.white)
+                : (isDark ? Colors.white70 : const Color(0xFF334155)),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildViewModeToggleBtn(int mode, IconData icon, String tooltip, bool isDark) {
+    final isSelected = _selectedViewMode == mode;
+    return InkWell(
+      onTap: () => setState(() => _selectedViewMode = mode),
+      borderRadius: BorderRadius.circular(7),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? (isDark ? Colors.amber[700] : const Color(0xFFD97706))
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: isSelected
+                  ? (isDark ? Colors.black : Colors.white)
+                  : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              tooltip,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                color: isSelected
+                    ? (isDark ? Colors.black : Colors.white)
+                    : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoFilteredStoresNotice(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      alignment: Alignment.center,
+      child: Column(
+        children: [
+          const Icon(Icons.search_off_rounded, size: 40, color: Colors.grey),
+          const SizedBox(height: 8),
+          Text(
+            'Seçilen filtreye uygun dükkan bulunamadı.',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: isDark ? Colors.white70 : const Color(0xFF64748B),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => setState(() => _selectedFilterIndex = 0),
+            child: const Text('Filtreyi Temizle (Tümü)'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStoreCard(
+    BuildContext context,
+    RetailStore store,
+    bool isDark,
+    NumberFormat currencyFmt,
+  ) {
+    final isCollapsed = _collapsedStoreIds.contains(store.id);
+
+    return Card(
+      color: isDark ? const Color(0xFF1E2638) : Colors.white,
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: isDark ? 2 : 1.5,
+      shadowColor: Colors.black12,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: isDark ? Colors.amber.withOpacity(0.3) : const Color(0xFFF59E0B).withOpacity(0.4),
+          width: 1.2,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Başlık, Seviye, Geliştir ve Akordeon Aç/Kapa
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: () => _showStoreDetailSheet(context, store),
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(store.emoji, style: const TextStyle(fontSize: 30)),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _showStoreDetailSheet(context, store),
+                    borderRadius: BorderRadius.circular(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                store.name,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                ),
+                              ),
+                            ),
+                            Icon(
+                              Icons.info_outline_rounded,
+                              size: 15,
+                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          store.description,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'ℹ️ Satılabilen ürünleri ve detayları gör >',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                          ),
+                        ),
+                        // Kompakt Raf Önizleme Çipleri
+                        if (store.productSlots.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: store.productSlots.map((slot) {
+                                final item = ItemRegistry.get(slot.itemId);
+                                final isOut = slot.shelfStock == 0;
+                                return Container(
+                                  margin: const EdgeInsets.only(right: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isOut
+                                        ? (isDark ? const Color(0xFF4C0519) : const Color(0xFFFEE2E2))
+                                        : (isDark ? Colors.black26 : const Color(0xFFF1F5F9)),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: isOut
+                                          ? (isDark ? Colors.redAccent.withOpacity(0.5) : const Color(0xFFFCA5A5))
+                                          : Colors.transparent,
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '${item?.emoji ?? "📦"} ${slot.shelfStock}/${slot.shelfCapacity}${isOut ? " ⚠️" : ""}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: isOut
+                                          ? (isDark ? Colors.redAccent : const Color(0xFFB91C1C))
+                                          : (isDark ? Colors.grey[300] : const Color(0xFF334155)),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.blueGrey[800] : const Color(0xFFE2E8F0),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Sv. ${store.level}',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : const Color(0xFF334155),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // Akordeon Aç / Kapa Butonu
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              if (_collapsedStoreIds.contains(store.id)) {
+                                _collapsedStoreIds.remove(store.id);
+                              } else {
+                                _collapsedStoreIds.add(store.id);
+                              }
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(
+                              isCollapsed
+                                  ? Icons.keyboard_arrow_down_rounded
+                                  : Icons.keyboard_arrow_up_rounded,
+                              size: 18,
+                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    // Geliştir Butonu
+                    InkWell(
+                      onTap: () => _showUpgradeStoreConfirmation(context, store, currencyFmt, isDark),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.amber.withOpacity(0.12) : const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                            width: 1.2,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.arrow_upward,
+                              size: 13,
+                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${currencyFmt.format(store.upgradeCost)} ₺',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    ElevatedButton.icon(
-                      onPressed: () => _showBuyStoreSheet(context),
-                      icon: const Icon(Icons.storefront),
-                      label: const Text('İlk Dükkanını Aç'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isDark ? Colors.amber[700] : const Color(0xFFD97706),
-                        foregroundColor: isDark ? Colors.black : Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  ],
+                ),
+              ],
+            ),
+
+            // Eğer kart kapalıysa sadece özet durum şeridini göster
+            if (isCollapsed) ...[
+              const SizedBox(height: 10),
+              InkWell(
+                onTap: () {
+                  setState(() => _collapsedStoreIds.remove(store.id));
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black26 : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        !store.isSelling
+                            ? Icons.pause_circle_filled
+                            : (store.shelfStock > 0 ? Icons.storefront : Icons.storefront_outlined),
+                        size: 14,
+                        color: !store.isSelling
+                            ? Colors.redAccent
+                            : (store.shelfStock > 0
+                                ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                                : Colors.orangeAccent),
                       ),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          store.statusMessage,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: !store.isSelling
+                                ? Colors.redAccent
+                                : (store.shelfStock > 0
+                                    ? (isDark ? Colors.greenAccent[400] : const Color(0xFF059669))
+                                    : Colors.orangeAccent),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        'Ciro: ${currencyFmt.format(store.totalRevenue)} ₺ • Rafları Gör ▼',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ] else ...[
+              // Kart AÇIK olduğunda detaylar:
+              const SizedBox(height: 12),
+
+              // Durum & Ciro Şeridi
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.black26 : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          !store.isSelling
+                              ? Icons.pause_circle_filled
+                              : (store.shelfStock > 0 ? Icons.storefront : Icons.storefront_outlined),
+                          size: 14,
+                          color: !store.isSelling
+                              ? Colors.redAccent
+                              : (store.shelfStock > 0
+                                  ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                                  : Colors.orangeAccent),
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            store.statusMessage,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: !store.isSelling
+                                  ? Colors.redAccent
+                                  : (store.shelfStock > 0
+                                      ? (isDark ? Colors.greenAccent[400] : const Color(0xFF059669))
+                                      : Colors.orangeAccent),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Satışı Durdur / Başlat Butonu
+                        InkWell(
+                          onTap: () => controller.toggleStoreSelling(store),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: store.isSelling
+                                  ? (isDark ? Colors.red.withOpacity(0.14) : const Color(0xFFFEE2E2))
+                                  : (isDark ? Colors.green.withOpacity(0.18) : const Color(0xFFD1FAE5)),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: store.isSelling
+                                    ? (isDark ? Colors.redAccent.withOpacity(0.5) : const Color(0xFFEF4444))
+                                    : (isDark ? Colors.greenAccent : const Color(0xFF10B981)),
+                                width: 1.0,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  store.isSelling ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                                  size: 13,
+                                  color: store.isSelling
+                                      ? (isDark ? Colors.redAccent : const Color(0xFFDC2626))
+                                      : (isDark ? Colors.greenAccent : const Color(0xFF059669)),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  store.isSelling ? 'Satışı Durdur' : 'Satışı Başlat',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: store.isSelling
+                                        ? (isDark ? Colors.redAccent : const Color(0xFFDC2626))
+                                        : (isDark ? Colors.greenAccent : const Color(0xFF059669)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Text(
+                          'Ciro: ${currencyFmt.format(store.totalRevenue)} ₺',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-            )
-          : ListView(
-              physics: const BouncingScrollPhysics(),
-              cacheExtent: 600,
-              padding: const EdgeInsets.all(16),
-              children: [
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 10,
-                  runSpacing: 8,
-                  children: [
-                    Text(
-                      'Dükkanlarım (${controller.ownedStores.length})',
+              const SizedBox(height: 14),
+
+              // Ürün Rafları Başlığı (X / Y Raflar - Maks. 5)
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        const Icon(Icons.shelves, size: 16, color: Color(0xFFD97706)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Ürün Rafları (${store.productSlots.length} / ${store.maxProductSlots})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      'Maks. 5 Ürün',
                       style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
                       ),
                     ),
-                    ElevatedButton.icon(
-                      onPressed: () => _showBuyStoreSheet(context),
-                      icon: const Icon(Icons.add_shopping_cart, size: 18),
-                      label: const Text('Yeni Dükkan Aç'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isDark ? Colors.amber[700] : const Color(0xFFD97706),
-                        foregroundColor: isDark ? Colors.black : Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+
+              // Her bir ürün rafı kutucuğu
+              ...store.productSlots.map((slot) => _buildProductSlotTile(context, store, slot, isDark, currencyFmt)),
+
+              // Yeni Ürün Rafı Ekle Butonu
+              if (store.productSlots.length < store.maxProductSlots) ...[
+                const SizedBox(height: 4),
+                InkWell(
+                  onTap: () => _showAddProductSlotSheet(context, store),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.amber.withOpacity(0.08) : const Color(0xFFFFFBEB),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isDark ? Colors.amberAccent.withOpacity(0.5) : const Color(0xFFF59E0B),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.add_circle_outline,
+                          size: 16,
+                          color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Yeni Ürün Rafı Ekle (${store.productSlots.length}/${store.maxProductSlots})',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ] else if (store.level < 5) ...[
+                const SizedBox(height: 4),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, size: 14, color: Color(0xFF64748B)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Daha fazla ürün satmak için Seviye ${store.level + 1}\'e yükseltin! (Maksimum 5 ürün rafı)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
+              const Divider(height: 22),
+
+              // Alt Alan: Devret / Sat
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Toplam Rafta: ${store.shelfStock} adet',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: InkWell(
+                      onTap: () => _showSellStoreConfirmation(context, store, currencyFmt, isDark),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.red.withOpacity(0.12) : const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: isDark ? Colors.redAccent.withOpacity(0.5) : const Color(0xFFFCA5A5),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.storefront_outlined,
+                              size: 12,
+                              color: isDark ? Colors.redAccent : const Color(0xFFDC2626),
+                            ),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                'Dükkanı Devret / Sat (${currencyFmt.format(store.resaleValue)} ₺)',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.redAccent : const Color(0xFFDC2626),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShelfMatrixView(
+    BuildContext context,
+    bool isDark,
+    NumberFormat currencyFmt,
+  ) {
+    final filteredStores = _getFilteredStores();
+    if (filteredStores.isEmpty) {
+      return _buildNoFilteredStoresNotice(isDark);
+    }
+
+    return Column(
+      children: filteredStores.map((store) {
+        return Card(
+          color: isDark ? const Color(0xFF1E2638) : Colors.white,
+          margin: const EdgeInsets.only(bottom: 12),
+          elevation: isDark ? 2 : 1,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(
+              color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Başlık Satırı
+                Row(
+                  children: [
+                    Text(store.emoji, style: const TextStyle(fontSize: 20)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        store.name,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.blueGrey[800] : const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Sv. ${store.level}',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF334155),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => controller.toggleStoreSelling(store),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: store.isSelling
+                              ? (isDark ? Colors.green.withOpacity(0.2) : const Color(0xFFD1FAE5))
+                              : (isDark ? Colors.red.withOpacity(0.2) : const Color(0xFFFEE2E2)),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          store.isSelling ? 'Satışta' : 'Durduruldu',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: store.isSelling
+                                ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                                : (isDark ? Colors.redAccent : const Color(0xFFDC2626)),
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                ...controller.ownedStores.map((store) {
-                  return Card(
-                    color: isDark ? const Color(0xFF1E2638) : Colors.white,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    elevation: isDark ? 2 : 1.5,
-                    shadowColor: Colors.black12,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(
-                        color: isDark ? Colors.amber.withOpacity(0.3) : const Color(0xFFF59E0B).withOpacity(0.4),
-                        width: 1.2,
-                      ),
+                const Divider(height: 16),
+                // Her bir rafın kompakt matris satırı
+                if (store.productSlots.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Henüz raf eklenmemiş.',
+                      style: TextStyle(fontSize: 11, color: isDark ? Colors.grey : const Color(0xFF64748B)),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Başlık ve Seviye
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              InkWell(
-                                onTap: () => _showStoreDetailSheet(context, store),
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Text(store.emoji, style: const TextStyle(fontSize: 30)),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () => _showStoreDetailSheet(context, store),
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              store.name,
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                                color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                              ),
-                                            ),
-                                          ),
-                                          Icon(
-                                            Icons.info_outline_rounded,
-                                            size: 15,
-                                            color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        store.description,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'ℹ️ Satılabilen ürünleri ve detayları gör >',
-                                        style: TextStyle(
-                                          fontSize: 10.5,
-                                          fontWeight: FontWeight.bold,
-                                          color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? Colors.blueGrey[800] : const Color(0xFFE2E8F0),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      'Sv. ${store.level}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.white : const Color(0xFF334155),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  // Geliştir Butonu
-                                  InkWell(
-                                    onTap: () => _showUpgradeStoreConfirmation(context, store, currencyFmt, isDark),
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                                      decoration: BoxDecoration(
-                                        color: isDark ? Colors.amber.withOpacity(0.12) : const Color(0xFFFFFBEB),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                          width: 1.2,
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.arrow_upward,
-                                            size: 13,
-                                            color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '${currencyFmt.format(store.upgradeCost)} ₺',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.bold,
-                                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
+                  )
+                else
+                  ...store.productSlots.map((slot) {
+                    final item = ItemRegistry.get(slot.itemId);
+                    final inWh = controller.warehouse[slot.itemId] ?? 0;
+                    final demandRatio = controller.getProductDemandRatio(slot.itemId, slot.retailPrice);
+                    final demandPercent = (demandRatio * 100).round();
+                    final isOutOfStock = slot.shelfStock == 0;
 
-                          // Durum & Ciro Şeridi
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: isDark ? Colors.black26 : const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF161C2C) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isOutOfStock
+                              ? (isDark ? Colors.redAccent.withOpacity(0.3) : const Color(0xFFFCA5A5))
+                              : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(item?.emoji ?? '📦', style: const TextStyle(fontSize: 16)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            flex: 3,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  children: [
-                                    Icon(
-                                      !store.isSelling
-                                          ? Icons.pause_circle_filled
-                                          : (store.shelfStock > 0 ? Icons.storefront : Icons.storefront_outlined),
-                                      size: 14,
-                                      color: !store.isSelling
-                                          ? Colors.redAccent
-                                          : (store.shelfStock > 0
-                                              ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
-                                              : Colors.orangeAccent),
-                                    ),
-                                    const SizedBox(width: 5),
-                                    Expanded(
-                                      child: Text(
-                                        store.statusMessage,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                          color: !store.isSelling
-                                              ? Colors.redAccent
-                                              : (store.shelfStock > 0
-                                                  ? (isDark ? Colors.greenAccent[400] : const Color(0xFF059669))
-                                                  : Colors.orangeAccent),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                Text(
+                                  item?.name ?? slot.itemId,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                  ),
                                 ),
-                                const SizedBox(height: 6),
                                 Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    // Satışı Durdur / Başlat Butonu
-                                    InkWell(
-                                      onTap: () => controller.toggleStoreSelling(store),
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                        decoration: BoxDecoration(
-                                          color: store.isSelling
-                                              ? (isDark ? Colors.red.withOpacity(0.14) : const Color(0xFFFEE2E2))
-                                              : (isDark ? Colors.green.withOpacity(0.18) : const Color(0xFFD1FAE5)),
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color: store.isSelling
-                                                ? (isDark ? Colors.redAccent.withOpacity(0.5) : const Color(0xFFEF4444))
-                                                : (isDark ? Colors.greenAccent : const Color(0xFF10B981)),
-                                            width: 1.0,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                              store.isSelling ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                              size: 13,
-                                              color: store.isSelling
-                                                  ? (isDark ? Colors.redAccent : const Color(0xFFDC2626))
-                                                  : (isDark ? Colors.greenAccent : const Color(0xFF059669)),
-                                            ),
-                                            const SizedBox(width: 3),
-                                            Text(
-                                              store.isSelling ? 'Satışı Durdur' : 'Satışı Başlat',
-                                              style: TextStyle(
-                                                fontSize: 10.5,
-                                                fontWeight: FontWeight.bold,
-                                                color: store.isSelling
-                                                    ? (isDark ? Colors.redAccent : const Color(0xFFDC2626))
-                                                    : (isDark ? Colors.greenAccent : const Color(0xFF059669)),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                                    Text(
+                                      'Raf: ${slot.shelfStock}/${slot.shelfCapacity}',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: isOutOfStock
+                                            ? Colors.redAccent
+                                            : (isDark ? Colors.grey[300] : const Color(0xFF475569)),
                                       ),
                                     ),
+                                    const SizedBox(width: 6),
                                     Text(
-                                      'Ciro: ${currencyFmt.format(store.totalRevenue)} ₺',
+                                      'Depo: $inWh',
                                       style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                                        fontSize: 10,
+                                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
                                       ),
                                     ),
                                   ],
@@ -346,183 +1332,107 @@ class RetailTab extends StatelessWidget {
                               ],
                             ),
                           ),
-                          const SizedBox(height: 14),
-
-                          // Ürün Rafları Başlığı (X / Y Raflar - Maks. 5)
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Expanded(
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.shelves, size: 16, color: Color(0xFFD97706)),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        'Ürün Rafları (${store.productSlots.length} / ${store.maxProductSlots})',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.bold,
-                                          color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          // Hızlı Doldur Butonu
+                          if (slot.shelfStock < slot.shelfCapacity && inWh > 0)
+                            InkWell(
+                              onTap: () {
+                                final need = slot.shelfCapacity - slot.shelfStock;
+                                final take = min(need, inWh);
+                                controller.warehouse[slot.itemId] = inWh - take;
+                                slot.shelfStock += take;
+                                controller.notifyListeners();
+                                controller.saveState();
+                                GameToast.showSuccess(context, '$take adet ${item?.name ?? slot.itemId} rafa dolduruldu!');
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                                 decoration: BoxDecoration(
-                                  color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                                  color: isDark ? const Color(0xFF064E3B) : const Color(0xFFD1FAE5),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  'Maks. 5 Ürün',
+                                  '+ Doldur',
                                   style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: isDark ? Colors.greenAccent : const Color(0xFF047857),
                                   ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-
-                          // Her bir ürün rafı kutucuğu
-                          ...store.productSlots.map((slot) => _buildProductSlotTile(context, store, slot, isDark, currencyFmt)),
-
-                          // Yeni Ürün Rafı Ekle Butonu
-                          if (store.productSlots.length < store.maxProductSlots) ...[
-                            const SizedBox(height: 4),
-                            InkWell(
-                              onTap: () => _showAddProductSlotSheet(context, store),
-                              borderRadius: BorderRadius.circular(10),
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(vertical: 9),
-                                decoration: BoxDecoration(
-                                  color: isDark ? Colors.amber.withOpacity(0.08) : const Color(0xFFFFFBEB),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: isDark ? Colors.amberAccent.withOpacity(0.5) : const Color(0xFFF59E0B),
-                                    width: 1.2,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.add_circle_outline,
-                                      size: 16,
-                                      color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Yeni Ürün Rafı Ekle (${store.productSlots.length}/${store.maxProductSlots})',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
-                                      ),
-                                    ),
-                                  ],
                                 ),
                               ),
                             ),
-                          ] else if (store.level < 5) ...[
-                            const SizedBox(height: 4),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          // Fiyat ve Talep Butonu
+                          InkWell(
+                            onTap: () => _showSetSlotPriceDialog(context, store, slot, isDark),
+                            child: Container(
+                              margin: const EdgeInsets.only(right: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                               decoration: BoxDecoration(
-                                color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
-                                borderRadius: BorderRadius.circular(8),
+                                color: isDark ? Colors.amber.withOpacity(0.15) : const Color(0xFFFFFBEB),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                  width: 0.8,
+                                ),
                               ),
-                              child: Row(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.info_outline, size: 14, color: Color(0xFF64748B)),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Text(
-                                      'Daha fazla ürün satmak için Seviye ${store.level + 1}\'e yükseltin! (Maksimum 5 ürün rafı)',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
-                                      ),
+                                  Text(
+                                    '${slot.retailPrice.toStringAsFixed(0)} ₺',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                    ),
+                                  ),
+                                  Text(
+                                    '%$demandPercent talep',
+                                    style: TextStyle(
+                                      fontSize: 8.5,
+                                      color: demandPercent >= 100
+                                          ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                                          : Colors.orangeAccent,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                          ],
-
-                          const Divider(height: 22),
-
-                          // Alt Alan: Devret / Sat
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Toplam Rafta: ${store.shelfStock} adet',
+                          ),
+                          // Satışta / Durduruldu Switch
+                          InkWell(
+                            onTap: () {
+                              controller.toggleStoreSlotSelling(store, slot, !slot.isSelling);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: slot.isSelling
+                                    ? (isDark ? Colors.green.withOpacity(0.15) : const Color(0xFFD1FAE5))
+                                    : (isDark ? Colors.red.withOpacity(0.15) : const Color(0xFFFEE2E2)),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                slot.isSelling ? 'Satışta' : 'Durduruldu',
                                 style: TextStyle(
-                                  fontSize: 11,
-                                  color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: slot.isSelling
+                                      ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                                      : (isDark ? Colors.redAccent : const Color(0xFFDC2626)),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: InkWell(
-                                  onTap: () => _showSellStoreConfirmation(context, store, currencyFmt, isDark),
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
-                                    decoration: BoxDecoration(
-                                      color: isDark ? Colors.red.withOpacity(0.12) : const Color(0xFFFEF2F2),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: isDark ? Colors.redAccent.withOpacity(0.5) : const Color(0xFFFCA5A5),
-                                        width: 0.8,
-                                      ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.storefront_outlined,
-                                          size: 12,
-                                          color: isDark ? Colors.redAccent : const Color(0xFFDC2626),
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Flexible(
-                                          child: Text(
-                                            'Dükkanı Devret / Sat (${currencyFmt.format(store.resaleValue)} ₺)',
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 10.5,
-                                              fontWeight: FontWeight.bold,
-                                              color: isDark ? Colors.redAccent : const Color(0xFFDC2626),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  );
-                }),
+                    );
+                  }),
               ],
             ),
-    ),
+          ),
+        );
+      }).toList(),
     );
   }
 
