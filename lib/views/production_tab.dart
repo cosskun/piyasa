@@ -56,7 +56,7 @@ const List<FacilitySupplyChain> kDefaultSupplyChains = [
     title: 'Kahve Plantasyonu & Kavurma',
     emoji: '🌿 ➡️ ☕',
     description: 'Tropikal kahve çekirdeği hasadı ve taze kahve kavurma',
-    stepsBlueprintIds: ['coffee_plantation', 'coffee_roastery'],
+    stepsBlueprintIds: ['coffee_plantation', 'coffee_roastery', 'coffee_brewery'],
   ),
   FacilitySupplyChain(
     id: 'textile_fashion',

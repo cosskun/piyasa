@@ -347,6 +347,21 @@ class ProductionFacility {
         baseUpgradeCost: 21000.0,
       ),
       ProductionFacility(
+        id: 'coffee_brewery',
+        name: 'Kahve Demleme & Dolum Tesisi',
+        emoji: '☕',
+        description: '1 adet Kavrulmuş Kahveyi endüstriyel filtreleme ile demleyip 2 bardak Sıcak Filtre Kahve üretir.',
+        type: FacilityType.factory,
+        recipe: const FacilityRecipe(
+          inputs: {'roasted_coffee': 1},
+          outputItemId: 'coffee_cup',
+          outputAmount: 2,
+          durationSeconds: 5.5,
+        ),
+        purchaseCost: 55000.0,
+        baseUpgradeCost: 27500.0,
+      ),
+      ProductionFacility(
         id: 'weaving_factory',
         name: 'Dokuma & İplik Fabrikası',
         emoji: '🧵',
