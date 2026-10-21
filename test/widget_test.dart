@@ -267,7 +267,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RetailTab(controller: controller),
+          body: RetailTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -357,7 +357,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RetailTab(controller: controller),
+          body: RetailTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -603,7 +603,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RetailTab(controller: controller),
+          body: RetailTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -749,7 +749,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RetailTab(controller: controller),
+          body: RetailTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -1851,7 +1851,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: RetailTab(controller: controller),
+          body: RetailTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -3313,6 +3313,83 @@ void main() {
     expect(find.text('Holding & Kamu İhaleleri'), findsOneWidget);
     expect(find.text('Holding Genel Merkezi'), findsOneWidget);
     expect(find.textContaining('Kamu İhaleleri ('), findsOneWidget);
+
+    controller.dispose();
+  });
+
+  testWidgets('RetailTab Kasaba Carsisi mode renders town avenue, building plots, shows branch count, and opens branch management sheet', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController();
+    controller.cash = 500000;
+    final breadBp = RetailStore.getBlueprints().firstWhere((b) => b.id == 'kiosk_bread');
+    controller.buyStore(breadBp); // 1 branch of kiosk_bread
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RetailTab(controller: controller), // defaults to Mode 0 (Kasaba)
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verify Kasaba Avenue Header and status legend
+    expect(find.textContaining('Ticaret Bulvarı • 9 Parsel'), findsOneWidget);
+    expect(find.text('Faal'), findsOneWidget);
+    expect(find.text('Uyarı'), findsOneWidget);
+    expect(find.text('Boş Arsa'), findsOneWidget);
+
+    // 2. Verify Owned Building Card for Köşe Büfe & Fırın
+    expect(find.text(breadBp.name), findsOneWidget);
+    expect(find.text('1 Şube'), findsOneWidget);
+    expect(find.text('Şubeleri Yönet'), findsOneWidget);
+
+    // 3. Verify Unowned Plots are rendered (8 unowned plots with "İlk Şubeyi Aç")
+    expect(find.textContaining('İlk Şubeyi Aç'), findsNWidgets(8));
+
+    // 4. Tap "Şubeleri Yönet" to open Branch Management Sheet
+    await tester.tap(find.text('Şubeleri Yönet'));
+    await tester.pumpAndSettle();
+
+    // 5. Verify Sheet contents: Header, Faal badge, Bulk action toolbar
+    expect(find.text('1 Şube Faal'), findsOneWidget);
+    expect(find.text('Tüm Rafları Doldur'), findsWidgets);
+    expect(find.text('Tümünü Durdur'), findsWidgets);
+    expect(find.textContaining('+ Yeni Şube Aç'), findsWidgets);
+
+    // 6. Tap "+ Yeni Şube Aç" inside the sheet to purchase branch #2
+    await tester.tap(find.textContaining('+ Yeni Şube Aç').first);
+    await tester.pumpAndSettle();
+
+    // Verify branch #2 is created
+    expect(controller.ownedStores.where((s) => s.blueprintId == 'kiosk_bread').length, 2);
+    expect(find.text('2 Şube Faal'), findsOneWidget);
+    expect(find.text('Şube #2'), findsOneWidget);
+
+    // Close the sheet
+    await tester.tap(find.byIcon(Icons.close_rounded).first);
+    await tester.pumpAndSettle();
+
+    // Verify Kasaba avenue now shows "2 Şube"
+    expect(find.text('2 Şube'), findsOneWidget);
+
+    // 7. Test switching to Mode 1 (Liste)
+    await tester.tap(find.text('Liste'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Dükkanı Devret / Sat'), findsWidgets);
+
+    // 8. Test switching to Mode 2 (Matris)
+    await tester.tap(find.text('Matris'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Raf: '), findsWidgets);
+
+    // 9. Switch back to Kasaba
+    await tester.tap(find.text('Kasaba'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Ticaret Bulvarı • 9 Parsel'), findsOneWidget);
 
     controller.dispose();
   });

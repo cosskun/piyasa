@@ -9,8 +9,9 @@ import '../widgets/game_toast.dart';
 
 class RetailTab extends StatefulWidget {
   final GameController controller;
+  final int? initialViewMode;
 
-  const RetailTab({super.key, required this.controller});
+  const RetailTab({super.key, required this.controller, this.initialViewMode});
 
   @override
   State<RetailTab> createState() => _RetailTabState();
@@ -20,8 +21,14 @@ class _RetailTabState extends State<RetailTab> {
   GameController get controller => widget.controller;
 
   int _selectedFilterIndex = 0; // 0: Tümü, 1: Stoğu Bitenler, 2: Satışta, 3: Durdurulanlar
-  int _selectedViewMode = 0; // 0: Dükkanlarım (Akordeon), 1: Hızlı Raf Matrisi
+  late int _selectedViewMode; // 0: Kasaba Çarşısı (Cadde), 1: Dükkanlarım (Akordeon Liste), 2: Hızlı Raf Matrisi
   final Set<String> _collapsedStoreIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedViewMode = widget.initialViewMode ?? 0;
+  }
 
   List<RetailStore> _getFilteredStores() {
     final stores = controller.ownedStores;
@@ -95,7 +102,10 @@ class _RetailTabState extends State<RetailTab> {
 
                   // 4. İçerik (Görünüm Moduna Göre)
                   if (_selectedViewMode == 0) ...[
-                    // Dükkan Kartları (Akordeon)
+                    // Kasaba Çarşısı (Cadde Görünümü)
+                    _buildTownStreetView(context, isDark, currencyFmt),
+                  ] else if (_selectedViewMode == 1) ...[
+                    // Dükkan Kartları (Akordeon Liste)
                     if (_getFilteredStores().isEmpty)
                       _buildNoFilteredStoresNotice(isDark)
                     else
@@ -509,26 +519,28 @@ class _RetailTabState extends State<RetailTab> {
     final sellingCount = stores.where((s) => s.isSelling).length;
     final pausedCount = stores.where((s) => !s.isSelling).length;
 
-    return Row(
+    return Wrap(
+      alignment: WrapAlignment.spaceBetween,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
       children: [
         // Filtre Sekmeleri (Yatay Kaydırılabilir)
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _buildFilterChip('Tümü (${stores.length})', 0, isDark),
-                const SizedBox(width: 5),
-                _buildFilterChip('⚠️ Stoğu Bitenler ($emptyCount)', 1, isDark),
-                const SizedBox(width: 5),
-                _buildFilterChip('🟢 Satışta ($sellingCount)', 2, isDark),
-                const SizedBox(width: 5),
-                _buildFilterChip('⏸️ Durdurulanlar ($pausedCount)', 3, isDark),
-              ],
-            ),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildFilterChip('Tümü (${stores.length})', 0, isDark),
+              const SizedBox(width: 5),
+              _buildFilterChip('⚠️ Stoğu Bitenler ($emptyCount)', 1, isDark),
+              const SizedBox(width: 5),
+              _buildFilterChip('🟢 Satışta ($sellingCount)', 2, isDark),
+              const SizedBox(width: 5),
+              _buildFilterChip('⏸️ Durdurulanlar ($pausedCount)', 3, isDark),
+            ],
           ),
         ),
-        const SizedBox(width: 8),
         // Görünüm Modu Değiştirici
         Container(
           decoration: BoxDecoration(
@@ -541,8 +553,9 @@ class _RetailTabState extends State<RetailTab> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              _buildViewModeToggleBtn(0, Icons.view_agenda_rounded, 'Dükkan', isDark),
-              _buildViewModeToggleBtn(1, Icons.table_chart_rounded, 'Matris', isDark),
+              _buildViewModeToggleBtn(0, Icons.storefront_rounded, 'Kasaba', isDark),
+              _buildViewModeToggleBtn(1, Icons.view_agenda_rounded, 'Liste', isDark),
+              _buildViewModeToggleBtn(2, Icons.table_chart_rounded, 'Matris', isDark),
             ],
           ),
         ),
@@ -1356,7 +1369,9 @@ class _RetailTabState extends State<RetailTab> {
                                     color: isDark ? Colors.white : const Color(0xFF0F172A),
                                   ),
                                 ),
-                                Row(
+                                Wrap(
+                                  spacing: 4,
+                                  runSpacing: 2,
                                   children: [
                                     Text(
                                       'Raf: ${slot.shelfStock}/${slot.shelfCapacity}',
@@ -1368,7 +1383,6 @@ class _RetailTabState extends State<RetailTab> {
                                             : (isDark ? Colors.grey[300] : const Color(0xFF475569)),
                                       ),
                                     ),
-                                    const SizedBox(width: 6),
                                     Text(
                                       'Depo: $inWh',
                                       style: TextStyle(
@@ -1802,10 +1816,14 @@ class _RetailTabState extends State<RetailTab> {
           const SizedBox(height: 6),
 
           // Otomatik İkmal & Depodan Ekle Butonu
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 4,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     'Depodan Otomatik Çek',
@@ -3944,6 +3962,1288 @@ class _RetailTabState extends State<RetailTab> {
           ],
         );
       },
+    );
+  }
+
+  // ===============================================================
+  // KASABA ÇARŞISI (TOWN STREET) GÖRÜNÜMÜ & ŞUBE YÖNETİMİ
+  // ===============================================================
+
+  Widget _buildTownStreetView(BuildContext context, bool isDark, NumberFormat currencyFmt) {
+    final blueprints = RetailStore.getBlueprints();
+
+    final List<MapEntry<RetailStore, List<RetailStore>>> items = [];
+    for (final bp in blueprints) {
+      final branches = controller.ownedStores
+          .where((s) => s.blueprintId == bp.id || s.id == bp.id || s.id.startsWith('${bp.id}_'))
+          .toList();
+
+      if (_selectedFilterIndex == 0) {
+        items.add(MapEntry(bp, branches));
+      } else if (_selectedFilterIndex == 1) {
+        // Stoğu Bitenler
+        if (branches.any((b) => b.productSlots.any((slot) => slot.shelfStock == 0))) {
+          items.add(MapEntry(bp, branches));
+        }
+      } else if (_selectedFilterIndex == 2) {
+        // Satışta
+        if (branches.any((b) => b.isSelling)) {
+          items.add(MapEntry(bp, branches));
+        }
+      } else if (_selectedFilterIndex == 3) {
+        // Durdurulanlar
+        if (branches.any((b) => !b.isSelling)) {
+          items.add(MapEntry(bp, branches));
+        }
+      }
+    }
+
+    if (items.isEmpty) {
+      return _buildNoFilteredStoresNotice(isDark);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Cadde / Bulvar Bilgi Şeridi
+        Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: isDark
+                  ? [const Color(0xFF1E293B), const Color(0xFF0F172A)]
+                  : [const Color(0xFFF1F5F9), const Color(0xFFE2E8F0)],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isDark ? const Color(0xFF334155) : const Color(0xFFCBD5E1),
+            ),
+          ),
+          child: Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.signpost_rounded, size: 16, color: isDark ? Colors.amber[400] : const Color(0xFFD97706)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Ticaret Bulvarı • 9 Parsel',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3,
+                      color: isDark ? Colors.white70 : const Color(0xFF334155),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildStatusDot(const Color(0xFF10B981), 'Faal'),
+                  const SizedBox(width: 6),
+                  _buildStatusDot(const Color(0xFFE11D48), 'Uyarı'),
+                  const SizedBox(width: 6),
+                  _buildStatusDot(Colors.grey, 'Boş Arsa'),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        // Binalar & Parseller
+        ...items.map((entry) {
+          final bp = entry.key;
+          final branches = entry.value;
+          if (branches.isNotEmpty) {
+            return _buildOwnedBuildingCard(context, bp, branches, isDark, currencyFmt);
+          } else {
+            return _buildUnownedPlotCard(context, bp, isDark, currencyFmt);
+          }
+        }),
+      ],
+    );
+  }
+
+  Widget _buildStatusDot(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.w500),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStoreAwning(String blueprintId) {
+    List<Color> gradientColors;
+    switch (blueprintId) {
+      case 'kiosk_bread':
+        gradientColors = const [Color(0xFFD97706), Color(0xFFF59E0B), Color(0xFFFEF3C7), Color(0xFFD97706)];
+        break;
+      case 'delicatessen_shop':
+        gradientColors = const [Color(0xFFEAB308), Color(0xFFFDE047), Color(0xFFFEF9C3), Color(0xFFEAB308)];
+        break;
+      case 'juice_bar':
+        gradientColors = const [Color(0xFF059669), Color(0xFF10B981), Color(0xFFD1FAE5), Color(0xFF059669)];
+        break;
+      case 'fast_food_joint':
+        gradientColors = const [Color(0xFFDC2626), Color(0xFFEF4444), Color(0xFFFEE2E2), Color(0xFFDC2626)];
+        break;
+      case 'coffee_house':
+        gradientColors = const [Color(0xFF78350F), Color(0xFF92400E), Color(0xFFFDE68A), Color(0xFF78350F)];
+        break;
+      case 'chocolatier_shop':
+        gradientColors = const [Color(0xFF581C87), Color(0xFF7E22CE), Color(0xFFF3E8FF), Color(0xFF581C87)];
+        break;
+      case 'clothing_boutique':
+        gradientColors = const [Color(0xFF7C3AED), Color(0xFF8B5CF6), Color(0xFFEDE9FE), Color(0xFF7C3AED)];
+        break;
+      case 'furniture_showroom':
+        gradientColors = const [Color(0xFF1D4ED8), Color(0xFF3B82F6), Color(0xFFDBEAFE), Color(0xFF1D4ED8)];
+        break;
+      case 'electronics_store':
+        gradientColors = const [Color(0xFF0284C7), Color(0xFF0EA5E9), Color(0xFFE0F2FE), Color(0xFF0284C7)];
+        break;
+      default:
+        gradientColors = const [Color(0xFFD97706), Color(0xFFF59E0B), Color(0xFFFEF3C7), Color(0xFFD97706)];
+    }
+
+    return Container(
+      height: 12,
+      decoration: BoxDecoration(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+        gradient: LinearGradient(
+          colors: gradientColors,
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOwnedBuildingCard(
+    BuildContext context,
+    RetailStore bp,
+    List<RetailStore> branches,
+    bool isDark,
+    NumberFormat currencyFmt,
+  ) {
+    final hasWarning = branches.any((b) => b.productSlots.any((s) => s.shelfStock == 0));
+    final allPaused = branches.every((b) => !b.isSelling);
+    final activeBranches = branches.where((b) => b.isSelling).length;
+    final maxLevel = branches.map((b) => b.level).reduce(max);
+    final totalRev = branches.fold<double>(0.0, (sum, b) => sum + b.totalRevenue);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2638) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasWarning
+              ? const Color(0xFFF43F5E).withOpacity(0.7)
+              : (isDark ? Colors.amber.withOpacity(0.3) : const Color(0xFFF59E0B).withOpacity(0.4)),
+          width: hasWarning ? 1.6 : 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: hasWarning
+                ? const Color(0xFFF43F5E).withOpacity(0.12)
+                : Colors.black.withOpacity(isDark ? 0.25 : 0.06),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: InkWell(
+        onTap: () => _showStoreBranchesSheet(context, bp),
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Tente Şeridi (Awning)
+            _buildStoreAwning(bp.id),
+
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Üst Kısım: Emoji, Başlık, Seviye, Ciro, Şube Sayısı Rozeti
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Container(
+                            width: 48,
+                            height: 48,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isDark ? Colors.white12 : const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                            child: Text(bp.emoji, style: const TextStyle(fontSize: 26)),
+                          ),
+                          if (hasWarning)
+                            Positioned(
+                              top: -4,
+                              right: -4,
+                              child: Container(
+                                padding: const EdgeInsets.all(3),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFE11D48),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.priority_high_rounded, size: 10, color: Colors.white),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    bp.name,
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                ),
+                                // Şube Sayısı Rozeti
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? Colors.amber[600] : const Color(0xFFD97706),
+                                    borderRadius: BorderRadius.circular(8),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.amber.withOpacity(0.3),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    '${branches.length} Şube',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                                    borderRadius: BorderRadius.circular(5),
+                                  ),
+                                  child: Text(
+                                    'Sv. $maxLevel',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.amber[300] : const Color(0xFFB45309),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    '• Toplam Ciro: ${currencyFmt.format(totalRev.round())} ₺',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Şube Raf Önizleme Çipleri
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: branches.asMap().entries.map((entry) {
+                        final idx = entry.key;
+                        final branch = entry.value;
+                        final firstSlot = branch.productSlots.isNotEmpty ? branch.productSlots.first : null;
+                        final isSlotEmpty = firstSlot != null && firstSlot.shelfStock == 0;
+                        final item = firstSlot != null ? ItemRegistry.get(firstSlot.itemId) : null;
+                        return Container(
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isSlotEmpty
+                                ? const Color(0xFFE11D48).withOpacity(0.12)
+                                : (isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFF1F5F9)),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: isSlotEmpty
+                                  ? const Color(0xFFE11D48).withOpacity(0.5)
+                                  : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '#${idx + 1}',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.white60 : const Color(0xFF64748B),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                item?.emoji ?? '📦',
+                                style: const TextStyle(fontSize: 10),
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                firstSlot != null ? '${firstSlot.shelfStock}/${firstSlot.shelfCapacity}' : 'Boş',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSlotEmpty
+                                      ? const Color(0xFFE11D48)
+                                      : (isDark ? Colors.white70 : const Color(0xFF334155)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+
+                  // Alt Çubuk: Durum & Yönet Butonu
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: allPaused ? const Color(0xFFE11D48) : const Color(0xFF10B981),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                allPaused ? 'Tümü Durduruldu' : 'Satışta ($activeBranches/${branches.length} Şube)',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: allPaused ? const Color(0xFFE11D48) : const Color(0xFF10B981),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Şubeleri Yönet',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.amber[400] : const Color(0xFFD97706),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 10,
+                            color: isDark ? Colors.amber[400] : const Color(0xFFD97706),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUnownedPlotCard(
+    BuildContext context,
+    RetailStore bp,
+    bool isDark,
+    NumberFormat currencyFmt,
+  ) {
+    final canAfford = controller.cash >= bp.purchaseCost;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF131A2A).withOpacity(0.5) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? Colors.white12 : const Color(0xFFCBD5E1),
+          style: BorderStyle.solid,
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Faded emoji container
+              Opacity(
+                opacity: 0.55,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.04) : Colors.black.withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? Colors.white10 : Colors.black12,
+                    ),
+                  ),
+                  child: Text(bp.emoji, style: const TextStyle(fontSize: 22)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      bp.name,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.white70 : const Color(0xFF334155),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      bp.description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: isDark ? Colors.grey[500] : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                if (controller.cash < bp.purchaseCost) {
+                  GameToast.showWarning(context, 'Yetersiz nakit! (${currencyFmt.format(bp.purchaseCost)} ₺ gerekiyor)');
+                  return;
+                }
+                final err = controller.buyStore(bp);
+                if (err != null) {
+                  GameToast.showWarning(context, err);
+                } else {
+                  GameToast.showSuccess(context, '${bp.name} caddeye açıldı!');
+                }
+              },
+              icon: const Icon(Icons.add, size: 14),
+              label: Text(
+                'İlk Şubeyi Aç (${currencyFmt.format(bp.purchaseCost)} ₺)',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: canAfford
+                    ? (isDark ? Colors.amber[700] : const Color(0xFFD97706))
+                    : (isDark ? Colors.grey[800] : Colors.grey[300]),
+                foregroundColor: canAfford ? (isDark ? Colors.black : Colors.white) : Colors.grey,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showStoreBranchesSheet(BuildContext context, RetailStore bp) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currencyFmt = NumberFormat("#,##0", "tr_TR");
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => ListenableBuilder(
+        listenable: controller,
+        builder: (context, _) {
+          final currentBranches = controller.ownedStores
+              .where((s) => s.blueprintId == bp.id || s.id == bp.id || s.id.startsWith('${bp.id}_'))
+              .toList();
+
+          final anySelling = currentBranches.any((b) => b.isSelling);
+
+          return Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.90,
+            ),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF0F172A) : Colors.white,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.35),
+                  blurRadius: 20,
+                  offset: const Offset(0, -4),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Awning header strip
+                _buildStoreAwning(bp.id),
+
+                // Sheet Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E2638) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark ? Colors.white12 : const Color(0xFFCBD5E1),
+                          ),
+                        ),
+                        child: Text(bp.emoji, style: const TextStyle(fontSize: 24)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    bp.name,
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? Colors.amber[700]!.withOpacity(0.2) : const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: isDark ? Colors.amber[700]!.withOpacity(0.4) : const Color(0xFFF59E0B),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '${currentBranches.length} Şube Faal',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: isDark ? Colors.amber[300] : const Color(0xFFB45309),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              bp.description,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close_rounded, size: 20),
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Bulk Action Toolbar
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      // Tüm Rafları Doldur
+                      InkWell(
+                        onTap: () {
+                          int totalRefilled = 0;
+                          for (final b in currentBranches) {
+                            for (final slot in b.productSlots) {
+                              final needed = slot.shelfCapacity - slot.shelfStock;
+                              if (needed > 0) {
+                                final inWh = controller.warehouse[slot.itemId] ?? 0;
+                                final take = min(needed, inWh);
+                                if (take > 0) {
+                                  controller.warehouse[slot.itemId] = inWh - take;
+                                  slot.shelfStock += take;
+                                  totalRefilled += take;
+                                }
+                              }
+                            }
+                          }
+                          if (totalRefilled > 0) {
+                            controller.notifyListeners();
+                            controller.saveState();
+                            GameToast.showSuccess(context, '$totalRefilled adet ürün tüm şube raflarına dolduruldu!');
+                          } else {
+                            GameToast.showWarning(context, 'Deponuzda bu ürünlerden bulunmuyor!');
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF059669),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.inventory_2_rounded, size: 14, color: Colors.white),
+                              SizedBox(width: 5),
+                              Text(
+                                'Tüm Rafları Doldur',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Tümünü Başlat / Durdur
+                      InkWell(
+                        onTap: () {
+                          final newSelling = !anySelling;
+                          for (final b in currentBranches) {
+                            b.isSelling = newSelling;
+                            b.statusMessage = newSelling ? 'Satışta' : 'Satışlar Durduruldu';
+                          }
+                          controller.notifyListeners();
+                          controller.saveState();
+                          if (newSelling) {
+                            GameToast.showSuccess(context, '${bp.name} tüm şubelerinde satışlar başlatıldı!');
+                          } else {
+                            GameToast.showInfo(context, '${bp.name} tüm şubelerinde satışlar durduruldu!');
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: anySelling
+                                ? const Color(0xFFDC2626).withOpacity(0.85)
+                                : const Color(0xFF2563EB),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                anySelling ? Icons.pause_circle_rounded : Icons.play_circle_rounded,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                anySelling ? 'Tümünü Durdur' : 'Tümünü Başlat',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Yeni Şube Aç
+                      InkWell(
+                        onTap: () {
+                          if (controller.cash < bp.purchaseCost) {
+                            GameToast.showWarning(context, 'Yetersiz nakit! (${currencyFmt.format(bp.purchaseCost)} ₺ gerekiyor)');
+                            return;
+                          }
+                          final err = controller.buyStore(bp);
+                          if (err != null) {
+                            GameToast.showWarning(context, err);
+                          } else {
+                            GameToast.showSuccess(context, 'Yeni ${bp.name} şubesi açıldı!');
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.amber[700] : const Color(0xFFD97706),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.add_business_rounded, size: 14, color: Colors.white),
+                              const SizedBox(width: 5),
+                              Text(
+                                '+ Yeni Şube Aç (${currencyFmt.format(bp.purchaseCost)} ₺)',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const Divider(height: 12),
+
+                // Şube Kartları Listesi (Scrollable)
+                Flexible(
+                  child: currentBranches.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(bp.emoji, style: const TextStyle(fontSize: 40)),
+                                const SizedBox(height: 8),
+                                const Text('Bu türe ait aktif şube kalmadı.'),
+                              ],
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                          itemCount: currentBranches.length,
+                          itemBuilder: (context, index) {
+                            final branch = currentBranches[index];
+                            return _buildBranchCardInSheet(
+                              context,
+                              branch,
+                              index + 1,
+                              isDark,
+                              currencyFmt,
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildBranchCardInSheet(
+    BuildContext context,
+    RetailStore branch,
+    int branchIndex,
+    bool isDark,
+    NumberFormat currencyFmt,
+  ) {
+    final hasZeroStock = branch.productSlots.any((slot) => slot.shelfStock == 0);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E2638) : const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: hasZeroStock
+              ? const Color(0xFFF43F5E).withOpacity(0.5)
+              : (isDark ? Colors.white10 : const Color(0xFFCBD5E1)),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Şube Üst Başlık & Aksiyonlar
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.amber[700]!.withOpacity(0.2) : const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isDark ? Colors.amber[700]!.withOpacity(0.5) : const Color(0xFFF59E0B),
+                  ),
+                ),
+                child: Text(
+                  '#$branchIndex',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: isDark ? Colors.amber[300] : const Color(0xFFB45309),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          'Şube #$branchIndex',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Sv. ${branch.level}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.amber[300] : const Color(0xFFB45309),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Gider: ${branch.effectiveOperatingExpense.toStringAsFixed(0)} ₺/dk • Ciro: ${currencyFmt.format(branch.totalRevenue.round())} ₺',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Satış Durumu Toggle Butonu
+              InkWell(
+                onTap: () {
+                  final newSelling = !branch.isSelling;
+                  controller.toggleStoreSelling(branch, newSelling);
+                  if (newSelling) {
+                    GameToast.showSuccess(context, 'Şube #$branchIndex için satışlar başlatıldı!');
+                  } else {
+                    GameToast.showInfo(context, 'Şube #$branchIndex için satışlar durduruldu!');
+                  }
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: branch.isSelling
+                        ? const Color(0xFF10B981).withOpacity(0.15)
+                        : const Color(0xFFEF4444).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: branch.isSelling
+                          ? const Color(0xFF10B981).withOpacity(0.4)
+                          : const Color(0xFFEF4444).withOpacity(0.4),
+                    ),
+                  ),
+                  child: Text(
+                    branch.isSelling ? '🟢 Satışta' : '⏸️ Durduruldu',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: branch.isSelling ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // Geliştir ve Devret Butonları
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _showUpgradeStoreConfirmation(context, branch, currencyFmt, isDark),
+                  icon: const Icon(Icons.arrow_upward_rounded, size: 14),
+                  label: Text(
+                    'Geliştir (${currencyFmt.format(branch.upgradeCost)} ₺)',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    foregroundColor: isDark ? Colors.amber[400] : const Color(0xFFD97706),
+                    side: BorderSide(
+                      color: isDark ? Colors.amber[700]!.withOpacity(0.5) : const Color(0xFFF59E0B),
+                    ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: () => _showSellStoreConfirmation(context, branch, currencyFmt, isDark),
+                icon: const Icon(Icons.sell_outlined, size: 13),
+                label: Text(
+                  'Devret (${currencyFmt.format(branch.resaleValue)} ₺)',
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  foregroundColor: const Color(0xFFEF4444),
+                  side: BorderSide(color: const Color(0xFFEF4444).withOpacity(0.4)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // Raflar Başlığı
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Raflar (${branch.productSlots.length}/${branch.maxProductSlots} Dolu)',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: isDark ? Colors.white70 : const Color(0xFF334155),
+                ),
+              ),
+              if (branch.productSlots.length < branch.maxProductSlots)
+                InkWell(
+                  onTap: () => _showAddProductSlotSheet(context, branch),
+                  child: Text(
+                    '+ Yeni Raf Ekle',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: isDark ? Colors.amber[400] : const Color(0xFFD97706),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 6),
+
+          // Raflar Listesi
+          ...branch.productSlots.map(
+            (slot) => _buildBranchSlotTile(context, branch, slot, isDark, currencyFmt),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBranchSlotTile(
+    BuildContext context,
+    RetailStore branch,
+    StoreProductSlot slot,
+    bool isDark,
+    NumberFormat currencyFmt,
+  ) {
+    final item = ItemRegistry.get(slot.itemId);
+    final inWh = controller.warehouse[slot.itemId] ?? 0;
+    final isOut = slot.shelfStock == 0;
+    final demandRatio = controller.getProductDemandRatio(slot.itemId, slot.retailPrice);
+    final demandPercent = (demandRatio * 100).round();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: isOut
+            ? (isDark ? const Color(0xFF4C0519).withOpacity(0.2) : const Color(0xFFFEE2E2).withOpacity(0.5))
+            : (isDark ? const Color(0xFF131A2A) : Colors.white),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isOut
+              ? const Color(0xFFF43F5E).withOpacity(0.5)
+              : (isDark ? Colors.white10 : const Color(0xFFE2E8F0)),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(item?.emoji ?? '📦', style: const TextStyle(fontSize: 18)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            item?.name ?? slot.itemId,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isOut) ...[
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE11D48),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'TÜKENDİ',
+                              style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.white),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Depo: $inWh • Talep: %$demandPercent',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Fiyat Butonu
+              InkWell(
+                onTap: () => _showSetSlotPriceDialog(context, branch, slot, isDark),
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white10 : const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isDark ? Colors.amber.withOpacity(0.3) : const Color(0xFFD97706).withOpacity(0.4),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '${currencyFmt.format(slot.retailPrice.round())} ₺',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.amber[300] : const Color(0xFFB45309),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Icon(
+                        Icons.edit,
+                        size: 10,
+                        color: isDark ? Colors.amber[300] : const Color(0xFFB45309),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 6),
+          // Stok Barı & Aksiyonlar
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Raf Doluluk',
+                          style: TextStyle(fontSize: 9.5, color: isDark ? Colors.white60 : const Color(0xFF64748B)),
+                        ),
+                        Text(
+                          '${slot.shelfStock} / ${slot.shelfCapacity}',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'monospace',
+                            color: isOut ? const Color(0xFFE11D48) : (isDark ? Colors.white : const Color(0xFF0F172A)),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: (slot.shelfStock / slot.shelfCapacity).clamp(0.0, 1.0),
+                        minHeight: 4,
+                        backgroundColor: isDark ? Colors.white10 : const Color(0xFFE2E8F0),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          isOut ? const Color(0xFFE11D48) : const Color(0xFF10B981),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Doldur Butonu
+              InkWell(
+                onTap: (slot.shelfStock < slot.shelfCapacity && inWh > 0)
+                    ? () {
+                        final needed = slot.shelfCapacity - slot.shelfStock;
+                        final err = controller.restockStoreSlot(branch, slot, needed);
+                        if (err != null) {
+                          GameToast.showWarning(context, err);
+                        } else {
+                          GameToast.showSuccess(context, '${item?.name ?? slot.itemId} rafa eklendi.');
+                        }
+                      }
+                    : null,
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: (slot.shelfStock < slot.shelfCapacity && inWh > 0)
+                        ? const Color(0xFF059669)
+                        : (isDark ? Colors.white.withOpacity(0.06) : Colors.grey[200]),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'Doldur',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: (slot.shelfStock < slot.shelfCapacity && inWh > 0)
+                          ? Colors.white
+                          : Colors.grey,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
