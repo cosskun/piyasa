@@ -749,11 +749,11 @@ class _ProductionTabState extends State<ProductionTab> {
               ),
               const SizedBox(width: 8),
               Text(
-                '${prodMap.length} Çeşit Ürün',
+                '${prodMap.length} Çeşit • Gider: -${controller.totalFacilityOpExPerMin.toStringAsFixed(0)} ₺/dk',
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? Colors.white54 : const Color(0xFF047857),
+                  color: isDark ? Colors.white70 : const Color(0xFF047857),
                 ),
               ),
             ],
@@ -1321,6 +1321,22 @@ class _ProductionTabState extends State<ProductionTab> {
                     fontSize: 10.5,
                     fontWeight: FontWeight.bold,
                     color: isDark ? Colors.greenAccent[400] : const Color(0xFF059669),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4.5, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.25) : const Color(0xFFFEE2E2),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '-${fac.effectiveOperatingExpense.toStringAsFixed(0)} ₺/dk',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626),
                   ),
                 ),
               ),

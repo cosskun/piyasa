@@ -33,6 +33,7 @@ class ProductionFacility {
   int activeRecipeIndex;
   final double purchaseCost;
   final double baseUpgradeCost;
+  final double baseOperatingExpense; // Dakikalık temel işletme gideri (Maaş, elektrik, bakım)
 
   int level;
   double progress; // 0.0 - 1.0
@@ -51,6 +52,7 @@ class ProductionFacility {
     this.activeRecipeIndex = 0,
     required this.purchaseCost,
     required this.baseUpgradeCost,
+    this.baseOperatingExpense = 20.0,
     this.level = 1,
     this.progress = 0.0,
     this.isProducing = true,
@@ -94,6 +96,12 @@ class ProductionFacility {
   /// Geri satış / Nakite dönüştürme bedeli (%70 ikinci el likidasyon oranı)
   double get resaleValue => (totalInvestedValue * 0.70).roundToDouble();
 
+  /// Dakikalık efektif işletme gideri (Üretim yapılıyorsa seviyeye göre maaş/bakım artar, durdurulduysa %20 asgari rölanti masrafı)
+  double get effectiveOperatingExpense {
+    if (!isProducing) return (baseOperatingExpense * 0.20).roundToDouble();
+    return (baseOperatingExpense * (1.0 + (level - 1) * 0.15)).roundToDouble();
+  }
+
   ProductionFacility copy({String? newId}) {
     return ProductionFacility(
       id: newId ?? '${id}_${DateTime.now().millisecondsSinceEpoch}',
@@ -107,6 +115,7 @@ class ProductionFacility {
       activeRecipeIndex: activeRecipeIndex,
       purchaseCost: purchaseCost,
       baseUpgradeCost: baseUpgradeCost,
+      baseOperatingExpense: baseOperatingExpense,
       level: level,
       progress: progress,
       isProducing: isProducing,

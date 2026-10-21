@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../controllers/game_controller.dart';
 import '../models/market_item.dart';
 import '../services/firebase_service.dart';
+import 'headquarters_tender_dialog.dart';
 
 class HomeDashboardTab extends StatelessWidget {
   final GameController controller;
@@ -1121,6 +1122,110 @@ class HomeDashboardTab extends StatelessWidget {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 10),
+
+        // Holding Genel Merkezi & İhaleler Kartı
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => HeadquartersTenderDialog.show(context, controller: controller),
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isDark
+                      ? [const Color(0xFF1E293B), const Color(0xFF141926)]
+                      : [const Color(0xFFFFFBEB), const Color(0xFFFEF3C7)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: isDark ? Colors.amber.withOpacity(0.35) : const Color(0xFFF59E0B).withOpacity(0.45),
+                  width: 1.1,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.amber.withOpacity(isDark ? 0.12 : 0.05),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFD97706), Color(0xFFF59E0B)],
+                      ),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.corporate_fare_rounded, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Holding Genel Merkezi & İhaleler',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: isDark ? Colors.amber.withOpacity(0.2) : const Color(0xFFD97706),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                'Sv. ${controller.hqLevel}',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.amberAccent : Colors.white,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${controller.activeTenders.where((t) => !t.isCompleted).length} aktif kamu ihalesi • ${controller.totalPrestigePoints} Prestij',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 13,
+                    color: isDark ? Colors.white54 : const Color(0xFF64748B),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ],
     );

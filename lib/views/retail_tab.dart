@@ -161,6 +161,7 @@ class _RetailTabState extends State<RetailTab> {
 
   Widget _buildExecutiveCommandBar(BuildContext context, bool isDark, NumberFormat currencyFmt) {
     final totalRevPerMin = controller.getTotalRetailRevenuePerMinute();
+    final totalOpExPerMin = controller.totalStoreOpExPerMin;
     final activeStores = controller.ownedStores.where((s) => s.isSelling).length;
     int totalSlots = 0;
     int filledSlots = 0;
@@ -195,12 +196,12 @@ class _RetailTabState extends State<RetailTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 3 KPI Kutusu (Kompakt tek satır)
+          // 4 KPI Kutusu (Kompakt tek satır)
           Row(
             children: [
               Expanded(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(6),
@@ -229,10 +230,42 @@ class _RetailTabState extends State<RetailTab> {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               Expanded(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '📉 Gider',
+                        style: TextStyle(fontSize: 9.5, color: Colors.white60),
+                      ),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          '-${currencyFmt.format(totalOpExPerMin.round())} ₺/dk',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFF87171),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(6),
@@ -261,10 +294,10 @@ class _RetailTabState extends State<RetailTab> {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 5),
               Expanded(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(6),
@@ -765,6 +798,22 @@ class _RetailTabState extends State<RetailTab> {
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
                               color: isDark ? Colors.white : const Color(0xFF334155),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF7F1D1D).withValues(alpha: 0.25) : const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '-${store.effectiveOperatingExpense.toStringAsFixed(0)} ₺/dk',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? const Color(0xFFFCA5A5) : const Color(0xFFDC2626),
                             ),
                           ),
                         ),

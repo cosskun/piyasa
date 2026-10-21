@@ -6,6 +6,7 @@ import '../models/facility.dart';
 import '../models/item.dart';
 import '../models/store.dart';
 import '../widgets/game_toast.dart';
+import 'headquarters_tender_dialog.dart';
 
 class WarehouseTab extends StatefulWidget {
   final GameController controller;
@@ -1095,6 +1096,61 @@ class _WarehouseTabState extends State<WarehouseTab> {
                     ],
                   ),
                   const SizedBox(height: 8),
+                  if (item.category == ItemCategory.rawMaterial) ...[
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => HeadquartersTenderDialog.show(context, controller: widget.controller, initialTabIndex: 0),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: widget.controller.remainingDailyRawQuota > 0
+                                  ? (isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE))
+                                  : Colors.redAccent,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                widget.controller.remainingDailyRawQuota > 0 ? Icons.speed_rounded : Icons.block_rounded,
+                                size: 14,
+                                color: widget.controller.remainingDailyRawQuota > 0 ? const Color(0xFF3B82F6) : Colors.redAccent,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  widget.controller.remainingDailyRawQuota > 0
+                                      ? 'Günlük Borsa Kotası: ${widget.controller.remainingDailyRawQuota} / ${widget.controller.dailyRawQuickSellQuota} adet kaldı'
+                                      : 'Devlet / Borsa bugünkü hammadde alım kotasını doldurdu!',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: widget.controller.remainingDailyRawQuota > 0
+                                        ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8))
+                                        : Colors.redAccent,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Holding ↗',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(

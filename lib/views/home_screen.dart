@@ -18,6 +18,7 @@ import 'admin_dashboard_view.dart';
 import 'banned_dialog.dart';
 import 'session_terminated_dialog.dart';
 import 'leaderboard_view.dart';
+import 'headquarters_tender_dialog.dart';
 import 'home_dashboard_tab.dart';
 import 'profile_screen.dart';
 import '../widgets/game_toast.dart';
@@ -497,10 +498,29 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       const SizedBox(width: 8),
 
-                      // Sağ: Hızlı İşlem Butonları (Liderlik Tablosu, Tema, Profil)
+                      // Sağ: Hızlı İşlem Butonları (Holding & İhaleler, Liderlik Tablosu, Tema, Profil)
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          // Holding Genel Merkezi & İhaleler
+                          InkWell(
+                            onTap: () => HeadquartersTenderDialog.show(context, controller: c),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: isDark ? const Color(0xFFD97706).withValues(alpha: 0.18) : const Color(0xFFFEF3C7),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                Icons.apartment_rounded,
+                                size: 16,
+                                color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+
                           // Liderlik Tablosu
                           InkWell(
                             onTap: () => LeaderboardView.show(context, controller: c),

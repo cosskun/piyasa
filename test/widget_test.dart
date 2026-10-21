@@ -30,6 +30,7 @@ import 'package:piyasa/services/leaderboard_service.dart';
 import 'package:piyasa/models/leaderboard_entry.dart';
 import 'package:piyasa/models/market_listing.dart';
 import 'package:piyasa/views/profile_screen.dart';
+import 'package:piyasa/views/headquarters_tender_dialog.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -121,9 +122,9 @@ void main() {
     await tester.tap(find.text('Buğday Tarlası').first);
     await tester.pumpAndSettle();
 
-    // Verify ownedFacilities now has 1 facility and cash is 5,000 TL (10000 - 5000)
+    // Verify ownedFacilities now has 1 facility and cash is 5,000 TL (10000 - 5000, minus slight opex during pump)
     expect(controller.ownedFacilities.length, 1);
-    expect(controller.cash, 5000.0);
+    expect(controller.cash, closeTo(5000.0, 1.0));
 
     // Verify the list shows Tesislerim (1) and total capacity
     expect(find.text('Tesislerim (1)'), findsOneWidget);
@@ -328,9 +329,9 @@ void main() {
     await tester.tap(find.text('Evet, Tesisi Sat'));
     await tester.pumpAndSettle();
 
-    // Verify facility removed and cash updated (2500 + 5250 = 7750)
+    // Verify facility removed and cash updated (2500 + 5250 = 7750, minus slight opex)
     expect(controller.ownedFacilities.isEmpty, true);
-    expect(controller.cash, 7750.0);
+    expect(controller.cash, closeTo(7750.0, 1.0));
 
     controller.dispose();
   });
@@ -380,9 +381,9 @@ void main() {
     await tester.tap(find.text('Evet, Dükkanı Sat'));
     await tester.pumpAndSettle();
 
-    // Verify store removed, cash refunded (5500 + 3150 = 8650), and 15 breads in warehouse
+    // Verify store removed, cash refunded (5500 + 3150 = 8650, minus slight opex), and 15 breads in warehouse
     expect(controller.ownedStores.isEmpty, true);
-    expect(controller.cash, 8650.0);
+    expect(controller.cash, closeTo(8650.0, 1.0));
     expect(controller.warehouse['bread'], 15);
 
     controller.dispose();
@@ -739,9 +740,10 @@ void main() {
     slot.saleTimerProgress = 0.99;
     controller.tickForTesting(5.0);
 
-    // No sales should occur while store is paused
+    // No sales should occur while store is paused (idle opex deducted, no revenue added)
     expect(slot.shelfStock, stockWhenPaused);
-    expect(controller.cash, cashWhenPaused);
+    expect(controller.cash, closeTo(cashWhenPaused, 2.0));
+    expect(controller.cash <= cashWhenPaused, true);
 
     // 3. Verify in RetailTab UI that "Satışı Başlat" button and status are shown, and tapping resumes
     await tester.pumpWidget(
@@ -3174,6 +3176,143 @@ void main() {
 
     // Verify recipe was switched
     expect(atelier.recipe.outputItemId, isNot('leather_jacket'));
+
+    controller.dispose();
+  });
+
+  testWidgets('Daily raw quota restricts raw commodity quick-selling while manufactured goods are unrestricted', (tester) async {
+    final controller = GameController(autoLoad: false);
+    controller.cash = 10000.0;
+
+    // Stock warehouse with 1,000 wheat (raw material) and 1,000 bread (finished good)
+    controller.warehouse['wheat'] = 1000;
+    controller.warehouse['bread'] = 1000;
+
+    // Net worth includes warehouse inventory (37,500 ₺ -> Player Level 2), so daily quota is 500 + 100 = 600
+    expect(controller.playerLevel, 2);
+    expect(controller.dailyRawQuickSellQuota, 600);
+    expect(controller.remainingDailyRawQuota, 600);
+
+    // 1. Sell 200 wheat (raw material)
+    final err1 = controller.sellToMarket('wheat', 200);
+    expect(err1, isNull);
+    expect(controller.warehouse['wheat'], 800);
+    expect(controller.dailyRawQuickSoldToday, 200);
+    expect(controller.remainingDailyRawQuota, 400);
+
+    // 2. Attempt to sell 500 wheat (exceeds remaining 400 quota)
+    final err2 = controller.sellToMarket('wheat', 500);
+    expect(err2, isNotNull);
+    expect(err2, contains('kalan hammadde alım kotanız 400 adet'));
+    expect(controller.warehouse['wheat'], 800);
+
+    // 3. Sell exactly remaining 400 wheat
+    final err3 = controller.sellToMarket('wheat', 400);
+    expect(err3, isNull);
+    expect(controller.warehouse['wheat'], 400);
+    expect(controller.remainingDailyRawQuota, 0);
+
+    // 4. Any further quick sale of raw material is blocked with the official state quota message
+    final err4 = controller.sellToMarket('wheat', 10);
+    expect(err4, isNotNull);
+    expect(err4, contains('Devlet / Borsa bugünkü hammadde alım kotasını doldurdu'));
+
+    // 5. Manufactured products (e.g. bread) have NO quota limitation
+    final errBread = controller.sellToMarket('bread', 400);
+    expect(errBread, isNull);
+    expect(controller.warehouse['bread'], 600);
+
+    controller.dispose();
+  });
+
+  testWidgets('Operating Expenses (OpEx) deduct active facility/store maintenance and apply idle pause discounts', (tester) async {
+    final controller = GameController(autoLoad: false);
+    controller.cash = 50000.0;
+
+    // Buy 1 facility (wheat farm, base OpEx = 20 ₺/dk) and 1 store (bread kiosk, base OpEx = 30 ₺/dk)
+    final farmBp = ProductionFacility.getBlueprints().firstWhere((b) => b.id == 'wheat_farm');
+    final kioskBp = RetailStore.getBlueprints().firstWhere((b) => b.id == 'kiosk_bread');
+
+    controller.buyFacility(farmBp);
+    controller.buyStore(kioskBp);
+
+    expect(controller.totalFacilityOpExPerMin, 20.0);
+    expect(controller.totalStoreOpExPerMin, 30.0);
+    expect(controller.totalOpExPerMin, 50.0);
+
+    final cashBeforeTick = controller.cash;
+    // Tick 60 seconds (1 minute): Should deduct ~50 ₺
+    controller.tickForTesting(60.0);
+    expect(controller.cash, closeTo(cashBeforeTick - 50.0, 1.0));
+
+    // Pause facility and store: OpEx should decrease to idle discount (20% for facility, 20% for store)
+    controller.toggleFacilityProducing(controller.ownedFacilities.first, false);
+    controller.toggleStoreSelling(controller.ownedStores.first, false);
+
+    expect(controller.totalFacilityOpExPerMin, 4.0); // 20 * 0.20
+    expect(controller.totalStoreOpExPerMin, 8.0);   // (30 * 0.25).roundToDouble()
+    expect(controller.totalOpExPerMin, 12.0);
+
+    final cashBeforeIdleTick = controller.cash;
+    controller.tickForTesting(60.0);
+    expect(controller.cash, closeTo(cashBeforeIdleTick - 12.0, 0.5));
+
+    controller.dispose();
+  });
+
+  testWidgets('Headquarters and Tenders: Upgrade building unlocks perks and quota bonus, tender fulfillment rewards cash and prestige', (tester) async {
+    final controller = GameController(autoLoad: false);
+    controller.cash = 15000000.0; // 15M TL capital -> Player Level 12
+
+    // Level 0 Headquarters (15M net worth = Lv 12, base quota 500 + 1100 = 1600)
+    expect(controller.hqLevel, 0);
+    expect(controller.dailyRawQuickSellQuota, 1600);
+
+    // 1. Upgrade to Level 1 (Cost: 2,500,000 ₺)
+    final upErr1 = controller.upgradeHeadquarters();
+    expect(upErr1, isNull);
+    expect(controller.hqLevel, 1);
+    expect(controller.cash, closeTo(12500000.0, 1.0));
+
+    // 2. Upgrade to Level 2 (Cost: 7,500,000 ₺ -> +300 Quota Bonus)
+    final upErr2 = controller.upgradeHeadquarters();
+    expect(upErr2, isNull);
+    expect(controller.hqLevel, 2);
+    expect(controller.cash, closeTo(5000000.0, 1.0));
+    expect(controller.dailyRawQuickSellQuota, 1900); // 1600 + 300 bonus
+
+    // 3. Deliver a tender (e.g. İBB Somun Ekmek: 2,500 somun ekmek for 75,000 ₺ and 300 prestige)
+    final ibbTender = controller.activeTenders.firstWhere((t) => t.id == 'tender_ibb_bread');
+    expect(ibbTender.isCompleted, false);
+
+    // Stock warehouse with 2,500 bread
+    controller.warehouse['bread'] = 2500;
+    final cashBeforeTender = controller.cash;
+    final delErr = controller.deliverTender(ibbTender);
+    expect(delErr, isNull);
+    expect(ibbTender.isCompleted, true);
+    expect(controller.warehouse['bread'], isNull); // Emptied
+    expect(controller.cash, closeTo(cashBeforeTender + 75000.0, 1.0));
+    expect(controller.totalPrestigePoints, 300);
+
+    // Attempting to deliver again is blocked
+    final delErr2 = controller.deliverTender(ibbTender);
+    expect(delErr2, isNotNull);
+    expect(delErr2, contains('daha önce başarıyla tamamlanmış'));
+
+    // 4. Render HeadquartersTenderDialog in UI and verify both tabs
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HeadquartersTenderDialog(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Holding & Kamu İhaleleri'), findsOneWidget);
+    expect(find.text('Holding Genel Merkezi'), findsOneWidget);
+    expect(find.textContaining('Kamu İhaleleri ('), findsOneWidget);
 
     controller.dispose();
   });

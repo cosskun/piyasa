@@ -16,6 +16,8 @@ import '../services/save_service.dart';
 import '../services/firebase_service.dart';
 import '../services/audit_log_service.dart';
 import '../models/audit_log.dart';
+import '../models/headquarters.dart';
+import '../models/tender.dart';
 
 class GameController extends ChangeNotifier {
   // Finans (Sıfırdan Başlangıç Sermayesi: 10.000 TL)
@@ -128,6 +130,52 @@ class GameController extends ChangeNotifier {
   double _incomingOfferTimer = 0.0;
   double _autoSaveTickTimer = 0.0;
   double _uiTickTimer = 0.0;
+
+  // 1. Günlük Borsa Alım Kotası (Hızlı Satış Sınırı)
+  int dailyRawQuickSoldToday = 0;
+  String lastDailyQuotaDate = '';
+
+  void _checkAndResetDailyQuota() {
+    final now = DateTime.now();
+    final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    if (lastDailyQuotaDate != todayStr) {
+      lastDailyQuotaDate = todayStr;
+      dailyRawQuickSoldToday = 0;
+    }
+  }
+
+  int get dailyRawQuickSellQuota {
+    final base = 500 + (playerLevel - 1) * 100;
+    final hqBonus = HeadquartersConfig.getLevel(hqLevel).dailyQuotaBonus;
+    return base + hqBonus;
+  }
+
+  int get remainingDailyRawQuota {
+    _checkAndResetDailyQuota();
+    return max(0, dailyRawQuickSellQuota - dailyRawQuickSoldToday);
+  }
+
+  // 2. İşletme Giderleri (OpEx: Maaş, Elektrik, Kira, Bakım)
+  double _opexLogTimer = 0.0;
+
+  double get totalFacilityOpExPerMin {
+    final discount = HeadquartersConfig.getLevel(hqLevel).opexDiscountPercent;
+    final baseSum = ownedFacilities.fold<double>(0.0, (s, f) => s + f.effectiveOperatingExpense);
+    return max(0.0, baseSum * (1.0 - discount));
+  }
+
+  double get totalStoreOpExPerMin {
+    final discount = HeadquartersConfig.getLevel(hqLevel).opexDiscountPercent;
+    final baseSum = ownedStores.fold<double>(0.0, (sum, store) => sum + store.effectiveOperatingExpense);
+    return max(0.0, baseSum * (1.0 - discount));
+  }
+
+  double get totalOpExPerMin => totalFacilityOpExPerMin + totalStoreOpExPerMin;
+
+  // 3. Holding Genel Merkezi & İhaleler (End-Game Sinks)
+  int hqLevel = 0;
+  List<TenderContract> activeTenders = TenderContract.getDefaultTenders();
+  int totalPrestigePoints = 0;
 
   static const List<String> _officialReserveSellers = [
     '🏛️ Piyasa Merkez Rezervi',
@@ -531,6 +579,29 @@ class GameController extends ChangeNotifier {
       }
     }
 
+    // 9. İşletme Giderleri (OpEx: Tesis İşçi/Elektrik & Dükkan Kira/Personel Masrafları)
+    final facilityOpEx = totalFacilityOpExPerMin;
+    final storeOpEx = totalStoreOpExPerMin;
+    final totalOpEx = facilityOpEx + storeOpEx;
+    if (totalOpEx > 0) {
+      final opexSec = (totalOpEx / 60.0) * dt;
+      cash = max(-50000.0, cash - opexSec);
+      stateChanged = true;
+
+      _opexLogTimer += dt;
+      if (_opexLogTimer >= 60.0) {
+        _opexLogTimer = 0.0;
+        AuditLogService().log(
+          category: LogCategory.finance,
+          action: 'OPEX_PAYMENT',
+          title: 'İşletme Giderleri (OpEx)',
+          description: 'Tesis işletme/elektrik (-${facilityOpEx.toStringAsFixed(0)} ₺) ve mağaza kira/maaş (-${storeOpEx.toStringAsFixed(0)} ₺) masrafları tahsil edildi.',
+          amountChange: -totalOpEx,
+          cashAfter: cash,
+        );
+      }
+    }
+
     _checkWarehouseFullStatus();
 
     _autoSaveTickTimer += dt;
@@ -876,13 +947,29 @@ class GameController extends ChangeNotifier {
       return 'Depoda yeterli $qty adet ${data.name} yok!';
     }
 
+    // Günlük Borsa Alım Kotası Denetimi (Yalnızca Hammaddeler için)
+    if (data.category == ItemCategory.rawMaterial) {
+      _checkAndResetDailyQuota();
+      final remaining = remainingDailyRawQuota;
+      if (remaining <= 0) {
+        return 'Devlet / Borsa bugünkü hammadde alım kotasını doldurdu. Elinizdeki malları satmak için Pazara Çıkarın ve diğer oyunculara satın ya da kendi fabrikalarınızda işleyin!';
+      }
+      if (qty > remaining) {
+        return 'Bugünkü kalan hammadde alım kotanız $remaining adet! En fazla $remaining adet hızlı satış yapabilirsiniz.';
+      }
+    }
+
     double totalEarnings = mItem.quickSellPrice * qty;
     warehouse[itemId] = currentStock - qty;
     if (warehouse[itemId]! <= 0) warehouse.remove(itemId);
 
+    if (data.category == ItemCategory.rawMaterial) {
+      dailyRawQuickSoldToday += qty;
+    }
+
     cash += totalEarnings;
     _checkWarehouseFullStatus();
-    mItem.updatePrice(bias: -0.02, rnd: _random);
+    mItem.updatePrice(bias: -0.02 * (qty / 50.0).clamp(1.0, 4.0), rnd: _random);
 
     AuditLogService().log(
       category: LogCategory.trade,
@@ -898,6 +985,72 @@ class GameController extends ChangeNotifier {
         'unitPrice': mItem.quickSellPrice,
         'totalEarnings': totalEarnings,
       },
+    );
+
+    notifyListeners();
+    saveState();
+    return null;
+  }
+
+  // === HOLDİNG GENEL MERKEZİ & İHALELER (END-GAME PRESTİJ & SERVET) ===
+  String? upgradeHeadquarters() {
+    if (hqLevel >= HeadquartersConfig.levels.length - 1) {
+      return 'Holding Genel Merkeziniz zaten en yüksek seviyede (Apex Dünya Genel Merkezi)!';
+    }
+    final nextLevel = HeadquartersConfig.getLevel(hqLevel + 1);
+    final cost = nextLevel.upgradeCost;
+    if (cash < cost) {
+      return 'Yetersiz nakit! ${nextLevel.name} inşası için ${cost.toStringAsFixed(0)} ₺ gerekiyor.';
+    }
+
+    cash -= cost;
+    hqLevel++;
+
+    AuditLogService().log(
+      category: LogCategory.facility,
+      action: 'HEADQUARTERS_UPGRADE',
+      title: 'Holding Genel Merkezi: ${nextLevel.name}',
+      description: '${nextLevel.name} inşası tamamlandı. (${nextLevel.perks})',
+      amountChange: -cost,
+      cashAfter: cash,
+    );
+
+    notifyListeners();
+    saveState();
+    return null;
+  }
+
+  String? deliverTender(TenderContract tender) {
+    if (tender.isCompleted) {
+      return 'Bu kamu ihalesi daha önce başarıyla tamamlanmış!';
+    }
+    final currentStock = warehouse[tender.itemId] ?? 0;
+    if (currentStock < tender.requiredAmount) {
+      final item = ItemRegistry.get(tender.itemId);
+      return 'Deponuzda yeterli ${item?.name ?? tender.itemId} bulunmuyor! (Gereken: ${tender.requiredAmount}, Mevcut: $currentStock)';
+    }
+
+    warehouse[tender.itemId] = currentStock - tender.requiredAmount;
+    if (warehouse[tender.itemId]! <= 0) warehouse.remove(tender.itemId);
+
+    double totalReward = tender.rewardCash;
+    if (hqLevel >= 4) {
+      totalReward *= 1.25; // Megapol gökdelenlerinde %25 ekstra kamu kâr primi
+    }
+
+    cash += totalReward;
+    totalPrestigePoints += tender.rewardPrestige;
+    tender.isCompleted = true;
+    tender.completedAt = DateTime.now();
+    _checkWarehouseFullStatus();
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'TENDER_DELIVERED',
+      title: 'Kamu İhalesi Teslim Edildi: ${tender.agency}',
+      description: '${tender.requiredAmount} adet ürün başarıyla teslim edildi. +${totalReward.toStringAsFixed(0)} ₺ ve +${tender.rewardPrestige} Prestij Puanı kazanıldı.',
+      amountChange: totalReward,
+      cashAfter: cash,
     );
 
     notifyListeners();
@@ -2465,6 +2618,13 @@ class GameController extends ChangeNotifier {
       }
     }
 
+    // 7. İşletme Giderleri (OpEx) Çevrimdışı Tahsili
+    final totalOpEx = totalOpExPerMin;
+    if (totalOpEx > 0 && totalSeconds >= 60) {
+      final offlineOpEx = (totalOpEx / 60.0) * min(totalSeconds, 86400.0);
+      cash = max(-50000.0, cash - offlineOpEx);
+    }
+
     lastActiveAt = now;
     if (netWorth > highestNetWorth) {
       highestNetWorth = netWorth;
@@ -2567,6 +2727,11 @@ class GameController extends ChangeNotifier {
     limitBuyOrders.clear();
     isDarkMode = false;
     themeModeNotifier.value = false;
+    dailyRawQuickSoldToday = 0;
+    lastDailyQuotaDate = '';
+    hqLevel = 0;
+    totalPrestigePoints = 0;
+    activeTenders = TenderContract.getDefaultTenders();
     _hasLoadedFromStorage = false;
     _lastLoadedPlayerId = null;
     _initializeMarket();
@@ -2864,6 +3029,11 @@ class GameController extends ChangeNotifier {
       'monthlyCashGain': userMonthlyCashGain > 0 ? userMonthlyCashGain : (cash * 0.65).roundToDouble(),
       'weeklyProperties': ownedFacilities.length + ownedStores.length,
       'monthlyProperties': ownedFacilities.length + ownedStores.length,
+      'dailyRawQuickSoldToday': dailyRawQuickSoldToday,
+      'lastDailyQuotaDate': lastDailyQuotaDate,
+      'hqLevel': hqLevel,
+      'totalPrestigePoints': totalPrestigePoints,
+      'activeTenders': activeTenders.map((t) => t.toJson()).toList(),
     };
   }
 
@@ -2895,6 +3065,31 @@ class GameController extends ChangeNotifier {
     if (data.containsKey('isDarkMode')) {
       isDarkMode = data['isDarkMode'] as bool? ?? isDarkMode;
       themeModeNotifier.value = isDarkMode;
+    }
+
+    if (data.containsKey('dailyRawQuickSoldToday')) {
+      dailyRawQuickSoldToday = (data['dailyRawQuickSoldToday'] as num?)?.toInt() ?? 0;
+    }
+    if (data.containsKey('lastDailyQuotaDate')) {
+      lastDailyQuotaDate = data['lastDailyQuotaDate'] as String? ?? '';
+    }
+    if (data.containsKey('hqLevel')) {
+      hqLevel = (data['hqLevel'] as num?)?.toInt() ?? 0;
+    }
+    if (data.containsKey('totalPrestigePoints')) {
+      totalPrestigePoints = (data['totalPrestigePoints'] as num?)?.toInt() ?? 0;
+    }
+    if (data['activeTenders'] != null && data['activeTenders'] is List) {
+      try {
+        final tList = (data['activeTenders'] as List)
+            .map((e) => TenderContract.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        if (tList.isNotEmpty) {
+          activeTenders = tList;
+        }
+      } catch (e) {
+        debugPrint('Error loading activeTenders: $e');
+      }
     }
 
     if (data['currentLoan'] != null && data['currentLoan'] is Map) {

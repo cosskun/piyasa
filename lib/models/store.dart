@@ -67,6 +67,7 @@ class RetailStore {
   final double purchaseCost;
   final double baseUpgradeCost;
   final double saleIntervalSeconds;
+  final double baseOperatingExpense; // Dakikalık kira ve personel gideri
 
   int level;
   double timerProgress;
@@ -85,6 +86,7 @@ class RetailStore {
     required this.purchaseCost,
     required this.baseUpgradeCost,
     required this.saleIntervalSeconds,
+    this.baseOperatingExpense = 30.0,
     this.level = 1,
     this.timerProgress = 0.0,
     this.totalRevenue = 0.0,
@@ -143,6 +145,12 @@ class RetailStore {
   /// Geri satış / Nakite dönüştürme bedeli (%70 ikinci el likidasyon oranı)
   double get resaleValue => (totalInvestedValue * 0.70).roundToDouble();
 
+  /// Dakikalık efektif dükkan gideri (Açıksa seviyeye göre artar, durdurulduysa %25 asgari kira payı)
+  double get effectiveOperatingExpense {
+    if (!isSelling) return (baseOperatingExpense * 0.25).roundToDouble();
+    return (baseOperatingExpense * (1.0 + (level - 1) * 0.20)).roundToDouble();
+  }
+
   RetailStore copy({String? newId}) {
     return RetailStore(
       id: newId ?? '${id}_${DateTime.now().millisecondsSinceEpoch}',
@@ -154,6 +162,7 @@ class RetailStore {
       purchaseCost: purchaseCost,
       baseUpgradeCost: baseUpgradeCost,
       saleIntervalSeconds: saleIntervalSeconds,
+      baseOperatingExpense: baseOperatingExpense,
       level: level,
       timerProgress: timerProgress,
       totalRevenue: totalRevenue,
