@@ -104,6 +104,11 @@ class GameController extends ChangeNotifier {
   final List<ProductionFacility> ownedFacilities = [];
   final List<RetailStore> ownedStores = [];
 
+  // Başlangıç Kariyer Yolu (Kullanıcının ilk başlangıç seçimini takip eder)
+  bool hasChosenStarterPath = false;
+  bool get shouldPromptStarterPathSelection =>
+      !hasChosenStarterPath && ownedFacilities.isEmpty && ownedStores.isEmpty;
+
   // Tema (Varsayılan Açık Tema, Butonla Değiştirilebilir)
   bool isDarkMode = false;
   late final ValueNotifier<bool> themeModeNotifier = ValueNotifier<bool>(isDarkMode);
@@ -1821,10 +1826,6 @@ class GameController extends ChangeNotifier {
       return 'Bu mağaza şu an en fazla ${store.maxProductSlots} ürün satabilir. Daha fazla ürün satmak için mağazanızı yükseltin! (Maksimum 5 ürün)';
     }
 
-    if (store.productSlots.any((s) => s.itemId == itemId)) {
-      return 'Bu ürün zaten mağazanızın raflarında mevcut.';
-    }
-
     if (!store.allowedProductIds.contains(itemId)) {
       return 'Bu mağaza türü bu ürünü satmak için uygun değildir.';
     }
@@ -1857,11 +1858,71 @@ class GameController extends ChangeNotifier {
     return null;
   }
 
-  String? removeProductSlotFromStore(RetailStore store, StoreProductSlot slot) {
-    if (store.productSlots.length <= 1) {
-      return 'Mağazada en az bir ürün bulunmalıdır.';
+  /// Bir rafın ürününü başka bir geçerli ürünle değiştirir
+  String? changeStoreProductSlot(RetailStore store, StoreProductSlot slot, String newItemId) {
+    if (!store.allowedProductIds.contains(newItemId)) {
+      return 'Bu mağaza türü bu ürünü satmak için uygun değildir.';
     }
 
+    if (slot.itemId == newItemId) {
+      return null;
+    }
+
+    final newItem = ItemRegistry.get(newItemId);
+    if (newItem == null) return 'Seçilen ürün bulunamadı.';
+
+    // Eski raftaki ürünleri depoya aktar ya da depoda yer yoksa borsa fiyatından erit
+    if (slot.shelfStock > 0) {
+      final oldItem = ItemRegistry.get(slot.itemId);
+      final weightPerItem = oldItem?.weight ?? 1.0;
+      final spaceLeft = max(0.0, maxWarehouseCapacity - currentWarehouseWeight);
+      final canFit = (spaceLeft / weightPerItem).floor();
+      int returned = min(slot.shelfStock, canFit);
+      int liquidated = slot.shelfStock - returned;
+
+      if (returned > 0) {
+        warehouse[slot.itemId] = (warehouse[slot.itemId] ?? 0) + returned;
+      }
+      if (liquidated > 0) {
+        final mItem = marketItems[slot.itemId];
+        final unitPrice = mItem?.quickSellPrice ?? (oldItem?.basePrice ?? 1.0) * 0.8;
+        cash += liquidated * unitPrice;
+      }
+    }
+
+    slot.itemId = newItemId;
+    slot.shelfStock = 0;
+    slot.saleTimerProgress = 0.0;
+    slot.retailPrice = newItem.retailSuggestedPrice;
+
+    // Varsa yeni üründen depodan otomatik rafa çek
+    int inWh = warehouse[newItemId] ?? 0;
+    if (inWh > 0) {
+      int take = min(inWh, slot.shelfCapacity);
+      warehouse[newItemId] = inWh - take;
+      if (warehouse[newItemId]! <= 0) warehouse.remove(newItemId);
+      slot.shelfStock = take;
+    }
+
+    AuditLogService().log(
+      category: LogCategory.retail,
+      action: 'SLOT_PRODUCT_CHANGED',
+      title: 'Raf Ürünü Değiştirildi',
+      description: '${store.name} mağazasındaki raf ${newItem.name} olarak güncellendi.',
+      amountChange: 0,
+      cashAfter: cash,
+      details: {
+        'storeId': store.id,
+        'newItemId': newItemId,
+      },
+    );
+
+    notifyListeners();
+    saveState();
+    return null;
+  }
+
+  String? removeProductSlotFromStore(RetailStore store, StoreProductSlot slot) {
     if (slot.shelfStock > 0) {
       final item = ItemRegistry.get(slot.itemId);
       final weightPerItem = item?.weight ?? 1.0;
@@ -2722,6 +2783,7 @@ class GameController extends ChangeNotifier {
     warehouse.clear();
     ownedFacilities.clear();
     ownedStores.clear();
+    hasChosenStarterPath = false;
     activeListings.clear();
     offers.clear();
     limitBuyOrders.clear();
@@ -2737,6 +2799,129 @@ class GameController extends ChangeNotifier {
     _initializeMarket();
     _initializeCommunityListings();
     notifyListeners();
+  }
+
+  /// Oyuncu başlangıcında 3 farklı kariyer yolundan birini uygular
+  bool applyStarterCareerPath(String pathId) {
+    ownedFacilities.clear();
+    ownedStores.clear();
+    warehouse.clear();
+    hasChosenStarterPath = true;
+
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+
+    if (pathId == 'grain_bakery') {
+      // 1. Yol: 🌾 Tahıl & Fırıncılık
+      cash = 5000.0;
+      final farmBp = ProductionFacility.getBlueprints().firstWhere((f) => f.id == 'wheat_farm');
+      final farm = farmBp.copy(newId: 'starter_wheat_farm_$nowMs');
+      farm.isProducing = true;
+      ownedFacilities.add(farm);
+
+      final kioskBp = RetailStore.getBlueprints().firstWhere((s) => s.id == 'kiosk_bread');
+      final store = kioskBp.copy(newId: 'starter_kiosk_$nowMs');
+      store.productSlots.clear();
+      store.productSlots.add(StoreProductSlot(
+        itemId: 'bread',
+        shelfCapacity: 35,
+        shelfStock: 15,
+        retailPrice: 15.0,
+        autoRestock: true,
+      ));
+      store.isSelling = true;
+      ownedStores.add(store);
+
+      warehouse['wheat'] = 50;
+      warehouse['bread'] = 20;
+
+      AuditLogService().log(
+        category: LogCategory.system,
+        action: 'STARTER_PATH_CHOSEN',
+        title: 'Kariyer Seçildi: Tahıl & Fırıncılık 🌾',
+        description: 'Buğday tarlası, fırın büfesi ve 5.000 ₺ başlangıç sermayesiyle iş hayatına başladınız.',
+        amountChange: 5000.0,
+        cashAfter: cash,
+      );
+    } else if (pathId == 'dairy_cheese') {
+      // 2. Yol: 🐄 Mandıra & Şarküteri
+      cash = 5000.0;
+      final dairyBp = ProductionFacility.getBlueprints().firstWhere((f) => f.id == 'dairy_farm');
+      final dairy = dairyBp.copy(newId: 'starter_dairy_farm_$nowMs');
+      dairy.isProducing = true;
+      ownedFacilities.add(dairy);
+
+      final deliBp = RetailStore.getBlueprints().firstWhere((s) => s.id == 'delicatessen_shop');
+      final store = deliBp.copy(newId: 'starter_delicatessen_$nowMs');
+      store.productSlots.clear();
+      store.productSlots.add(StoreProductSlot(
+        itemId: 'cheese',
+        shelfCapacity: 35,
+        shelfStock: 15,
+        retailPrice: 38.0,
+        autoRestock: true,
+      ));
+      store.isSelling = true;
+      ownedStores.add(store);
+
+      warehouse['milk'] = 40;
+      warehouse['cheese'] = 20;
+
+      AuditLogService().log(
+        category: LogCategory.system,
+        action: 'STARTER_PATH_CHOSEN',
+        title: 'Kariyer Seçildi: Mandıra & Şarküteri 🐄',
+        description: 'Mandıra çiftliği, gurme şarküteri ve 5.000 ₺ başlangıç sermayesiyle iş hayatına başladınız.',
+        amountChange: 5000.0,
+        cashAfter: cash,
+      );
+    } else if (pathId == 'coffee_barista') {
+      // 3. Yol: ☕ Kahve & Kafe Kültürü
+      cash = 5000.0;
+      final coffeeBp = ProductionFacility.getBlueprints().firstWhere((f) => f.id == 'coffee_plantation');
+      final plantation = coffeeBp.copy(newId: 'starter_coffee_plantation_$nowMs');
+      plantation.isProducing = true;
+      ownedFacilities.add(plantation);
+
+      final cafeBp = RetailStore.getBlueprints().firstWhere((s) => s.id == 'coffee_house');
+      final store = cafeBp.copy(newId: 'starter_cafe_$nowMs');
+      store.productSlots.clear();
+      store.productSlots.add(StoreProductSlot(
+        itemId: 'coffee_cup',
+        shelfCapacity: 35,
+        shelfStock: 15,
+        retailPrice: 45.0,
+        autoRestock: true,
+      ));
+      store.isSelling = true;
+      ownedStores.add(store);
+
+      warehouse['coffee_bean'] = 35;
+      warehouse['coffee_cup'] = 20;
+
+      AuditLogService().log(
+        category: LogCategory.system,
+        action: 'STARTER_PATH_CHOSEN',
+        title: 'Kariyer Seçildi: Kahve & Kafe Kültürü ☕',
+        description: 'Kahve plantasyonu, 3. nesil kafe ve 5.000 ₺ başlangıç sermayesiyle iş hayatına başladınız.',
+        amountChange: 5000.0,
+        cashAfter: cash,
+      );
+    } else {
+      // 🛠️ Serbest Girişimci (Özelleştirilmiş Başlangıç)
+      cash = 10000.0;
+      AuditLogService().log(
+        category: LogCategory.system,
+        action: 'STARTER_PATH_CHOSEN',
+        title: 'Kariyer Seçildi: Serbest Girişimci 🛠️',
+        description: '10.000 ₺ nakit sermaye ile sıfırdan serbest başlangıç yapıldı.',
+        amountChange: 10000.0,
+        cashAfter: cash,
+      );
+    }
+
+    notifyListeners();
+    saveState();
+    return true;
   }
 
   Future<bool> loadFromStorage({String? playerId, bool forceReload = false}) async {
@@ -3034,6 +3219,7 @@ class GameController extends ChangeNotifier {
       'hqLevel': hqLevel,
       'totalPrestigePoints': totalPrestigePoints,
       'activeTenders': activeTenders.map((t) => t.toJson()).toList(),
+      'hasChosenStarterPath': hasChosenStarterPath,
     };
   }
 
@@ -3072,6 +3258,11 @@ class GameController extends ChangeNotifier {
     }
     if (data.containsKey('lastDailyQuotaDate')) {
       lastDailyQuotaDate = data['lastDailyQuotaDate'] as String? ?? '';
+    }
+    if (data.containsKey('hasChosenStarterPath')) {
+      hasChosenStarterPath = data['hasChosenStarterPath'] as bool? ?? false;
+    } else {
+      hasChosenStarterPath = ownedFacilities.isNotEmpty || ownedStores.isNotEmpty;
     }
     if (data.containsKey('hqLevel')) {
       hqLevel = (data['hqLevel'] as num?)?.toInt() ?? 0;

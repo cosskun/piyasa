@@ -3393,6 +3393,167 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('Retail shelf management: allow removing any shelf, changing shelf product, duplicate product shelves, and UI sheet', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController();
+    controller.cash = 100000.0;
+    final bp = RetailStore.getBlueprints().firstWhere((s) => s.id == 'kiosk_bread');
+    controller.buyStore(bp);
+    final store = controller.ownedStores.first;
+    expect(store.productSlots.length, 1);
+    expect(store.productSlots.first.itemId, 'bread');
+
+    // 1. Upgrade store to level 2 so it has 2 slots
+    controller.upgradeStore(store);
+    expect(store.maxProductSlots, 2);
+
+    // 2. Test duplicate product shelf allocation: user can put 'bread' on shelf #2 as well
+    controller.warehouse['bread'] = 40;
+    final addErr = controller.addProductSlotToStore(store, 'bread');
+    expect(addErr, isNull);
+    expect(store.productSlots.length, 2);
+    expect(store.productSlots[0].itemId, 'bread');
+    expect(store.productSlots[1].itemId, 'bread');
+
+    // 3. Test dynamic product change: swap slot #2 from 'bread' to 'flour'
+    controller.warehouse['flour'] = 25;
+    final swapErr = controller.changeStoreProductSlot(store, store.productSlots[1], 'flour');
+    expect(swapErr, isNull);
+    expect(store.productSlots[1].itemId, 'flour');
+    expect(store.productSlots[1].shelfStock, 25); // auto-pulled from warehouse
+
+    // 4. Test removing slot #2 (stock returned to warehouse)
+    final flourSlot = store.productSlots[1];
+    controller.removeProductSlotFromStore(store, flourSlot);
+    expect(store.productSlots.length, 1);
+    expect(controller.warehouse['flour'], 25);
+
+    // 5. Test removing the ONLY remaining slot (previously blocked by >= 1 check)
+    final breadSlot = store.productSlots.first;
+    breadSlot.shelfStock = 10;
+    final initialBreadWh = controller.warehouse['bread'] ?? 0;
+    final removeLastErr = controller.removeProductSlotFromStore(store, breadSlot);
+    expect(removeLastErr, isNull);
+    expect(store.productSlots.isEmpty, isTrue);
+    expect(controller.warehouse['bread'], initialBreadWh + 10);
+
+    // 6. Test UI rendering with empty slots
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RetailTab(controller: controller, initialViewMode: 1),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify empty slot message is displayed
+    expect(find.textContaining('Bu mağazada şu an hiçbir ürün rafı yok'), findsOneWidget);
+    expect(find.textContaining('Yeni Ürün Rafı Ekle'), findsOneWidget);
+
+    // Add a slot back via controller
+    controller.addProductSlotToStore(store, 'croissant');
+    await tester.pumpAndSettle();
+    expect(find.text('Kruvasan'), findsOneWidget);
+
+    // Verify swap and remove icon tooltips are rendered
+    expect(find.byTooltip('Ürünü Değiştir'), findsWidgets);
+    expect(find.byTooltip('Rafı Kaldır'), findsWidgets);
+
+    controller.dispose();
+  });
+
+  testWidgets('3 Starter Career Paths: apply each path, verify assets, and test StarterCareerDialog UI selection', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController();
+
+    // 1. Path 1: 🌾 Tahıl & Fırıncılık
+    controller.applyStarterCareerPath('grain_bakery');
+    expect(controller.hasChosenStarterPath, isTrue);
+    expect(controller.cash, 5000.0);
+    expect(controller.ownedFacilities.length, 1);
+    expect(controller.ownedFacilities.first.blueprintId, 'wheat_farm');
+    expect(controller.ownedStores.length, 1);
+    expect(controller.ownedStores.first.blueprintId, 'kiosk_bread');
+    expect(controller.ownedStores.first.productSlots.first.itemId, 'bread');
+    expect(controller.ownedStores.first.productSlots.first.shelfStock, 15);
+    expect(controller.warehouse['wheat'], 50);
+    expect(controller.warehouse['bread'], 20);
+
+    // 2. Path 2: 🐄 Mandıra & Şarküteri
+    controller.applyStarterCareerPath('dairy_cheese');
+    expect(controller.hasChosenStarterPath, isTrue);
+    expect(controller.cash, 5000.0);
+    expect(controller.ownedFacilities.length, 1);
+    expect(controller.ownedFacilities.first.blueprintId, 'dairy_farm');
+    expect(controller.ownedStores.length, 1);
+    expect(controller.ownedStores.first.blueprintId, 'delicatessen_shop');
+    expect(controller.ownedStores.first.productSlots.first.itemId, 'cheese');
+    expect(controller.ownedStores.first.productSlots.first.shelfStock, 15);
+    expect(controller.warehouse['milk'], 40);
+    expect(controller.warehouse['cheese'], 20);
+
+    // 3. Path 3: ☕ Kahve & Kafe Kültürü
+    controller.applyStarterCareerPath('coffee_barista');
+    expect(controller.hasChosenStarterPath, isTrue);
+    expect(controller.cash, 5000.0);
+    expect(controller.ownedFacilities.length, 1);
+    expect(controller.ownedFacilities.first.blueprintId, 'coffee_plantation');
+    expect(controller.ownedStores.length, 1);
+    expect(controller.ownedStores.first.blueprintId, 'coffee_house');
+    expect(controller.ownedStores.first.productSlots.first.itemId, 'coffee_cup');
+    expect(controller.ownedStores.first.productSlots.first.shelfStock, 15);
+    expect(controller.warehouse['coffee_bean'], 35);
+    expect(controller.warehouse['coffee_cup'], 20);
+
+    // 4. Test UI modal: reset to new game and pump ProductionTab with StarterCareerDialog
+    controller.resetToNewGame();
+    expect(controller.shouldPromptStarterPathSelection, isTrue);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProductionTab(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify empty state shows the career selection button
+    final careerButton = find.text('🎯 Başlangıç Kariyerini Seç (3 Yol)');
+    expect(careerButton, findsOneWidget);
+
+    // Tap to open StarterCareerDialog sheet
+    await tester.tap(careerButton);
+    await tester.pumpAndSettle();
+
+    // Verify all 3 careers and sandbox option are present
+    expect(find.text('Tahıl & Fırıncılık Yolu'), findsOneWidget);
+    expect(find.text('Mandıra & Şarküteri Yolu'), findsOneWidget);
+    expect(find.text('Kahve & Kafe Kültürü Yolu'), findsOneWidget);
+    expect(find.textContaining('10.000 ₺ Serbest Başlangıç'), findsOneWidget);
+
+    // Tap to select Tahıl & Fırıncılık
+    final selectButtons = find.text('Bu Kariyer ile Başla');
+    expect(selectButtons, findsNWidgets(3));
+    await tester.tap(selectButtons.first);
+    await tester.pumpAndSettle();
+
+    // Verify career path is applied
+    expect(controller.hasChosenStarterPath, isTrue);
+    expect(controller.ownedFacilities.first.blueprintId, 'wheat_farm');
+    expect(controller.ownedStores.first.blueprintId, 'kiosk_bread');
+    expect(controller.cash, closeTo(5000.0, 10.0));
+
+    controller.dispose();
+  });
 }
 
 

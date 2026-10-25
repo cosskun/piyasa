@@ -1108,7 +1108,35 @@ class _RetailTabState extends State<RetailTab> {
               const SizedBox(height: 10),
 
               // Her bir ürün rafı kutucuğu
-              ...store.productSlots.map((slot) => _buildProductSlotTile(context, store, slot, isDark, currencyFmt)),
+              if (store.productSlots.isEmpty)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: isDark ? const Color(0xFF1E283C) : const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isDark ? Colors.white12 : const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Text('📦', style: TextStyle(fontSize: 22)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Bu mağazada şu an hiçbir ürün rafı yok. Aşağıdan dilediğiniz ürünü ekleyebilirsiniz.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                ...store.productSlots.map((slot) => _buildProductSlotTile(context, store, slot, isDark, currencyFmt)),
 
               // Yeni Ürün Rafı Ekle Butonu
               if (store.productSlots.length < store.maxProductSlots) ...[
@@ -1136,12 +1164,16 @@ class _RetailTabState extends State<RetailTab> {
                           color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          'Yeni Ürün Rafı Ekle (${store.productSlots.length}/${store.maxProductSlots})',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                        Flexible(
+                          child: Text(
+                            'Yeni Ürün Rafı Ekle (${store.productSlots.length}/${store.maxProductSlots})',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                            ),
                           ),
                         ),
                       ],
@@ -1645,21 +1677,40 @@ class _RetailTabState extends State<RetailTab> {
                   ),
                 ),
               ),
-              if (store.productSlots.length > 1) ...[
-                const SizedBox(width: 6),
-                InkWell(
-                  onTap: () => _confirmRemoveSlot(context, store, slot),
-                  borderRadius: BorderRadius.circular(6),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
+              // Ürün Değiştir Butonu
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: () => _showChangeProductSlotSheet(context, store, slot),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Tooltip(
+                    message: 'Ürünü Değiştir',
                     child: Icon(
-                      Icons.close,
-                      size: 16,
+                      Icons.swap_horiz_rounded,
+                      size: 18,
+                      color: isDark ? Colors.amber[300] : const Color(0xFFD97706),
+                    ),
+                  ),
+                ),
+              ),
+              // Rafı Kaldır Butonu
+              const SizedBox(width: 2),
+              InkWell(
+                onTap: () => _confirmRemoveSlot(context, store, slot),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: Tooltip(
+                    message: 'Rafı Kaldır',
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 18,
                       color: isDark ? Colors.grey[400] : const Color(0xFF94A3B8),
                     ),
                   ),
                 ),
-              ],
+              ),
             ],
           ),
           const SizedBox(height: 5),
@@ -3131,9 +3182,7 @@ class _RetailTabState extends State<RetailTab> {
 
   void _showAddProductSlotSheet(BuildContext context, RetailStore store) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final availableItemIds = store.allowedProductIds
-        .where((id) => !store.productSlots.any((s) => s.itemId == id))
-        .toList();
+    final availableItemIds = store.allowedProductIds;
 
     showModalBottomSheet(
       context: context,
@@ -3181,7 +3230,7 @@ class _RetailTabState extends State<RetailTab> {
                 Expanded(
                   child: Center(
                     child: Text(
-                      'Bu mağazada satılabilecek tüm ürün çeşitleri zaten raflarınızda mevcut!',
+                      'Bu mağazada satılabilecek ürün bulunamadı.',
                       textAlign: TextAlign.center,
                       style: TextStyle(color: isDark ? Colors.grey : const Color(0xFF64748B)),
                     ),
@@ -3196,6 +3245,7 @@ class _RetailTabState extends State<RetailTab> {
                       final item = ItemRegistry.get(itemId);
                       final inWh = controller.warehouse[itemId] ?? 0;
                       final mItem = controller.marketItems[itemId];
+                      final existingCount = store.productSlots.where((s) => s.itemId == itemId).length;
 
                       return Card(
                         color: isDark ? const Color(0xFF1E283C) : const Color(0xFFF8FAFC),
@@ -3216,13 +3266,35 @@ class _RetailTabState extends State<RetailTab> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      item?.name ?? itemId,
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 14,
-                                        color: isDark ? Colors.white : const Color(0xFF0F172A),
-                                      ),
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            item?.name ?? itemId,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                              color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (existingCount > 0) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: isDark ? Colors.teal[800] : const Color(0xFF0D9488),
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: Text(
+                                              '$existingCount Rafta Satışta',
+                                              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
@@ -3278,6 +3350,186 @@ class _RetailTabState extends State<RetailTab> {
                     },
                   ),
                 ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showChangeProductSlotSheet(
+    BuildContext context,
+    RetailStore store,
+    StoreProductSlot slot,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final currentItem = ItemRegistry.get(slot.itemId);
+    final availableItemIds = store.allowedProductIds;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF141926) : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isScrollControlled: true,
+      builder: (ctx) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          height: MediaQuery.of(context).size.height * 0.70,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Text(store.emoji, style: const TextStyle(fontSize: 24)),
+                      const SizedBox(width: 8),
+                      Text(
+                        '🔄 Raf Ürününü Değiştir',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: isDark ? Colors.white : const Color(0xFF0F172A),
+                        ),
+                      ),
+                    ],
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: isDark ? Colors.white70 : const Color(0xFF64748B)),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              Text(
+                'Mevcut ürün: ${currentItem?.emoji ?? ""} ${currentItem?.name ?? slot.itemId} (${slot.shelfStock} adet rafta).\nDeğiştirdiğinizde raftaki mevcut stok deponuza geri iade edilir.',
+                style: TextStyle(fontSize: 12, color: isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 14),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: availableItemIds.length,
+                  itemBuilder: (ctx, i) {
+                    final itemId = availableItemIds[i];
+                    final item = ItemRegistry.get(itemId);
+                    final isCurrent = itemId == slot.itemId;
+                    final inWh = controller.warehouse[itemId] ?? 0;
+                    final mItem = controller.marketItems[itemId];
+
+                    return Card(
+                      color: isCurrent
+                          ? (isDark ? Colors.amber.withOpacity(0.12) : const Color(0xFFFEF3C7))
+                          : (isDark ? const Color(0xFF1E283C) : const Color(0xFFF8FAFC)),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: isCurrent
+                              ? (isDark ? Colors.amberAccent : const Color(0xFFF59E0B))
+                              : (isDark ? Colors.white12 : const Color(0xFFE2E8F0)),
+                          width: isCurrent ? 1.5 : 1.0,
+                        ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        child: Row(
+                          children: [
+                            Text(item?.emoji ?? '📦', style: const TextStyle(fontSize: 28)),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          item?.name ?? itemId,
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                            color: isDark ? Colors.white : const Color(0xFF0F172A),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      if (isCurrent) ...[
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: isDark ? Colors.amber[800] : const Color(0xFFD97706),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: const Text(
+                                            'Şu Anki Raf',
+                                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.white),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Tavsiye Satış: ${item?.retailSuggestedPrice.toStringAsFixed(0)} ₺ • Borsa: ${mItem?.wholesaleBuyPrice.toStringAsFixed(0) ?? "-"} ₺',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark ? Colors.grey[400] : const Color(0xFF64748B),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Deponuzdaki Miktar: $inWh adet',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: inWh > 0
+                                          ? (isDark ? Colors.blueAccent[100] : const Color(0xFF2563EB))
+                                          : Colors.orangeAccent,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            ElevatedButton(
+                              onPressed: isCurrent
+                                  ? null
+                                  : () {
+                                      Navigator.pop(ctx);
+                                      final err = controller.changeStoreProductSlot(store, slot, itemId);
+                                      if (err != null) {
+                                        GameToast.showError(context, err, title: 'Ürün Değiştirilemedi');
+                                      } else {
+                                        GameToast.showSuccess(
+                                          context,
+                                          'Raf ${item?.name ?? itemId} olarak güncellendi! 🔄',
+                                          title: 'Raf Güncellendi',
+                                        );
+                                      }
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: isCurrent
+                                    ? Colors.grey
+                                    : (isDark ? Colors.amber[700] : const Color(0xFFD97706)),
+                                foregroundColor: isDark ? Colors.black : Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              ),
+                              child: Text(
+                                isCurrent ? 'Mevcut' : 'Seç & Değiştir',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         );
@@ -5040,9 +5292,32 @@ class _RetailTabState extends State<RetailTab> {
           const SizedBox(height: 6),
 
           // Raflar Listesi
-          ...branch.productSlots.map(
-            (slot) => _buildBranchSlotTile(context, branch, slot, isDark, currencyFmt),
-          ),
+          if (branch.productSlots.isEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF131A2A) : const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: isDark ? Colors.white12 : const Color(0xFFCBD5E1)),
+              ),
+              child: Row(
+                children: [
+                  const Text('📦', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Bu şubede henüz ürün rafı bulunmuyor.',
+                      style: TextStyle(fontSize: 12, color: isDark ? Colors.white70 : const Color(0xFF64748B)),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...branch.productSlots.map(
+              (slot) => _buildBranchSlotTile(context, branch, slot, isDark, currencyFmt),
+            ),
         ],
       ),
     );
@@ -5158,6 +5433,54 @@ class _RetailTabState extends State<RetailTab> {
                         color: isDark ? Colors.amber[300] : const Color(0xFFB45309),
                       ),
                     ],
+                  ),
+                ),
+              ),
+              // Ürün Değiştir Butonu
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: () => _showChangeProductSlotSheet(context, branch, slot),
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.amber.withOpacity(0.12) : const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isDark ? Colors.amber.withOpacity(0.3) : const Color(0xFFD97706).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Tooltip(
+                    message: 'Ürünü Değiştir',
+                    child: Icon(
+                      Icons.swap_horiz_rounded,
+                      size: 15,
+                      color: isDark ? Colors.amber[300] : const Color(0xFFB45309),
+                    ),
+                  ),
+                ),
+              ),
+              // Rafı Kaldır Butonu
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: () => _confirmRemoveSlot(context, branch, slot),
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.red.withOpacity(0.12) : const Color(0xFFFEE2E2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: isDark ? Colors.red.withOpacity(0.3) : const Color(0xFFEF4444).withOpacity(0.3),
+                    ),
+                  ),
+                  child: Tooltip(
+                    message: 'Rafı Kaldır',
+                    child: Icon(
+                      Icons.close_rounded,
+                      size: 15,
+                      color: isDark ? Colors.redAccent[100] : const Color(0xFFDC2626),
+                    ),
                   ),
                 ),
               ),

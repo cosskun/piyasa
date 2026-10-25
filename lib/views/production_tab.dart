@@ -5,6 +5,7 @@ import '../controllers/game_controller.dart';
 import '../models/facility.dart';
 import '../models/item.dart';
 import '../widgets/game_toast.dart';
+import '../widgets/starter_career_dialog.dart';
 
 class FacilitySupplyChain {
   final String id;
@@ -3201,19 +3202,46 @@ class _ProductionTabState extends State<ProductionTab> {
               ),
             ),
             const SizedBox(height: 24),
-            ElevatedButton.icon(
-              onPressed: () => _showBuyFacilitySheet(context),
-              icon: const Icon(Icons.add_business, size: 20),
-              label: const Text(
-                '🌾 İlk Tesisini Satın Al',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => StarterCareerDialog.show(context, controller),
+                icon: const Icon(Icons.rocket_launch_rounded, size: 18),
+                label: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '🎯 Başlangıç Kariyerini Seç (3 Yol)',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDark ? Colors.amber[700] : const Color(0xFFD97706),
+                  foregroundColor: isDark ? Colors.black : Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 2,
+                ),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: isDark ? Colors.amber[700] : const Color(0xFFD97706),
-                foregroundColor: isDark ? Colors.black : Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                elevation: 2,
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _showBuyFacilitySheet(context),
+                icon: const Icon(Icons.add_business, size: 18),
+                label: const FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    '🌾 İlk Tesisini Satın Al',
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: isDark ? Colors.grey[300] : const Color(0xFF475569),
+                  side: BorderSide(color: isDark ? Colors.white24 : const Color(0xFFCBD5E1)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
               ),
             ),
           ],

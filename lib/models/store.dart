@@ -2,7 +2,7 @@ import 'dart:math';
 import 'item.dart';
 
 class StoreProductSlot {
-  final String itemId;
+  String itemId;
   int shelfCapacity;
   int shelfStock;
   double retailPrice;

@@ -22,12 +22,19 @@ import 'headquarters_tender_dialog.dart';
 import 'home_dashboard_tab.dart';
 import 'profile_screen.dart';
 import '../widgets/game_toast.dart';
+import '../widgets/starter_career_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   final GameController controller;
   final VoidCallback? onLoggedOut;
+  final bool autoPromptStarterCareer;
 
-  const HomeScreen({super.key, required this.controller, this.onLoggedOut});
+  const HomeScreen({
+    super.key,
+    required this.controller,
+    this.onLoggedOut,
+    this.autoPromptStarterCareer = false,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -39,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<String>? _notificationSub;
   bool _isBanDialogShowing = false;
   bool _isSessionDialogShowing = false;
+  bool _isStarterDialogShowing = false;
 
   @override
   void initState() {
@@ -52,7 +60,18 @@ class _HomeScreenState extends State<HomeScreen> {
       _checkOfflineReport();
       _checkBanStatus();
       _checkSessionStatus();
+      _checkStarterCareerPath();
     });
+  }
+
+  void _checkStarterCareerPath() {
+    if (!mounted || !widget.autoPromptStarterCareer) return;
+    if (widget.controller.shouldPromptStarterPathSelection && !_isStarterDialogShowing) {
+      _isStarterDialogShowing = true;
+      StarterCareerDialog.show(context, widget.controller).then((_) {
+        _isStarterDialogShowing = false;
+      });
+    }
   }
 
   void _checkBanStatus() {

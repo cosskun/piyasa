@@ -202,6 +202,8 @@ class _PiyasaAppState extends State<PiyasaApp> with WidgetsBindingObserver {
               : (_isAuthenticated
                   ? HomeScreen(
                       controller: _controller,
+                      autoPromptStarterCareer:
+                          widget.skipAuthForTesting != true && widget.skipLoadingForTesting != true,
                       onLoggedOut: () {
                         _controller.resetToNewGame();
                         AuditLogService().clearInProcess();
