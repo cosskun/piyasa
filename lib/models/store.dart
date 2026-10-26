@@ -133,6 +133,15 @@ class RetailStore {
   double get upgradeCost => baseUpgradeCost * pow(1.5, level - 1);
   double get effectiveInterval => max(0.8, saleIntervalSeconds - (level - 1) * 0.25);
 
+  /// Dükkan seviyesine göre tek satış döngüsündeki müşteri sepet hacmi (Senkronizasyon)
+  int get saleBatchSize {
+    if (level <= 1) return 1;
+    if (level == 2) return 2;
+    if (level == 3) return 3;
+    if (level == 4) return 5;
+    return 8;
+  }
+
   /// Toplam yatırılan sermaye bedeli (Satın alma maliyeti + yapılan seviye geliştirme harcamaları)
   double get totalInvestedValue {
     double total = purchaseCost;
@@ -380,5 +389,229 @@ class RetailStore {
         ],
       ),
     ];
+  }
+}
+
+/// Dükkan B2B Kurumsal Tedarik Sözleşmesi (Otel, Restoran, Aşevi vb. Hacimli Satışlar)
+class StoreB2BContract {
+  final String id;
+  final String blueprintId;
+  final String title;
+  final String clientName;
+  final String description;
+  final String itemId;
+  final int requiredQuantity;
+  final double rewardCash;
+  final int rewardPrestige;
+  final int minStoreLevel;
+  final String badge;
+
+  const StoreB2BContract({
+    required this.id,
+    required this.blueprintId,
+    required this.title,
+    required this.clientName,
+    required this.description,
+    required this.itemId,
+    required this.requiredQuantity,
+    required this.rewardCash,
+    this.rewardPrestige = 20,
+    this.minStoreLevel = 2,
+    this.badge = 'B2B SÖZLEŞMESİ',
+  });
+
+  static const List<StoreB2BContract> blueprints = [
+    // Köşe Büfe & Fırın
+    StoreB2BContract(
+      id: 'b2b_bread_hotel',
+      blueprintId: 'kiosk_bread',
+      title: 'Grand Bosphorus Otel Açık Büfe Tedariği',
+      clientName: 'Grand Bosphorus Hotel & Spa',
+      description: 'Lüks şehir oteli açık büfesi için toplu taze somun ekmek tedarik sözleşmesi.',
+      itemId: 'bread',
+      requiredQuantity: 100,
+      rewardCash: 2400.0,
+      rewardPrestige: 25,
+      minStoreLevel: 2,
+      badge: '🏨 OTEL SÖZLEŞMESİ',
+    ),
+    StoreB2BContract(
+      id: 'b2b_bread_soup_kitchen',
+      blueprintId: 'kiosk_bread',
+      title: 'Büyükşehir Aşevi Ekmek Sevkiyatı',
+      clientName: 'Şehir Sosyal Yardım Vakfı',
+      description: 'Kent aşevleri için haftalık yüksek hacimli somun ekmek teslimatı.',
+      itemId: 'bread',
+      requiredQuantity: 300,
+      rewardCash: 7200.0,
+      rewardPrestige: 50,
+      minStoreLevel: 3,
+      badge: '🏛️ BELEDİYE PROTOKOLÜ',
+    ),
+    StoreB2BContract(
+      id: 'b2b_croissant_cafe_chain',
+      blueprintId: 'kiosk_bread',
+      title: 'Fransız Pastane Zinciri Kruvasan İhalesi',
+      clientName: 'La Petite Patisserie Zinciri',
+      description: '10 şubeli gurme pastane zinciri için tereyağlı çıtır kruvasan teslimatı.',
+      itemId: 'croissant',
+      requiredQuantity: 150,
+      rewardCash: 8500.0,
+      rewardPrestige: 70,
+      minStoreLevel: 4,
+      badge: '🥐 GURME ZİNCİR',
+    ),
+
+    // Gurme Şarküteri & Peynirci
+    StoreB2BContract(
+      id: 'b2b_cheese_bistro',
+      blueprintId: 'delicatessen_shop',
+      title: 'Marina Bistro Şarküteri Tabağı Tedariği',
+      clientName: 'Marina Yacht Club Bistro',
+      description: 'Marina restoranı şarap ve peynir tabakları için geleneksel olgun peynir teslimatı.',
+      itemId: 'cheese',
+      requiredQuantity: 50,
+      rewardCash: 6500.0,
+      rewardPrestige: 30,
+      minStoreLevel: 2,
+      badge: '🧀 RESTORAN KONTRATI',
+    ),
+    StoreB2BContract(
+      id: 'b2b_butter_pastry',
+      blueprintId: 'delicatessen_shop',
+      title: 'Usta Baklavacı Hakiki Tereyağı İhalesi',
+      clientName: 'Gaziantep Köşk Baklavaları',
+      description: 'Özel yapım şerbetli tatlılar için birinci kalite tuzsuz çiftlik tereyağı.',
+      itemId: 'butter',
+      requiredQuantity: 80,
+      rewardCash: 12800.0,
+      rewardPrestige: 60,
+      minStoreLevel: 3,
+      badge: '🧈 ÖZEL SİPARİŞ',
+    ),
+
+    // Vitamin Meyve Barı
+    StoreB2BContract(
+      id: 'b2b_juice_fit_club',
+      blueprintId: 'juice_bar',
+      title: 'Fitness & Welness Club Detoks İçeceği Tedariği',
+      clientName: 'Titanium Performance Gym',
+      description: 'Sporcular ve üyeler için günlük taze sıkılmış doğal karışım meyve suları.',
+      itemId: 'juice',
+      requiredQuantity: 100,
+      rewardCash: 5800.0,
+      rewardPrestige: 35,
+      minStoreLevel: 2,
+      badge: '🏋️ SPOR MERKEZİ',
+    ),
+
+    // Fast Food & Patatesçi
+    StoreB2BContract(
+      id: 'b2b_fries_stadium',
+      blueprintId: 'fast_food_joint',
+      title: 'Şehir Stadyumu Derbi Günü Büfe Tedariği',
+      clientName: 'Metropol Arena İşletmesi',
+      description: 'Büyük lig maçı taraftarları için dondurulmuş çıtır patates külahları partisi.',
+      itemId: 'french_fries',
+      requiredQuantity: 200,
+      rewardCash: 10500.0,
+      rewardPrestige: 45,
+      minStoreLevel: 2,
+      badge: '⚽ STADYUM İHALESİ',
+    ),
+
+    // 3. Nesil Kahve Dükkanı
+    StoreB2BContract(
+      id: 'b2b_coffee_tech_hub',
+      blueprintId: 'coffee_house',
+      title: 'Teknopark Ar-Ge Merkezi Ofis Kahve Barı',
+      clientName: 'Silicon Technopark A.Ş.',
+      description: 'Yazılımcılar ve girişimciler için haftalık aromatik sıcak kahve tedariği.',
+      itemId: 'coffee_cup',
+      requiredQuantity: 150,
+      rewardCash: 11500.0,
+      rewardPrestige: 40,
+      minStoreLevel: 2,
+      badge: '💻 TEKNOLOJİ ÜSSÜ',
+    ),
+    StoreB2BContract(
+      id: 'b2b_coffee_convention',
+      blueprintId: 'coffee_house',
+      title: 'Uluslararası Zirve Kahve Molası Servisi',
+      clientName: 'World Trade Summit Convention',
+      description: '3 günlük uluslararası iş kongresinde ikram edilecek 300 fincan kahve paketi.',
+      itemId: 'coffee_cup',
+      requiredQuantity: 300,
+      rewardCash: 24000.0,
+      rewardPrestige: 80,
+      minStoreLevel: 3,
+      badge: '🌍 DÜNYA KONGRESİ',
+    ),
+
+    // Artisan Çikolata
+    StoreB2BContract(
+      id: 'b2b_choc_corporate_gift',
+      blueprintId: 'chocolatier_shop',
+      title: 'Banka Genel Müdürlüğü Prestij Hediye Kutuları',
+      clientName: 'Anadolu Yatırım Bankası',
+      description: 'VIP kurumsal müşterilere gönderilmek üzere el yapımı gurme kutu çikolatalar.',
+      itemId: 'gourmet_chocolate',
+      requiredQuantity: 60,
+      rewardCash: 14500.0,
+      rewardPrestige: 60,
+      minStoreLevel: 2,
+      badge: '🎁 KURUMSAL HEDİYE',
+    ),
+
+    // Moda & Giyim Butiği
+    StoreB2BContract(
+      id: 'b2b_clothes_department',
+      blueprintId: 'clothing_boutique',
+      title: 'Çok Katlı AVM Mağazası Sezon Koleksiyonu',
+      clientName: 'Moda Galleria Zinciri',
+      description: 'Yeni sezon vitrinleri için birinci kalite giyim ürünleri konsinye teslimatı.',
+      itemId: 'clothes',
+      requiredQuantity: 50,
+      rewardCash: 16000.0,
+      rewardPrestige: 60,
+      minStoreLevel: 2,
+      badge: '👗 AVM ZİNCİRİ',
+    ),
+
+    // Tasarım Mobilya
+    StoreB2BContract(
+      id: 'b2b_furniture_office',
+      blueprintId: 'furniture_showroom',
+      title: 'Yeni Hukuk Bürosu Çalışma Sandalyeleri',
+      clientName: 'Global Adalet Plaza Ofisi',
+      description: 'Yeni kurulan hukuk bürosu için masif ahşap konsept sandalyeler.',
+      itemId: 'furniture_chair',
+      requiredQuantity: 40,
+      rewardCash: 15500.0,
+      rewardPrestige: 70,
+      minStoreLevel: 2,
+      badge: '⚖️ PLAZA SÖZLEŞMESİ',
+    ),
+
+    // Teknoloji & Telefon Mağazası
+    StoreB2BContract(
+      id: 'b2b_phone_corp_fleet',
+      blueprintId: 'electronics_store',
+      title: 'Lojistik Saha Ekibi Kurumsal Akıllı Telefon Filosu',
+      clientName: 'Trans-Anadolu Ekspres Lojistik',
+      description: 'Kurye ve filo takip ekiplerine dağıtılacak kurumsal akıllı telefon paketi.',
+      itemId: 'smartphone',
+      requiredQuantity: 25,
+      rewardCash: 21000.0,
+      rewardPrestige: 90,
+      minStoreLevel: 2,
+      badge: '📱 KURUMSAL FİLO',
+    ),
+  ];
+
+  static List<StoreB2BContract> getContractsForStore(RetailStore store) {
+    return blueprints
+        .where((c) => c.blueprintId == store.blueprintId || c.blueprintId == store.id)
+        .toList();
   }
 }

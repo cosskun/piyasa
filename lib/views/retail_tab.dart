@@ -6,6 +6,8 @@ import '../models/facility.dart';
 import '../models/item.dart';
 import '../models/store.dart';
 import '../widgets/game_toast.dart';
+import '../widgets/logistics_fleet_dialog.dart';
+import '../widgets/store_b2b_contract_sheet.dart';
 
 class RetailTab extends StatefulWidget {
   final GameController controller;
@@ -442,6 +444,30 @@ class _RetailTabState extends State<RetailTab> {
                           fontWeight: FontWeight.w600,
                           color: allAutoRestock ? const Color(0xFF34D399) : Colors.white,
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Lojistik Filosu Butonu
+              InkWell(
+                onTap: () => LogisticsFleetDialog.show(context, controller: controller),
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(controller.currentLogisticsTier.emoji, style: const TextStyle(fontSize: 12)),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Filo (K.${controller.currentLogisticsTier.tier})',
+                        style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                     ],
                   ),
@@ -891,6 +917,34 @@ class _RetailTabState extends State<RetailTab> {
                                 fontWeight: FontWeight.bold,
                                 color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
                               ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    // Kurumsal B2B Sözleşmeleri Butonu
+                    InkWell(
+                      onTap: () => StoreB2BContractSheet.show(context, store: store, controller: controller),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFD97706).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: const Color(0xFFD97706),
+                            width: 1,
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.handshake_outlined, size: 12, color: Color(0xFFD97706)),
+                            SizedBox(width: 4),
+                            Text(
+                              'B2B Sipariş',
+                              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Color(0xFFD97706)),
                             ),
                           ],
                         ),
@@ -4999,6 +5053,34 @@ class _RetailTabState extends State<RetailTab> {
                               Text(
                                 anySelling ? 'Tümünü Durdur' : 'Tümünü Başlat',
                                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Kurumsal B2B Sözleşmeleri Butonu
+                      InkWell(
+                        onTap: () {
+                          if (currentBranches.isNotEmpty) {
+                            StoreB2BContractSheet.show(context, store: currentBranches.first, controller: controller);
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD97706),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.handshake_outlined, size: 14, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text(
+                                'B2B Siparişler',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
                               ),
                             ],
                           ),

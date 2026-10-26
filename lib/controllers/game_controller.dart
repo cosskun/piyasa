@@ -18,6 +18,7 @@ import '../services/audit_log_service.dart';
 import '../models/audit_log.dart';
 import '../models/headquarters.dart';
 import '../models/tender.dart';
+import '../models/logistics.dart';
 
 class GameController extends ChangeNotifier {
   // Finans (Sıfırdan Başlangıç Sermayesi: 10.000 TL)
@@ -136,8 +137,9 @@ class GameController extends ChangeNotifier {
   double _autoSaveTickTimer = 0.0;
   double _uiTickTimer = 0.0;
 
-  // 1. Günlük Borsa Alım Kotası (Hızlı Satış Sınırı)
+  // 1. Günlük Borsa Alım Kotası (Hızlı Satış Sınırı: Hammadde & İşlenmiş Mamul)
   int dailyRawQuickSoldToday = 0;
+  int dailyManufacturedQuickSoldToday = 0;
   String lastDailyQuotaDate = '';
 
   void _checkAndResetDailyQuota() {
@@ -146,6 +148,7 @@ class GameController extends ChangeNotifier {
     if (lastDailyQuotaDate != todayStr) {
       lastDailyQuotaDate = todayStr;
       dailyRawQuickSoldToday = 0;
+      dailyManufacturedQuickSoldToday = 0;
     }
   }
 
@@ -158,6 +161,53 @@ class GameController extends ChangeNotifier {
   int get remainingDailyRawQuota {
     _checkAndResetDailyQuota();
     return max(0, dailyRawQuickSellQuota - dailyRawQuickSoldToday);
+  }
+
+  int get dailyManufacturedQuickSellQuota {
+    final base = 350 + (playerLevel - 1) * 80;
+    final hqBonus = HeadquartersConfig.getLevel(hqLevel).dailyQuotaBonus ~/ 2;
+    return base + hqBonus;
+  }
+
+  int get remainingDailyManufacturedQuota {
+    _checkAndResetDailyQuota();
+    return max(0, dailyManufacturedQuickSellQuota - dailyManufacturedQuickSoldToday);
+  }
+
+  /// Yüksek miktarlı borsa hızlı satışlarında dinamik fiyat kırıcı (Slippage)
+  /// Küçük satışlar (<=20 adet) tam fiyattır. 20 adetten sonra her 50 adette %3 kayma olur (Maks %35).
+  double calculateMarketSlippage(int qty) {
+    if (qty <= 20) return 0.0;
+    return ((qty - 20) / 50.0 * 0.03).clamp(0.0, 0.35);
+  }
+
+  // 1.1 Şirket Lojistik & Araç Filosu Kademeleri
+  int logisticsFleetTier = 1;
+
+  LogisticsFleetTier get currentLogisticsTier => LogisticsFleetTier.getTier(logisticsFleetTier);
+  double get logisticsCostPerItem => currentLogisticsTier.shippingCostPerItem;
+
+  String? upgradeLogisticsFleet() {
+    if (logisticsFleetTier >= LogisticsFleetTier.tiers.length) {
+      return 'Lojistik filonuz zaten en üst düzeyde (Entegre Tır Filosu)!';
+    }
+    final nextTier = LogisticsFleetTier.getTier(logisticsFleetTier + 1);
+    if (cash < nextTier.purchaseCost) {
+      return 'Yetersiz nakit! ${nextTier.name} için ${nextTier.purchaseCost.toStringAsFixed(0)} ₺ gerekiyor.';
+    }
+    cash -= nextTier.purchaseCost;
+    logisticsFleetTier++;
+    AuditLogService().log(
+      category: LogCategory.facility,
+      action: 'FLEET_UPGRADE',
+      title: 'Lojistik Filo Yükseltildi: ${nextTier.name}',
+      description: 'Filo Kademe $logisticsFleetTier (${nextTier.name}) seviyesine yükseltildi. Parça başı nakliye masrafı: ${nextTier.shippingCostPerItem.toStringAsFixed(2)} ₺.',
+      amountChange: -nextTier.purchaseCost,
+      cashAfter: cash,
+    );
+    notifyListeners();
+    saveState();
+    return null;
   }
 
   // 2. İşletme Giderleri (OpEx: Maaş, Elektrik, Kira, Bakım)
@@ -366,6 +416,11 @@ class GameController extends ChangeNotifier {
               warehouse.remove(slot.itemId);
             }
             slot.shelfStock += take;
+            // Şirket Lojistik Filosu Navlun Bedeli
+            final freight = take * logisticsCostPerItem;
+            if (freight > 0 && cash >= freight) {
+              cash -= freight;
+            }
           }
         }
       }
@@ -399,9 +454,10 @@ class GameController extends ChangeNotifier {
 
         if (slot.saleTimerProgress >= 1.0) {
           slot.saleTimerProgress = 0.0;
-          slot.shelfStock--;
-          revenueThisBatch += slot.retailPrice;
-          itemsSoldThisBatch++;
+          final batch = min(slot.shelfStock, store.saleBatchSize);
+          slot.shelfStock -= batch;
+          revenueThisBatch += slot.retailPrice * batch;
+          itemsSoldThisBatch += batch;
           lastSoldName = ItemRegistry.get(slot.itemId)?.name ?? slot.itemId;
         }
       }
@@ -795,7 +851,8 @@ class GameController extends ChangeNotifier {
             simStoreSaleProgress[sIdx][pIdx] += dt / slotInterval;
             while (simStoreSaleProgress[sIdx][pIdx] >= 1.0 && simStoreShelfStocks[sIdx][pIdx] > 0) {
               simStoreSaleProgress[sIdx][pIdx] -= 1.0;
-              simStoreShelfStocks[sIdx][pIdx]--;
+              final batch = min(simStoreShelfStocks[sIdx][pIdx], store.saleBatchSize);
+              simStoreShelfStocks[sIdx][pIdx] -= batch;
             }
           }
         }
@@ -952,9 +1009,9 @@ class GameController extends ChangeNotifier {
       return 'Depoda yeterli $qty adet ${data.name} yok!';
     }
 
-    // Günlük Borsa Alım Kotası Denetimi (Yalnızca Hammaddeler için)
+    // Günlük Borsa Alım Kotası Denetimi (Hammadde & İşlenmiş Mamul)
+    _checkAndResetDailyQuota();
     if (data.category == ItemCategory.rawMaterial) {
-      _checkAndResetDailyQuota();
       final remaining = remainingDailyRawQuota;
       if (remaining <= 0) {
         return 'Devlet / Borsa bugünkü hammadde alım kotasını doldurdu. Elinizdeki malları satmak için Pazara Çıkarın ve diğer oyunculara satın ya da kendi fabrikalarınızda işleyin!';
@@ -962,33 +1019,93 @@ class GameController extends ChangeNotifier {
       if (qty > remaining) {
         return 'Bugünkü kalan hammadde alım kotanız $remaining adet! En fazla $remaining adet hızlı satış yapabilirsiniz.';
       }
+    } else {
+      final remaining = remainingDailyManufacturedQuota;
+      if (remaining <= 0) {
+        return 'Borsa ve Merkez Hali bugünkü işlenmiş ürün alım kotasını ($dailyManufacturedQuickSellQuota adet) doldurdu! Mallarınızı dükkanlarınızda satın ya da diğer oyunculara Pazar tezgahında satın!';
+      }
+      if (qty > remaining) {
+        return 'Bugünkü kalan işlenmiş ürün borsa alım kotanız $remaining adet! En fazla $remaining adet hızlı satış yapabilirsiniz.';
+      }
     }
 
-    double totalEarnings = mItem.quickSellPrice * qty;
+    final slippage = calculateMarketSlippage(qty);
+    final effectiveUnitPrice = mItem.quickSellPrice * (1.0 - slippage);
+    double totalEarnings = effectiveUnitPrice * qty;
+
     warehouse[itemId] = currentStock - qty;
     if (warehouse[itemId]! <= 0) warehouse.remove(itemId);
 
     if (data.category == ItemCategory.rawMaterial) {
       dailyRawQuickSoldToday += qty;
+    } else {
+      dailyManufacturedQuickSoldToday += qty;
     }
 
     cash += totalEarnings;
     _checkWarehouseFullStatus();
     mItem.updatePrice(bias: -0.02 * (qty / 50.0).clamp(1.0, 4.0), rnd: _random);
 
+    final slippageNote = slippage > 0
+        ? ' (Büyük hacim kayması: -%${(slippage * 100).toStringAsFixed(1)})'
+        : '';
+
     AuditLogService().log(
       category: LogCategory.trade,
       action: 'MARKET_SELL',
       title: 'Borsa Satışı: ${data.name}',
-      description: '$qty adet ${data.name} birim başı ${mItem.quickSellPrice.toStringAsFixed(2)} ₺ fiyattan toptan satıldı.',
+      description: '$qty adet ${data.name} birim başı ${effectiveUnitPrice.toStringAsFixed(2)} ₺ fiyattan satıldı$slippageNote.',
       amountChange: totalEarnings,
       cashAfter: cash,
       details: {
         'itemId': itemId,
         'itemName': data.name,
         'quantity': qty,
-        'unitPrice': mItem.quickSellPrice,
+        'unitPrice': effectiveUnitPrice,
+        'basePrice': mItem.quickSellPrice,
+        'slippage': slippage,
         'totalEarnings': totalEarnings,
+      },
+    );
+
+    notifyListeners();
+    saveState();
+    return null;
+  }
+
+  // === B2B KURUMSAL TEDARİK SÖZLEŞMELERİ (HACİMLİ SATIŞ) ===
+  String? fulfillStoreB2BContract(RetailStore store, StoreB2BContract contract) {
+    if (store.level < contract.minStoreLevel) {
+      return 'Bu sözleşme için ${store.name} mağazasının en az Seviye ${contract.minStoreLevel} olması gerekir!';
+    }
+    final inWh = warehouse[contract.itemId] ?? 0;
+    if (inWh < contract.requiredQuantity) {
+      final item = ItemRegistry.get(contract.itemId);
+      final itemName = item?.name ?? contract.itemId;
+      return 'Depoda yeterli ürün yok! Gereken: ${contract.requiredQuantity} adet $itemName (Mevcut: $inWh adet).';
+    }
+
+    // Depodan stok düş
+    warehouse[contract.itemId] = inWh - contract.requiredQuantity;
+    if (warehouse[contract.itemId]! <= 0) warehouse.remove(contract.itemId);
+
+    // Kazanç ve prestij ödülü
+    cash += contract.rewardCash;
+    totalPrestigePoints += contract.rewardPrestige;
+
+    AuditLogService().log(
+      category: LogCategory.retail,
+      action: 'B2B_CONTRACT_FULFILL',
+      title: 'B2B Teslimatı: ${contract.title}',
+      description: '${contract.clientName} firmasına ${contract.requiredQuantity} adet ${contract.itemId} başarıyla teslim edildi (+${contract.rewardCash.toStringAsFixed(0)} ₺, +${contract.rewardPrestige} Prestij).',
+      amountChange: contract.rewardCash,
+      cashAfter: cash,
+      details: {
+        'contractId': contract.id,
+        'clientName': contract.clientName,
+        'quantity': contract.requiredQuantity,
+        'rewardCash': contract.rewardCash,
+        'rewardPrestige': contract.rewardPrestige,
       },
     );
 
@@ -2790,7 +2907,9 @@ class GameController extends ChangeNotifier {
     isDarkMode = false;
     themeModeNotifier.value = false;
     dailyRawQuickSoldToday = 0;
+    dailyManufacturedQuickSoldToday = 0;
     lastDailyQuotaDate = '';
+    logisticsFleetTier = 1;
     hqLevel = 0;
     totalPrestigePoints = 0;
     activeTenders = TenderContract.getDefaultTenders();
@@ -3215,7 +3334,9 @@ class GameController extends ChangeNotifier {
       'weeklyProperties': ownedFacilities.length + ownedStores.length,
       'monthlyProperties': ownedFacilities.length + ownedStores.length,
       'dailyRawQuickSoldToday': dailyRawQuickSoldToday,
+      'dailyManufacturedQuickSoldToday': dailyManufacturedQuickSoldToday,
       'lastDailyQuotaDate': lastDailyQuotaDate,
+      'logisticsFleetTier': logisticsFleetTier,
       'hqLevel': hqLevel,
       'totalPrestigePoints': totalPrestigePoints,
       'activeTenders': activeTenders.map((t) => t.toJson()).toList(),
@@ -3256,8 +3377,14 @@ class GameController extends ChangeNotifier {
     if (data.containsKey('dailyRawQuickSoldToday')) {
       dailyRawQuickSoldToday = (data['dailyRawQuickSoldToday'] as num?)?.toInt() ?? 0;
     }
+    if (data.containsKey('dailyManufacturedQuickSoldToday')) {
+      dailyManufacturedQuickSoldToday = (data['dailyManufacturedQuickSoldToday'] as num?)?.toInt() ?? 0;
+    }
     if (data.containsKey('lastDailyQuotaDate')) {
       lastDailyQuotaDate = data['lastDailyQuotaDate'] as String? ?? '';
+    }
+    if (data.containsKey('logisticsFleetTier')) {
+      logisticsFleetTier = (data['logisticsFleetTier'] as num?)?.toInt() ?? 1;
     }
     if (data.containsKey('hasChosenStarterPath')) {
       hasChosenStarterPath = data['hasChosenStarterPath'] as bool? ?? false;

@@ -949,7 +949,18 @@ class _WarehouseTabState extends State<WarehouseTab> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (ctx, setDialogState) {
-            final totalEarn = sellQty * quickPrice;
+            final slippage = widget.controller.calculateMarketSlippage(sellQty);
+            final effectiveUnitPrice = quickPrice * (1.0 - slippage);
+            final totalEarn = sellQty * effectiveUnitPrice;
+
+            final isRaw = item.category == ItemCategory.rawMaterial;
+            final remainingQuota = isRaw
+                ? widget.controller.remainingDailyRawQuota
+                : widget.controller.remainingDailyManufacturedQuota;
+            final totalQuota = isRaw
+                ? widget.controller.dailyRawQuickSellQuota
+                : widget.controller.dailyManufacturedQuickSellQuota;
+            final quotaLabel = isRaw ? 'Hammadde Kotası' : 'İşlenmiş Ürün Kotası';
 
             return AlertDialog(
               backgroundColor: isDark ? const Color(0xFF182032) : Colors.white,
@@ -1096,65 +1107,64 @@ class _WarehouseTabState extends State<WarehouseTab> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  if (item.category == ItemCategory.rawMaterial) ...[
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => HeadquartersTenderDialog.show(context, controller: widget.controller, initialTabIndex: 0),
-                        borderRadius: BorderRadius.circular(8),
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: widget.controller.remainingDailyRawQuota > 0
-                                  ? (isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE))
-                                  : Colors.redAccent,
+                  // Borsa Alım Kotası Uyarısı (Hammadde & İşlenmiş Mamul)
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => HeadquartersTenderDialog.show(context, controller: widget.controller, initialTabIndex: 0),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isDark ? const Color(0xFF1E293B) : const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: remainingQuota > 0
+                                ? (isDark ? const Color(0xFF3B82F6).withValues(alpha: 0.4) : const Color(0xFFBFDBFE))
+                                : Colors.redAccent,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              remainingQuota > 0 ? Icons.speed_rounded : Icons.block_rounded,
+                              size: 14,
+                              color: remainingQuota > 0 ? const Color(0xFF3B82F6) : Colors.redAccent,
                             ),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                widget.controller.remainingDailyRawQuota > 0 ? Icons.speed_rounded : Icons.block_rounded,
-                                size: 14,
-                                color: widget.controller.remainingDailyRawQuota > 0 ? const Color(0xFF3B82F6) : Colors.redAccent,
-                              ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  widget.controller.remainingDailyRawQuota > 0
-                                      ? 'Günlük Borsa Kotası: ${widget.controller.remainingDailyRawQuota} / ${widget.controller.dailyRawQuickSellQuota} adet kaldı'
-                                      : 'Devlet / Borsa bugünkü hammadde alım kotasını doldurdu!',
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: widget.controller.remainingDailyRawQuota > 0
-                                        ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8))
-                                        : Colors.redAccent,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Holding ↗',
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                remainingQuota > 0
+                                    ? '$quotaLabel: $remainingQuota / $totalQuota adet kaldı'
+                                    : 'Borsa bugünkü $quotaLabel kotasını doldurdu!',
                                 style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: remainingQuota > 0
+                                      ? (isDark ? const Color(0xFF93C5FD) : const Color(0xFF1D4ED8))
+                                      : Colors.redAccent,
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Holding ↗',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ],
+                  ),
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.black26 : const Color(0xFFF1F5F9),
+                      color: isDark ? const Color(0xFF1E283E) : const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Column(
@@ -1166,6 +1176,22 @@ class _WarehouseTabState extends State<WarehouseTab> {
                             Text('${quickPrice.toStringAsFixed(2)} ₺ / adet', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                           ],
                         ),
+                        if (slippage > 0) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Hacim Kayması (-%${(slippage * 100).toStringAsFixed(1)}):',
+                                style: TextStyle(fontSize: 11, color: isDark ? Colors.amberAccent : const Color(0xFFD97706), fontWeight: FontWeight.w600),
+                              ),
+                              Text(
+                                '${effectiveUnitPrice.toStringAsFixed(2)} ₺ / adet',
+                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: isDark ? Colors.amberAccent : const Color(0xFFD97706)),
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 6),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,

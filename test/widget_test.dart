@@ -97,7 +97,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ProductionTab(controller: controller),
+          body: ProductionTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -305,7 +305,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ProductionTab(controller: controller),
+          body: ProductionTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -1795,7 +1795,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ProductionTab(controller: controller),
+          body: ProductionTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -2043,7 +2043,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ProductionTab(controller: controller),
+          body: ProductionTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -3149,7 +3149,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ProductionTab(controller: controller),
+          body: ProductionTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -3520,7 +3520,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: ProductionTab(controller: controller),
+          body: ProductionTab(controller: controller, initialViewMode: 1),
         ),
       ),
     );
@@ -3551,6 +3551,119 @@ void main() {
     expect(controller.ownedFacilities.first.blueprintId, 'wheat_farm');
     expect(controller.ownedStores.first.blueprintId, 'kiosk_bread');
     expect(controller.cash, closeTo(5000.0, 10.0));
+
+    controller.dispose();
+  });
+
+  testWidgets('B2B Contracts, Logistics Fleet Upgrades, and Store Batch Sales scaling', (WidgetTester tester) async {
+    final controller = GameController();
+    controller.resetToNewGame();
+
+    // 1. Logistics fleet verification
+    expect(controller.logisticsFleetTier, 1);
+    expect(controller.logisticsCostPerItem, 0.30);
+
+    controller.cash = 100000.0;
+    final upgradeErr = controller.upgradeLogisticsFleet();
+    expect(upgradeErr, isNull);
+    expect(controller.logisticsFleetTier, 2);
+    expect(controller.logisticsCostPerItem, 0.15);
+
+    // 2. Retail Store Batch Sales scaling with level
+    final storeBp = RetailStore.getBlueprints().firstWhere((s) => s.id == 'kiosk_bread');
+    final store = storeBp.copy();
+    store.level = 1;
+    expect(store.saleBatchSize, 1);
+
+    store.level = 2;
+    expect(store.saleBatchSize, 2);
+
+    store.level = 3;
+    expect(store.saleBatchSize, 3);
+
+    store.level = 5;
+    expect(store.saleBatchSize, 8);
+
+    // 3. B2B Contracts verification
+    final contracts = StoreB2BContract.getContractsForStore(store);
+    expect(contracts.isNotEmpty, isTrue);
+
+    final hotelContract = contracts.firstWhere((c) => c.id == 'b2b_bread_hotel');
+    expect(hotelContract.minStoreLevel, 2);
+    expect(hotelContract.requiredQuantity, 100);
+
+    // Try fulfilling when store level is 1
+    store.level = 1;
+    controller.warehouse['bread'] = 200;
+    var err = controller.fulfillStoreB2BContract(store, hotelContract);
+    expect(err, contains('en az Seviye 2'));
+
+    // Upgrade store level to 2 but insufficient warehouse stock
+    store.level = 2;
+    controller.warehouse['bread'] = 40;
+    err = controller.fulfillStoreB2BContract(store, hotelContract);
+    expect(err, contains('Depoda yeterli ürün yok'));
+
+    // Fulfill with sufficient stock
+    controller.warehouse['bread'] = 150;
+    final initialCash = controller.cash;
+    final initialPrestige = controller.totalPrestigePoints;
+
+    err = controller.fulfillStoreB2BContract(store, hotelContract);
+    expect(err, isNull);
+    expect(controller.warehouse['bread'], 50);
+    expect(controller.cash, initialCash + hotelContract.rewardCash);
+    expect(controller.totalPrestigePoints, initialPrestige + hotelContract.rewardPrestige);
+
+    controller.dispose();
+  });
+
+  testWidgets('Market Slippage, Manufactured Goods Quota, and ProductionTab Havza & OSB Mode', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final controller = GameController();
+    controller.resetToNewGame();
+
+    // 1. Slippage test
+    expect(controller.calculateMarketSlippage(10), 0.0);
+    expect(controller.calculateMarketSlippage(20), 0.0);
+    expect(controller.calculateMarketSlippage(70), greaterThan(0.02));
+    expect(controller.calculateMarketSlippage(500), closeTo(0.288, 0.01));
+    expect(controller.calculateMarketSlippage(1000), 0.35);
+
+    // 2. Manufactured goods daily quota test
+    expect(controller.remainingDailyManufacturedQuota, greaterThan(300));
+    controller.dailyManufacturedQuickSoldToday = controller.dailyManufacturedQuickSellQuota;
+    expect(controller.remainingDailyManufacturedQuota, 0);
+
+    controller.warehouse['bread'] = 10;
+    final sellErr = controller.sellToMarket('bread', 5);
+    expect(sellErr, anyOf(contains('alım kotasını'), contains('kotasını doldurdu')));
+
+    // Reset quota
+    controller.dailyManufacturedQuickSoldToday = 0;
+
+    // 3. UI test: Render ProductionTab with default Havza & OSB mode (Mode 0)
+    final farm = ProductionFacility.getBlueprints().firstWhere((f) => f.id == 'wheat_farm').copy();
+    controller.ownedFacilities.add(farm);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ProductionTab(controller: controller), // defaults to Mode 0 (Havza & OSB)
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify Havza & OSB elements are visible
+    expect(find.text('Havza & OSB'), findsOneWidget);
+    expect(find.text('Sanayi & Tarım Havzası'), findsOneWidget);
+    expect(find.textContaining('Bereket Tarım'), findsOneWidget);
+    expect(find.textContaining('Organize Sanayi Bölgesi'), findsOneWidget);
+    expect(find.text('1 Tarla/Çiftlik'), findsOneWidget);
 
     controller.dispose();
   });
