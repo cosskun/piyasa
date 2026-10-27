@@ -50,4 +50,4 @@ jobs:
           serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           file: build/app/outputs/flutter-apk/app-release.apk
           testers: furkanc28@gmail.com, rumeysa1166metin@gmail.com, mtn.rumeysa@gmail.com
-          releaseNotes: "Piyasa v1.0.0+24: Kasaba Çarşısı cadde görünümü, şube yönetim paneli, dinamik reçete değişimi, hammadde kotaları ve ihale sistemi"
+          releaseNotes: "Piyasa v1.0.0+25: Otonom coklu sirket NPC kurumsal pazar ekosistemi, rekabetci teklif verme ve emir defteri entegre edildi."
