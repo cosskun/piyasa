@@ -9,6 +9,7 @@ import '../models/market_offer.dart';
 import '../models/limit_order.dart';
 import '../services/firebase_service.dart';
 import '../widgets/game_toast.dart';
+import '../widgets/npc_companies_order_book_view.dart';
 
 enum MarketFilter {
   all, // Tüm Borsa
@@ -29,7 +30,7 @@ class MarketTab extends StatefulWidget {
 class MarketTabState extends State<MarketTab> {
   int _mainTab = 0; // 0: Borsa & Toptan, 1: Oyuncu Pazarı, 2: Teklifler
   int _borsaSubTab = 0; // 0: Canlı Borsa Fiyatları, 1: Alış Emirlerim
-  int _pazarSubTab = 0; // 0: Topluluk İlanları, 1: Benim İlanlarım
+  int _pazarSubTab = 0; // 0: Topluluk İlanları, 1: Şirketler & Emirler, 2: Benim İlanlarım
   int _offerSubTab = 0; // 0: Gelen Teklifler, 1: Verilen Teklifler
   MarketFilter _currentFilter = MarketFilter.all; // Varsayılan olarak Tüm Borsa
   static final NumberFormat _currencyFmt = NumberFormat("#,##0.00", "tr_TR");
@@ -41,6 +42,14 @@ class MarketTabState extends State<MarketTab> {
   int _communitySortMode = 0; // 0: En Uygun Fiyat, 1: En Çok Stok, 2: En Yeni, 3: Fırsatlar
   bool _isCatalogSidebarOpen = false; // Sol açılır/kapanır ürün katalog paneli
   String? _selectedCatalogItemId; // Seçili ürün (null = tümü)
+
+  void switchToNpcCompanies() {
+    if (!mounted) return;
+    setState(() {
+      _mainTab = 1; // Oyuncu Pazarı
+      _pazarSubTab = 1; // Şirketler & Emirler
+    });
+  }
 
   void switchToOffers({int subTab = 0}) {
     if (!mounted) return;
@@ -833,94 +842,65 @@ class MarketTabState extends State<MarketTab> {
           ),
           child: Row(
             children: [
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => setState(() => _pazarSubTab = 0),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 6),
-                    decoration: BoxDecoration(
-                      color: _pazarSubTab == 0
-                          ? (isDark ? const Color(0xFF243452) : Colors.white)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: _pazarSubTab == 0
-                          ? [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.06),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          '🛒 Oyuncu İlanları (${widget.controller.communityListings.length})',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: _pazarSubTab == 0 ? FontWeight.bold : FontWeight.w600,
-                            color: _pazarSubTab == 0
-                                ? (isDark ? Colors.white : const Color(0xFF0F172A))
-                                : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              _buildPazarSubTabItem(0, '🛒 Oyuncu İlanları (${widget.controller.communityListings.length})', isDark),
               const SizedBox(width: 4),
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(8),
-                  onTap: () => setState(() => _pazarSubTab = 1),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 6),
-                    decoration: BoxDecoration(
-                      color: _pazarSubTab == 1
-                          ? (isDark ? const Color(0xFF243452) : Colors.white)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: _pazarSubTab == 1
-                          ? [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.06),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
-                              ),
-                            ]
-                          : null,
-                    ),
-                    child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          '📦 Benim İlanlarım (${widget.controller.activeListings.length})',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: _pazarSubTab == 1 ? FontWeight.bold : FontWeight.w600,
-                            color: _pazarSubTab == 1
-                                ? (isDark ? Colors.white : const Color(0xFF0F172A))
-                                : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              _buildPazarSubTabItem(1, '🏢 Şirketler (${widget.controller.npcCompanies.length})', isDark),
+              const SizedBox(width: 4),
+              _buildPazarSubTabItem(2, '📦 İlanlarım (${widget.controller.activeListings.length})', isDark),
             ],
           ),
         ),
         Expanded(
           child: _pazarSubTab == 0
               ? _buildCommunityListingsList(isDark)
-              : _buildPlayerActiveListingsList(isDark),
+              : (_pazarSubTab == 1
+                  ? NpcCompaniesOrderBookView(controller: widget.controller)
+                  : _buildPlayerActiveListingsList(isDark)),
         ),
       ],
+    );
+  }
+
+  Widget _buildPazarSubTabItem(int index, String label, bool isDark) {
+    final isSelected = _pazarSubTab == index;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => setState(() => _pazarSubTab = index),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? (isDark ? const Color(0xFF243452) : Colors.white)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                  color: isSelected
+                      ? (isDark ? Colors.white : const Color(0xFF0F172A))
+                      : (isDark ? Colors.grey[400] : const Color(0xFF64748B)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -3708,7 +3688,7 @@ class MarketTabState extends State<MarketTab> {
                     } else {
                       setState(() {
                         _mainTab = 1;
-                        _pazarSubTab = 1;
+                        _pazarSubTab = 2; // Benim İlanlarım
                       });
                       GameToast.showSuccess(
                         context,

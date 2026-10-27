@@ -31,6 +31,8 @@ import 'package:piyasa/models/leaderboard_entry.dart';
 import 'package:piyasa/models/market_listing.dart';
 import 'package:piyasa/views/profile_screen.dart';
 import 'package:piyasa/views/headquarters_tender_dialog.dart';
+import 'package:piyasa/models/npc_company.dart';
+import 'package:piyasa/widgets/npc_companies_order_book_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -3664,6 +3666,118 @@ void main() {
     expect(find.textContaining('Bereket Tarım'), findsOneWidget);
     expect(find.textContaining('Organize Sanayi Bölgesi'), findsOneWidget);
     expect(find.text('1 Tarla/Çiftlik'), findsOneWidget);
+
+    controller.dispose();
+  });
+
+  testWidgets('NpcCompanies: Sector coverage, anti-monopoly competition, dynamic simulation, player buy/sell and listing absorption', (WidgetTester tester) async {
+    final controller = GameController(autoLoad: false);
+
+    // 1. Şirket sayısı ve çeşitlilik (Tekel yok, en az 25 şirket)
+    expect(controller.npcCompanies.length, greaterThanOrEqualTo(25));
+
+    // Her zincirde rekabet kontrolü (Buğday/Un, Süt, Pamuk, Kereste, Kahve, Çelik, Teknoloji)
+    final wheatBuyers = controller.npcCompanies.where((c) => c.inputItemIds.contains('wheat')).toList();
+    expect(wheatBuyers.length, greaterThanOrEqualTo(2));
+
+    final flourBuyers = controller.npcCompanies.where((c) => c.inputItemIds.contains('flour')).toList();
+    expect(flourBuyers.length, greaterThanOrEqualTo(2));
+
+    final milkBuyers = controller.npcCompanies.where((c) => c.inputItemIds.contains('milk')).toList();
+    expect(milkBuyers.length, greaterThanOrEqualTo(2));
+
+    // 2. Oyuncunun doğrudan NPC şirketine satış yapması (sellToNpcCompany)
+    final anadoluUn = controller.npcCompanies.firstWhere((c) => c.id == 'npc_anadolu_un');
+    controller.warehouse['wheat'] = 100;
+    final initialCash = controller.cash;
+    final initialCompanyStock = anadoluUn.inventory['wheat'] ?? 0;
+    final bidPrice = anadoluUn.buyBids['wheat']!.pricePerUnit;
+
+    final sellError = controller.sellToNpcCompany(company: anadoluUn, itemId: 'wheat', quantity: 40);
+    expect(sellError, isNull);
+    expect(controller.warehouse['wheat'], equals(60));
+    expect(controller.cash, equals(initialCash + (40 * bidPrice)));
+    expect(anadoluUn.inventory['wheat'], equals(initialCompanyStock + 40));
+
+    // 3. Oyuncunun doğrudan NPC şirketinden satın alması (buyFromNpcCompany)
+    final altinbasak = controller.npcCompanies.firstWhere((c) => c.id == 'npc_altinbasak_degirmen');
+    final flourOffer = altinbasak.sellOffers['flour'];
+    if (flourOffer != null && flourOffer.availableQuantity >= 10) {
+      final cashBeforeBuy = controller.cash;
+      final buyError = controller.buyFromNpcCompany(company: altinbasak, itemId: 'flour', quantity: 10);
+      expect(buyError, isNull);
+      expect(controller.warehouse['flour'], equals(10));
+      expect(controller.cash, equals(cashBeforeBuy - (10 * flourOffer.pricePerUnit)));
+    }
+
+    // 4. Oyuncunun pazara açtığı ilanın NPC tarafından otomatik satın alınması (Listing Absorption)
+    controller.warehouse['potato'] = 80;
+    controller.createListing('potato', 40, 2.90);
+    expect(controller.activeListings.length, equals(1));
+
+    final cashBeforeTick = controller.cash;
+    // Tick çalıştırıldığında uygun fiyattaki ilan satılır
+    for (int t = 0; t < 20; t++) {
+      controller.tickForTesting(1.0);
+    }
+    expect(controller.cash, greaterThan(cashBeforeTick));
+
+    // 5. NPC Acil B2B Teklifi ve Oyuncunun Kabul Etmesi
+    controller.warehouse['milk'] = 50;
+    final sutsan = controller.npcCompanies.firstWhere((c) => c.id == 'npc_sutsan_mandira');
+    sutsan.buyBids['milk']!.urgency = NpcBidUrgency.critical;
+
+    // Inbound teklif oluştur
+    for (int t = 0; t < 25; t++) {
+      controller.tickForTesting(1.0);
+    }
+
+    final b2bOffer = controller.offers.where((o) => o.buyerId == sutsan.id).firstOrNull;
+    if (b2bOffer != null) {
+      final cashBeforeOffer = controller.cash;
+      final stockBeforeOffer = controller.warehouse['milk'] ?? 0;
+      final acceptErr = controller.acceptIncomingOffer(b2bOffer);
+      expect(acceptErr, isNull);
+      expect(controller.cash, greaterThan(cashBeforeOffer));
+      expect(controller.warehouse['milk'] ?? 0, lessThan(stockBeforeOffer));
+      expect(b2bOffer.status, equals(OfferStatus.completed));
+    }
+
+    controller.dispose();
+  });
+
+  testWidgets('NpcCompaniesOrderBookView UI renders company cards, filters, and modals without overflow', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final controller = GameController(autoLoad: false);
+    controller.warehouse['wheat'] = 50;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MarketTab(controller: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Oyuncu Pazarı sekmesine geç
+    await tester.tap(find.text('Oyuncu Pazarı'));
+    await tester.pumpAndSettle();
+
+    // 2. Şirketler alt sekmesine geç
+    final sirketlerTab = find.textContaining('Şirketler');
+    expect(sirketlerTab, findsOneWidget);
+    await tester.tap(sirketlerTab);
+    await tester.pumpAndSettle();
+
+    // 3. Şirket listesi ve bileşenlerin render edildiğini doğrula
+    expect(find.byType(NpcCompaniesOrderBookView), findsOneWidget);
+    expect(find.textContaining('Aktif Piyasa Şirketi'), findsOneWidget);
+    expect(find.text('Bereket Hububat A.Ş.'), findsOneWidget);
+    expect(find.textContaining('Acil Alıcılar'), findsWidgets);
 
     controller.dispose();
   });

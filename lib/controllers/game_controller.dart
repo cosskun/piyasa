@@ -19,6 +19,8 @@ import '../models/audit_log.dart';
 import '../models/headquarters.dart';
 import '../models/tender.dart';
 import '../models/logistics.dart';
+import '../models/npc_company.dart';
+import '../models/npc_company_registry.dart';
 
 class GameController extends ChangeNotifier {
   // Finans (Sıfırdan Başlangıç Sermayesi: 10.000 TL)
@@ -72,6 +74,9 @@ class GameController extends ChangeNotifier {
 
   // Diğer Oyuncuların (Topluluk / Simülasyon) Pazar İlanları
   final List<MarketListing> communityListings = [];
+
+  // Otonom NPC Şirketleri (Canlı Piyasa Aktörleri & Sipariş Defteri)
+  final List<NpcCompany> npcCompanies = [];
 
   // Pazar Teklifleri (Gelen ve Verilen Teklifler)
   final List<MarketOffer> offers = [];
@@ -134,6 +139,8 @@ class GameController extends ChangeNotifier {
   double _statsHourlyRevenue = 0.0;
   double _communityRefreshTimer = 0.0;
   double _incomingOfferTimer = 0.0;
+  double _npcSimulationTimer = 0.0;
+  double _npcInboundOfferTimer = 0.0;
   double _autoSaveTickTimer = 0.0;
   double _uiTickTimer = 0.0;
 
@@ -241,6 +248,7 @@ class GameController extends ChangeNotifier {
 
   GameController({bool autoLoad = false}) {
     _initializeMarket();
+    _initializeNpcCompanies();
     _initializeCommunityListings();
     _startGameLoop();
     _setupCloudMarketSync();
@@ -258,7 +266,22 @@ class GameController extends ChangeNotifier {
     }
   }
 
+  void _initializeNpcCompanies() {
+    npcCompanies.clear();
+    npcCompanies.addAll(NpcCompanyRegistry.createDefaultCompanies());
+    final basePrices = {for (var e in marketItems.entries) e.key: e.value.currentPrice};
+    for (var company in npcCompanies) {
+      company.tickSimulation(
+        dt: 1.0,
+        marketBasePrices: basePrices,
+        allCompanies: npcCompanies,
+        rnd: _random,
+      );
+    }
+  }
+
   void _initializeCommunityListings() {
+    communityListings.clear();
     final allItems = ItemRegistry.getAll();
     // 1. Resmi Piyasa Rezervi İlanları (Tüm oyuncular ve yeni başlayanlar için garantili piyasa stokları)
     for (int i = 0; i < 8; i++) {
@@ -286,8 +309,6 @@ class GameController extends ChangeNotifier {
         ),
       );
     }
-    // NOT: Kesinlikle sahte/simüle edilmiş oyuncu ilanları eklenmez.
-    // Pazardaki oyuncu ilanları YALNIZCA veritabanına kayıtlı gerçek oyuncuların açtığı ilanlardan oluşur.
   }
 
   bool _isGameLoopPaused = false;
@@ -509,6 +530,25 @@ class GameController extends ChangeNotifier {
         listing.totalEarned += earn;
         stateChanged = true;
 
+        // Otonom NPC Şirketi alımı kontrolü
+        NpcCompany? buyerCompany;
+        for (var comp in npcCompanies) {
+          if (comp.inputItemIds.contains(listing.itemId)) {
+            final bid = comp.buyBids[listing.itemId];
+            if (bid != null && listing.pricePerUnit <= bid.pricePerUnit * 1.08 && comp.capital >= earn) {
+              if (buyerCompany == null || (comp.buyBids[listing.itemId]?.pricePerUnit ?? 0) > (buyerCompany.buyBids[listing.itemId]?.pricePerUnit ?? 0)) {
+                buyerCompany = comp;
+              }
+            }
+          }
+        }
+        if (buyerCompany != null) {
+          buyerCompany.capital -= earn;
+          buyerCompany.inventory[listing.itemId] = (buyerCompany.inventory[listing.itemId] ?? 0) + actualDeduct;
+          buyerCompany.statusMessage = '🤝 Oyuncudan $actualDeduct adet ${listing.item.name} satın alındı';
+          latestNotificationToast = '🔔 ${buyerCompany.name}, pazardaki $actualDeduct adet ${listing.item.name} ilanınızı (${listing.pricePerUnit.toStringAsFixed(2)} ₺) satın aldı!';
+        }
+
         // Teklif gelmiş olsa dahi ürünler rezerve ayrılmadan açık pazarda normal fiyattan satılır.
         // İlandaki kalan stok teklif miktarının altına düşerse teklif otomatik düşer.
         for (var off in offers) {
@@ -528,6 +568,29 @@ class GameController extends ChangeNotifier {
           activeListings.removeAt(i);
         }
       }
+    }
+
+    // 3.5. Otonom NPC Şirketleri Simülasyonu (Üretim, Tüketim, Fiyat Rekabeti)
+    _npcSimulationTimer += dt;
+    if (_npcSimulationTimer >= 3.0) {
+      _npcSimulationTimer = 0.0;
+      final basePrices = {for (var e in marketItems.entries) e.key: e.value.currentPrice};
+      for (var comp in npcCompanies) {
+        comp.tickSimulation(
+          dt: 3.0,
+          marketBasePrices: basePrices,
+          allCompanies: npcCompanies,
+          rnd: _random,
+        );
+      }
+      stateChanged = true;
+    }
+
+    // 3.6. NPC Şirketlerinin Acil B2B Teklifleri
+    _npcInboundOfferTimer += dt;
+    if (_npcInboundOfferTimer >= 20.0) {
+      _npcInboundOfferTimer = 0.0;
+      _evaluateNpcInboundOffers();
     }
 
     // Bulut pazar ve teklif senkronizasyonunun canlı kalmasını sağla
@@ -1293,7 +1356,9 @@ class GameController extends ChangeNotifier {
       // Piyasa fiyatı civarlarında dengeli fiyat (%98 - %104)
       final priceMultiplier = 0.98 + _random.nextDouble() * 0.06;
       final price = double.parse((base * priceMultiplier).toStringAsFixed(2));
-      final seller = _officialReserveSellers[_random.nextInt(_officialReserveSellers.length)];
+      final sellerCompany = npcCompanies.where((c) => c.outputItemIds.contains(itemToStock.id)).firstOrNull;
+      final seller = sellerCompany?.name ?? _officialReserveSellers[_random.nextInt(_officialReserveSellers.length)];
+      final sellerId = sellerCompany?.id ?? 'SYSTEM';
       final qty = (_random.nextInt(6) + 4) * 25; // 100 - 225 adet bol stok
 
       communityListings.add(
@@ -1305,7 +1370,7 @@ class GameController extends ChangeNotifier {
           pricePerUnit: price,
           listedAt: DateTime.now(),
           sellerName: seller,
-          sellerId: 'SYSTEM',
+          sellerId: sellerId,
           isPlayerListing: false,
           isOfficialReserve: true,
         ),
@@ -1439,6 +1504,13 @@ class GameController extends ChangeNotifier {
       FirebaseService().buyFromPublicMarket(listing: listing, quantityToBuy: qty);
     }
 
+    final sellerCompany = npcCompanies.where((c) => c.id == listing.sellerId).firstOrNull;
+    if (sellerCompany != null) {
+      sellerCompany.capital += totalCost;
+      sellerCompany.inventory[listing.itemId] = max(0, (sellerCompany.inventory[listing.itemId] ?? 0) - qty);
+      sellerCompany.statusMessage = 'Oyuncuya $qty adet ${listing.item.name} satıldı (+${totalCost.toStringAsFixed(0)} ₺)';
+    }
+
     AuditLogService().log(
       category: LogCategory.trade,
       action: 'COMMUNITY_BUY',
@@ -1459,6 +1531,170 @@ class GameController extends ChangeNotifier {
     notifyListeners();
     saveState();
     return null;
+  }
+
+  // === OTONOM NPC ŞİRKETİNE DOĞRUDAN SATIŞ YAPMA (ANINDA NAKİT & SIFIR BEKLEME) ===
+  String? sellToNpcCompany({
+    required NpcCompany company,
+    required String itemId,
+    required int quantity,
+  }) {
+    if (quantity <= 0) return 'Geçersiz miktar.';
+    final currentStock = warehouse[itemId] ?? 0;
+    if (currentStock < quantity) {
+      return 'Deponuzda yeterli ${ItemRegistry.get(itemId)?.name ?? ''} yok! (Mevcut: $currentStock)';
+    }
+
+    final bid = company.buyBids[itemId];
+    if (bid == null) return 'Bu şirket şu anda bu ürünü satın almıyor.';
+
+    double unitPrice = bid.pricePerUnit;
+    double totalRevenue = unitPrice * quantity;
+
+    if (company.capital < totalRevenue) {
+      return '${company.name} şirketinin kasasında bu işlem için yeterli nakit yok.';
+    }
+
+    if (company.remainingStorage < quantity) {
+      return '${company.name} şirketinin deposunda yeterli yer yok.';
+    }
+
+    // Depodan düş
+    warehouse[itemId] = currentStock - quantity;
+    if (warehouse[itemId]! <= 0) warehouse.remove(itemId);
+
+    // Kasaya nakit ekle
+    cash += totalRevenue;
+
+    // Şirket envanterine ve sermayesine işle
+    company.executePlayerSellToNpc(
+      itemId: itemId,
+      quantity: quantity,
+      agreedPricePerUnit: unitPrice,
+    );
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'NPC_COMPANY_SELL',
+      title: 'Şirkete Toptan Satış: ${ItemRegistry.get(itemId)?.name ?? ''}',
+      description: '$quantity adet ${ItemRegistry.get(itemId)?.name ?? ''}, ${company.name} şirketine ${unitPrice.toStringAsFixed(2)} ₺ fiyattan doğrudan satıldı.',
+      amountChange: totalRevenue,
+      cashAfter: cash,
+      details: {
+        'companyId': company.id,
+        'companyName': company.name,
+        'itemId': itemId,
+        'quantity': quantity,
+        'unitPrice': unitPrice,
+        'totalRevenue': totalRevenue,
+      },
+    );
+
+    notifyListeners();
+    saveState();
+    return null;
+  }
+
+  // === OTONOM NPC ŞİRKETİNDEN DOĞRUDAN SATIN ALMA ===
+  String? buyFromNpcCompany({
+    required NpcCompany company,
+    required String itemId,
+    required int quantity,
+  }) {
+    if (quantity <= 0) return 'Geçersiz miktar.';
+    final offer = company.sellOffers[itemId];
+    if (offer == null || offer.availableQuantity < quantity) {
+      return '${company.name} şirketinde yeterli stok kalmadı.';
+    }
+
+    double unitPrice = offer.pricePerUnit;
+    double totalCost = unitPrice * quantity;
+    if (cash < totalCost) {
+      return 'Yetersiz nakit! (${totalCost.toStringAsFixed(0)} ₺ gerekiyor)';
+    }
+
+    final item = ItemRegistry.get(itemId);
+    double weightNeeded = quantity * (item?.weight ?? 1.0);
+    if (currentWarehouseWeight + weightNeeded > maxWarehouseCapacity) {
+      return 'Deponuzda yeterli yer yok! Depoyu genişletin.';
+    }
+
+    // Nakit düş
+    cash -= totalCost;
+
+    // Depoya ekle
+    warehouse[itemId] = (warehouse[itemId] ?? 0) + quantity;
+    _checkWarehouseFullStatus();
+
+    // Şirket envanterine ve sermayesine işle
+    company.executePlayerBuyFromNpc(
+      itemId: itemId,
+      quantity: quantity,
+      agreedPricePerUnit: unitPrice,
+    );
+
+    AuditLogService().log(
+      category: LogCategory.trade,
+      action: 'NPC_COMPANY_BUY',
+      title: 'Şirketten Toptan Alım: ${item?.name ?? ''}',
+      description: '$quantity adet ${item?.name ?? ''}, ${company.name} şirketinden ${unitPrice.toStringAsFixed(2)} ₺ fiyattan doğrudan satın alındı.',
+      amountChange: -totalCost,
+      cashAfter: cash,
+      details: {
+        'companyId': company.id,
+        'companyName': company.name,
+        'itemId': itemId,
+        'quantity': quantity,
+        'unitPrice': unitPrice,
+        'totalCost': totalCost,
+      },
+    );
+
+    notifyListeners();
+    saveState();
+    return null;
+  }
+
+  // === NPC ŞİRKETLERİNİN ACİL B2B TEKLİFLERİ GÖNDERMESİ ===
+  void _evaluateNpcInboundOffers() {
+    for (var comp in npcCompanies) {
+      for (var itemId in comp.inputItemIds) {
+        final bid = comp.buyBids[itemId];
+        if (bid != null && bid.urgency == NpcBidUrgency.critical) {
+          int playerStock = warehouse[itemId] ?? 0;
+          if (playerStock >= 25) {
+            bool alreadyHasOffer = offers.any(
+              (o) => o.buyerId == comp.id && o.itemId == itemId && o.status == OfferStatus.pending,
+            );
+            if (!alreadyHasOffer) {
+              int qtyToDemand = min(playerStock, min(60, bid.demandedQuantity));
+              double premiumPrice = double.parse((bid.pricePerUnit * 1.08).toStringAsFixed(2));
+              final newOffer = MarketOffer(
+                id: 'npc_off_${DateTime.now().millisecondsSinceEpoch}_${comp.id}',
+                listingId: 'direct_${comp.id}',
+                itemId: itemId,
+                buyerId: comp.id,
+                buyerName: comp.name,
+                sellerId: 'PLAYER',
+                sellerName: 'Siz',
+                quantity: qtyToDemand,
+                originalPricePerUnit: bid.pricePerUnit,
+                offeredPricePerUnit: premiumPrice,
+                direction: OfferDirection.incoming,
+                status: OfferStatus.pending,
+                createdAt: DateTime.now(),
+                message: 'Fabrikamızda hammadde kritik seviyede! Acil teslimat için %8 primli fiyat öneriyoruz.',
+              );
+              offers.insert(0, newOffer);
+              latestNotificationToast = '📩 ${comp.name} şirketinden acil ${ItemRegistry.get(itemId)?.name ?? ''} teklifi geldi! (${premiumPrice.toStringAsFixed(2)} ₺)';
+              notifyListeners();
+              saveState();
+              return;
+            }
+          }
+        }
+      }
+    }
   }
 
   // === DİĞER OYUNCUNUN İLANINA TEKLİF VERME (PAZARLIK) ===
@@ -1584,6 +1820,57 @@ class GameController extends ChangeNotifier {
       return 'İlanınızdaki ürünler pazarda tam fiyattan satıldığı için bu teklif artık geçerli değil.';
     }
     if (offer.status != OfferStatus.pending) return 'Bu teklif artık geçerli değil.';
+
+    // NPC şirket B2B teklifi ise doğrudan teslim et ve parayı kasaya ekle
+    if (offer.buyerId.startsWith('npc_')) {
+      final comp = npcCompanies.where((c) => c.id == offer.buyerId).firstOrNull;
+      int currentStock = warehouse[offer.itemId] ?? 0;
+      if (currentStock < offer.quantity) {
+        offer.status = OfferStatus.expired;
+        notifyListeners();
+        saveState();
+        return 'Deponuzda bu teklifi karşılayacak kadar ${offer.item.name} kalmadı!';
+      }
+      double totalEarnings = offer.totalOfferedPrice;
+      if (comp != null && comp.capital < totalEarnings) {
+        offer.status = OfferStatus.expired;
+        notifyListeners();
+        saveState();
+        return '${comp.name} şirketinin kasasında yeterli nakit kalmadı.';
+      }
+
+      warehouse[offer.itemId] = currentStock - offer.quantity;
+      if (warehouse[offer.itemId]! <= 0) warehouse.remove(offer.itemId);
+
+      cash += totalEarnings;
+      if (comp != null) {
+        comp.capital -= totalEarnings;
+        comp.inventory[offer.itemId] = (comp.inventory[offer.itemId] ?? 0) + offer.quantity;
+        comp.statusMessage = '🤝 Oyuncunun B2B teslimatını aldı (+${offer.quantity})';
+      }
+
+      offer.status = OfferStatus.completed;
+
+      AuditLogService().log(
+        category: LogCategory.trade,
+        action: 'NPC_B2B_FULFILLED',
+        title: 'B2B Sipariş Teslimi: ${comp?.name ?? offer.buyerName}',
+        description: '${offer.quantity} adet ${offer.item.name}, ${comp?.name ?? offer.buyerName} şirketine teslim edildi. Hesaba ${totalEarnings.toStringAsFixed(0)} ₺ geçti.',
+        amountChange: totalEarnings,
+        cashAfter: cash,
+        details: {
+          'companyId': offer.buyerId,
+          'itemId': offer.itemId,
+          'quantity': offer.quantity,
+          'totalEarnings': totalEarnings,
+        },
+      );
+
+      notifyListeners();
+      saveState();
+      return null;
+    }
+
     final listing = activeListings.where((l) => l.id == offer.listingId).firstOrNull;
     if (listing == null || listing.remainingQuantity < offer.quantity) {
       offer.status = OfferStatus.expired;
@@ -2916,6 +3203,7 @@ class GameController extends ChangeNotifier {
     _hasLoadedFromStorage = false;
     _lastLoadedPlayerId = null;
     _initializeMarket();
+    _initializeNpcCompanies();
     _initializeCommunityListings();
     notifyListeners();
   }
@@ -3341,6 +3629,7 @@ class GameController extends ChangeNotifier {
       'totalPrestigePoints': totalPrestigePoints,
       'activeTenders': activeTenders.map((t) => t.toJson()).toList(),
       'hasChosenStarterPath': hasChosenStarterPath,
+      'npcCompanies': npcCompanies.map((c) => c.toJson()).toList(),
     };
   }
 
@@ -3554,6 +3843,27 @@ class GameController extends ChangeNotifier {
         limitBuyOrders.clear();
         limitBuyOrders.addAll(loaded);
       }
+    }
+
+    if (data['npcCompanies'] != null && data['npcCompanies'] is List) {
+      final rawList = data['npcCompanies'] as List;
+      final loaded = <NpcCompany>[];
+      for (var c in rawList) {
+        try {
+          if (c is Map) {
+            loaded.add(NpcCompany.fromJson(Map<String, dynamic>.from(c)));
+          }
+        } catch (e) {
+          debugPrint('Error loading npcCompany: $e');
+        }
+      }
+      if (loaded.isNotEmpty) {
+        npcCompanies.clear();
+        npcCompanies.addAll(loaded);
+      }
+    }
+    if (npcCompanies.isEmpty) {
+      _initializeNpcCompanies();
     }
 
     if (netWorth > highestNetWorth) {
