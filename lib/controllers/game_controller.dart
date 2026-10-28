@@ -622,7 +622,9 @@ class GameController extends ChangeNotifier {
     if (_bankTickTimer >= 60.0) {
       _bankTickTimer = 0.0;
       if (bankSavings > 0) {
-        bankSavings += bankSavings * 0.005; // %0.5 mevduat getirisi
+        // Saatlik %0.50 getiri (dakikalık getiri: 0.005 / 60)
+        final earned = bankSavings * (0.005 / 60.0);
+        bankSavings = (bankSavings + earned).clamp(0.0, 500000000.0);
         stateChanged = true;
       }
       if (_legacyActiveLoan > 0) {
@@ -2568,7 +2570,7 @@ class GameController extends ChangeNotifier {
   String? depositToBank(double amount) {
     if (amount <= 0 || cash < amount) return 'Yetersiz nakit.';
     cash -= amount;
-    bankSavings += amount;
+    bankSavings = (bankSavings + amount).clamp(0.0, 500000000.0);
 
     AuditLogService().log(
       category: LogCategory.finance,
@@ -3029,15 +3031,22 @@ class GameController extends ChangeNotifier {
       }
     }
 
-    // 5. Banka Vadeli Mevduat Faizi (Her 60 saniyede %0.5)
+    // 5. Banka Vadeli Mevduat Faizi (Saatlik %0.50, dakikada 0.005 / 60)
     double bankInterestEarned = 0.0;
+    // Önceden bozulmuş/taşmış mevduat varsa güvenli sınıra çek
+    if (bankSavings > 500000000.0 || bankSavings.isNaN || bankSavings.isInfinite) {
+      bankSavings = 50000000.0;
+    }
     final bankCycles = (totalSeconds / 60.0).floor();
     if (bankCycles > 0 && bankSavings > 0) {
-      final initialSavings = bankSavings;
-      for (int i = 0; i < min(bankCycles, 720); i++) {
-        bankSavings += bankSavings * 0.005;
-      }
-      bankInterestEarned = bankSavings - initialSavings;
+      final effectiveCycles = min(bankCycles, 720); // Maksimum 12 saat çevrimdışı faiz döngüsü
+      // Saatlik %0.50 -> dakikalık getiri oranı: 0.005 / 60
+      const perMinuteRate = 0.005 / 60.0;
+      // Tek seferlik çevrimdışı periyot için makul getiri oranı (maks %10 tavan)
+      final rate = min(0.10, effectiveCycles * perMinuteRate);
+      final rawInterest = bankSavings * rate;
+      bankInterestEarned = rawInterest.clamp(0.0, 5000000.0);
+      bankSavings = (bankSavings + bankInterestEarned).clamp(0.0, 500000000.0);
     }
 
     // 6. Kredi Taksit Döngüsü (Her 45 saniyede bir gün/taksit)
@@ -3643,12 +3652,23 @@ class GameController extends ChangeNotifier {
     }
     if (data.containsKey('highestNetWorth') && data['highestNetWorth'] != null) {
       highestNetWorth = (data['highestNetWorth'] as num).toDouble();
+      if (highestNetWorth.isNaN || highestNetWorth.isInfinite || highestNetWorth > 1000000000.0) {
+        highestNetWorth = 100000000.0;
+      }
     }
     if (data.containsKey('cash') && data['cash'] != null) {
       cash = (data['cash'] as num).toDouble();
+      if (cash.isNaN || cash.isInfinite || cash > 500000000.0 || cash < 0) {
+        cash = cash.clamp(0.0, 100000000.0);
+        if (cash.isNaN || cash.isInfinite) cash = 10000.0;
+      }
     }
     if (data.containsKey('bankSavings') && data['bankSavings'] != null) {
       bankSavings = (data['bankSavings'] as num).toDouble();
+      if (bankSavings.isNaN || bankSavings.isInfinite || bankSavings > 500000000.0 || bankSavings < 0) {
+        bankSavings = bankSavings.clamp(0.0, 50000000.0);
+        if (bankSavings.isNaN || bankSavings.isInfinite) bankSavings = 0.0;
+      }
     }
     if (data.containsKey('maxWarehouseCapacity') && data['maxWarehouseCapacity'] != null) {
       maxWarehouseCapacity = (data['maxWarehouseCapacity'] as num).toDouble();

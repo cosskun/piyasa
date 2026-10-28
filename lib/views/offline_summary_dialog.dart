@@ -49,7 +49,7 @@ class OfflineSummaryDialog extends StatelessWidget {
           ],
         ),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -78,8 +78,10 @@ class OfflineSummaryDialog extends StatelessWidget {
               Text(
                 'Siz Yokken Şirketiniz Çalıştı!',
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 20,
+                  fontSize: 19,
                   fontWeight: FontWeight.w900,
                   color: isDark ? Colors.white : const Color(0xFF0F172A),
                 ),
@@ -87,19 +89,24 @@ class OfflineSummaryDialog extends StatelessWidget {
               const SizedBox(height: 4),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     Icons.access_time_rounded,
-                    size: 15,
+                    size: 14,
                     color: isDark ? Colors.amberAccent : const Color(0xFFD97706),
                   ),
                   const SizedBox(width: 5),
-                  Text(
-                    'Geçen Süre: ${report.formattedDuration}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                  Flexible(
+                    child: Text(
+                      'Geçen Süre: ${report.formattedDuration}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        color: isDark ? Colors.amberAccent : const Color(0xFFB45309),
+                      ),
                     ),
                   ),
                 ],
@@ -172,28 +179,11 @@ class OfflineSummaryDialog extends StatelessWidget {
                   isDark: isDark,
                   icon: '🏪',
                   title: 'Perakende Dükkanlarım',
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${report.retailItemsSold} adet ürün satıldı',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? Colors.white70 : const Color(0xFF475569),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '+${currencyFmt.format(report.retailRevenue)} ₺',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                        ),
-                      ),
-                    ],
+                  child: _buildSummaryRow(
+                    label: '${report.retailItemsSold} adet ürün satıldı',
+                    value: '+${currencyFmt.format(report.retailRevenue)} ₺',
+                    valueColor: Colors.green,
+                    isDark: isDark,
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -208,28 +198,11 @@ class OfflineSummaryDialog extends StatelessWidget {
                   child: Column(
                     children: [
                       if (report.marketItemsSold > 0)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '${report.marketItemsSold} adet pazar ilanı satışı',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isDark ? Colors.white70 : const Color(0xFF475569),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '+${currencyFmt.format(report.marketRevenue)} ₺',
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
-                              ),
-                            ),
-                          ],
+                        _buildSummaryRow(
+                          label: '${report.marketItemsSold} adet pazar ilanı satışı',
+                          value: '+${currencyFmt.format(report.marketRevenue)} ₺',
+                          valueColor: Colors.green,
+                          isDark: isDark,
                         ),
                       if (report.incomingOffersCount > 0) ...[
                         if (report.marketItemsSold > 0) const SizedBox(height: 6),
@@ -240,6 +213,8 @@ class OfflineSummaryDialog extends StatelessWidget {
                             Expanded(
                               child: Text(
                                 '${report.incomingOffersCount} yeni pazarlık teklifi sizi bekliyor',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.bold,
@@ -267,53 +242,19 @@ class OfflineSummaryDialog extends StatelessWidget {
                   child: Column(
                     children: [
                       if (report.bankInterestEarned > 0)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                'Vadeli Mevduat Faizi',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isDark ? Colors.white70 : const Color(0xFF475569),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '+${currencyFmt.format(report.bankInterestEarned)} ₺',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.green,
-                              ),
-                            ),
-                          ],
+                        _buildSummaryRow(
+                          label: 'Vadeli Mevduat Faizi',
+                          value: '+${currencyFmt.format(report.bankInterestEarned)} ₺',
+                          valueColor: Colors.green,
+                          isDark: isDark,
                         ),
                       if (report.loanInstallmentsPaid > 0) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '${report.loanInstallmentsPaid} Kredi Taksiti Ödendi',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: isDark ? Colors.white70 : const Color(0xFF475569),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '-${currencyFmt.format(report.totalLoanPaidAmount)} ₺',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.redAccent,
-                              ),
-                            ),
-                          ],
+                        if (report.bankInterestEarned > 0) const SizedBox(height: 6),
+                        _buildSummaryRow(
+                          label: '${report.loanInstallmentsPaid} Kredi Taksiti Ödendi',
+                          value: '-${currencyFmt.format(report.totalLoanPaidAmount)} ₺',
+                          valueColor: Colors.redAccent,
+                          isDark: isDark,
                         ),
                       ],
                       if (report.loanInstallmentsOverdue > 0) ...[
@@ -359,9 +300,9 @@ class OfflineSummaryDialog extends StatelessWidget {
                   ),
                 ),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Expanded(
+                      flex: 55,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -375,6 +316,8 @@ class OfflineSummaryDialog extends StatelessWidget {
                           ),
                           Text(
                             'Kasanız: ${currencyFmt.format(report.endingCash)} ₺',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 11,
                               color: isDark ? Colors.white70 : const Color(0xFF047857),
@@ -384,14 +327,25 @@ class OfflineSummaryDialog extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Text(
-                      '${report.netCashChange >= 0 ? '+' : ''}${currencyFmt.format(report.netCashChange)} ₺',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: report.netCashChange >= 0
-                            ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
-                            : Colors.redAccent,
+                    Expanded(
+                      flex: 45,
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            '${report.netCashChange >= 0 ? '+' : ''}${currencyFmt.format(report.netCashChange)} ₺',
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: report.netCashChange >= 0
+                                  ? (isDark ? Colors.greenAccent : const Color(0xFF059669))
+                                  : Colors.redAccent,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -429,6 +383,52 @@ class OfflineSummaryDialog extends StatelessWidget {
     );
   }
 
+  Widget _buildSummaryRow({
+    required String label,
+    required String value,
+    required Color valueColor,
+    required bool isDark,
+    double valueFontSize = 13.5,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          flex: 55,
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: isDark ? Colors.white70 : const Color(0xFF475569),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 45,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: valueFontSize,
+                  fontWeight: FontWeight.bold,
+                  color: valueColor,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildSectionCard({
     required bool isDark,
     required String icon,
@@ -454,6 +454,8 @@ class OfflineSummaryDialog extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.bold,

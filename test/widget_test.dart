@@ -3781,6 +3781,81 @@ void main() {
 
     controller.dispose();
   });
+
+  testWidgets('OfflineSummaryDialog layout robustness and bank interest safety caps', (WidgetTester tester) async {
+    // 1. Çok dar ekranda (320px) ve büyük sayılarda OfflineSummaryDialog'un kırılmadığını ve harflerin dikey kaymadığını test et
+    tester.view.physicalSize = const Size(320, 750);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final extremeReport = OfflineCatchUpReport(
+      elapsedDuration: const Duration(hours: 12),
+      producedItems: {'wheat': 500, 'flour': 200},
+      warehouseFull: true,
+      retailItemsSold: 150,
+      retailRevenue: 150000.0,
+      marketItemsSold: 80,
+      marketRevenue: 240000.0,
+      incomingOffersCount: 5,
+      bankInterestEarned: 999999999.0, // Büyük rakam testi
+      loanInstallmentsPaid: 5,
+      loanInstallmentsOverdue: 2,
+      loanPenaltiesIncurred: 12500.0,
+      totalLoanPaidAmount: 85000.0,
+      startingCash: 50000.0,
+      endingCash: 350000.0,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (ctx) => ElevatedButton(
+              onPressed: () => OfflineSummaryDialog.show(ctx, extremeReport),
+              child: const Text('Aç'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Aç'));
+    await tester.pumpAndSettle();
+
+    // Rapor başarıyla açıldı ve hiçbir taşma (RenderFlex overflow) veya dikey harf kırılması olmadı
+    expect(find.text('Siz Yokken Şirketiniz Çalıştı!'), findsOneWidget);
+    expect(find.text('Vadeli Mevduat Faizi'), findsOneWidget);
+    final dismissBtn = find.textContaining('Harika');
+    expect(dismissBtn, findsOneWidget);
+    await tester.ensureVisible(dismissBtn);
+    await tester.pumpAndSettle();
+    await tester.tap(dismissBtn);
+    await tester.pumpAndSettle();
+
+    // 2. GameController offline faiz hesaplama güvenliği ve tavan testi
+    final controller = GameController(autoLoad: false);
+    controller.bankSavings = 10000.0; // 10.000 TL vadeli mevduat
+
+    // 12 saat çevrimdışı kalma simülasyonu
+    final pastTime = DateTime.now().subtract(const Duration(hours: 12));
+    final report = controller.processOfflineCatchUp(pastTime);
+
+    // Faiz pozitif olmalı ancak makul tavan içinde (%10 tavanı aşmamalı)
+    expect(report.bankInterestEarned, greaterThan(0));
+    expect(report.bankInterestEarned, lessThanOrEqualTo(10000.0 * 0.10 + 1.0)); // Maksimum %10
+    expect(controller.bankSavings, lessThanOrEqualTo(11000.0 + 1.0));
+
+    // 3. Bozulmuş veya aşırı büyük kayıt dosyasını temizleme / sanitize testi
+    controller.loadFromSaveJson({
+      'bankSavings': 9223372036854775807, // 9 kentilyon bozuk değer
+      'cash': 9223372036854775807,
+    });
+
+    expect(controller.bankSavings, lessThanOrEqualTo(50000000.0));
+    expect(controller.cash, lessThanOrEqualTo(100000000.0));
+
+    controller.dispose();
+  });
 }
 
 
